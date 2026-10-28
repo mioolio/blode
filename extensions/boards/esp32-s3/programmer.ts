@@ -1,21 +1,7 @@
-import type { FlashSegment } from '../types.js';
+import type { FlashSegment } from '../../types.js';
 
-const chips = new Set([
-  'auto',
-  'esp8266',
-  'esp32',
-  'esp32s2',
-  'esp32s3',
-  'esp32c2',
-  'esp32c3',
-  'esp32c5',
-  'esp32c6',
-  'esp32c61',
-  'esp32h2',
-  'esp32h21',
-  'esp32h4',
-  'esp32p4',
-]);
+// Auto is used for discovery; writes in this package target only ESP32-S3.
+const chips = new Set(['auto', 'esp32s3']);
 
 function validateTarget(port: string, chip: string) {
   if (!port.trim() || port.startsWith('-') || /[\r\n\0]/.test(port)) throw new Error('errors.invalidPort');
@@ -28,12 +14,12 @@ export function buildProbeArgs(port: string, chip = 'auto'): string[] {
   return ['-m', 'esptool', '--chip', chip, '--port', port, '--baud', '115200', 'flash-id'];
 }
 
-/** Default programmer for Espressif ROM bootloaders, not a claim of support for unrelated MCUs. */
+/** ESP32-S3 ROM programmer; no other Espressif platforms are registered here. */
 export function buildFlashArgs(
   port: string,
   baudRate: number,
   segments: FlashSegment[],
-  chip = 'auto',
+  chip = 'esp32s3',
   flashSize?: number,
 ): string[] {
   validateTarget(port, chip);

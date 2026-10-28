@@ -6,11 +6,14 @@
   "config.set": "保存完整工程配置；包括板卡、串口、工具链与 Flash 分区。自定义工具链路径必须来自用户信任的可执行文件。",
   "build.run": "编译已保存工程，返回实际固件、Flash 和 RAM 占用及工具输出。",
   "flash.run": "将已构建固件烧录至所选设备。会改写设备存储；仅在用户授权烧录后设置 confirm=true。",
-  "device.probe": "通过只读命令识别串口设备的芯片和 Flash；可能重启设备但不会改写 Flash。",
-  "toolchain.install": "下载官方工具链及 ESP32 核心。仅在用户授权下载安装后设置 confirm=true。",
+  "device.probe": "自动模式扫描并在唯一候选时识别 ESP32-S3 或 STM32；多个候选需要先选择。识别结果保存为实际平台，不烧录固件。",
+  "toolchain.install": "安装所选连接方式需要的工具：Espressif 工具链或 ST-Link 工具。仅在用户授权下载安装后设置 confirm=true。",
   "serial.open": "打开串口监视器，可指定 port 与 baudRate；事件通过 events.poll 读取。",
   "serial.close": "关闭串口监视器并释放端口。",
   "serial.write": "向已打开的串口发送 data 文本。",
   "events.poll": "读取构建、状态与串口事件；将上次 cursor 作为 after，dropped=true 时表示部分旧事件已过期。",
-  "bridge.failed": "管道连接失败。请确认 Blode Studio 正在运行，并检查 BLODE_CONNECTION_FILE 或 --connection 指向的连接信息文件。"
+  "bridge.failed": "管道连接失败。请确认 Blode Studio 正在运行，并检查 BLODE_CONNECTION_FILE 或 --connection 指向的连接信息文件。",
+  "probes.list": "列出通过 ST-Link 连接的调试器及已识别的目标信息，不写入固件。",
+  "devices.scan": "扫描受支持平台的 USB 串口和 ST-Link 候选设备；返回候选列表和缺少检测工具的平台，不烧录固件。",
+  "build.entry.set": "将工程内文件或文件夹设为编译入口并保存至 be；不立即编译。"
 }

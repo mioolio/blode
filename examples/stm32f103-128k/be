@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "name": "stm32f103-128k",
+  "boardId": "stm32",
+  "port": "",
+  "baudRate": 115200,
+  "flashSize": 131072,
+  "flashSizeOverride": true,
+  "partitions": [
+    {
+      "id": "firmware",
+      "name": "firmware",
+      "type": "app",
+      "offset": 0,
+      "size": 131072
+    }
+  ],
+  "programmer": {
+    "transport": "stlink",
+    "serialNumber": "",
+    "frequencyKhz": 1800
+  },
+  "toolchain": {
+    "mode": "managed",
+    "arduinoCli": "",
+    "python": "",
+    "additionalUrls": [],
+    "fqbn": "",
+    "stlinkDirectory": "",
+    "armCompilerDirectory": ""
+  },
+  "build": {
+    "entry": "src/flash_70k.c"
+  }
+}

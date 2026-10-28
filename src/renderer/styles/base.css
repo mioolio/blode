@@ -336,6 +336,18 @@ kbd {
   background: var(--accent-soft);
   color: var(--accent);
 }
+.ide-menu-item:focus-visible,
+.ide-menu-item[aria-expanded='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ide-menu-entry {
+  position: relative;
+}
+.ide-submenu-popup {
+  top: -6px;
+  left: calc(100% - 1px);
+}
 .ide-menu-item kbd {
   color: var(--text-faint);
   font-size: 10.5px;

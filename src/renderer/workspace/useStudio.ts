@@ -1,34 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppState, LogEvent, ProjectConfig } from '../../shared/contracts';
+import type { AppState, DriverId, LogEvent, ProjectConfig } from '../../shared/contracts';
 import { useI18n } from '../i18n';
-import { bytes } from '../utils';
 import { parseWorkspaceRoute, workspaceRouteHash, type WorkspaceRoute } from './routes';
+import { validatesExistingFirmware } from './buildMode';
 
-type View = 'code' | 'layout' | 'ai' | 'settings';
-type ToolTab = 'layout' | 'ai' | 'settings';
+type View = 'code' | 'layout' | 'ai';
+type ToolTab = 'layout' | 'ai';
 type ConsoleTab = 'output' | 'serial' | 'problems';
 
-const toolTabViews: Record<ToolTab, View> = { layout: 'layout', ai: 'ai', settings: 'settings' };
+const toolTabViews: Record<ToolTab, View> = { layout: 'layout', ai: 'ai' };
 
 function viewFromRoute(route: WorkspaceRoute): View {
   if (route.kind === 'layout') return 'layout';
   if (route.kind === 'automation') return 'ai';
-  if (route.kind === 'settings') return 'settings';
   return 'code';
 }
 
-const isToolTab = (value: unknown): value is ToolTab =>
-  value === 'layout' || value === 'ai' || value === 'settings';
+const isToolTab = (value: unknown): value is ToolTab => value === 'layout' || value === 'ai';
 
 function initialToolTabs(route: WorkspaceRoute): ToolTab[] {
   const routeTool: ToolTab | null =
-    route.kind === 'layout'
-      ? 'layout'
-      : route.kind === 'automation'
-        ? 'ai'
-        : route.kind === 'settings'
-          ? 'settings'
-          : null;
+    route.kind === 'layout' ? 'layout' : route.kind === 'automation' ? 'ai' : null;
   return routeTool ? [routeTool] : [];
 }
 
@@ -44,14 +36,6 @@ const sessionKey = (root: string) => `blode.session:${root}`;
 function messageOf(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-}
-
-/** Read the size reported by esptool; missing output leaves the configured value alone. */
-function detectedFlashSize(output: string): number | null {
-  const match = output.match(/(?:Detected flash size|Flash size)\s*:\s*([\d.]+)\s*MB/i);
-  if (!match) return null;
-  const size = Number(match[1]) * 1024 * 1024;
-  return Number.isFinite(size) && size > 0 ? Math.round(size) : null;
 }
 
 /** Per-project tab state survives reloads; missing or corrupt data means a fresh start. */
@@ -124,6 +108,11 @@ export function useStudio() {
   const errors = logs.filter((log) => log.level === 'error');
   const warnings = logs.filter((log) => log.level === 'warning');
   const board = state?.boards.find((item) => item.id === config?.boardId);
+  const isStm32 = config?.boardId === 'stm32';
+  const isAuto = config?.boardId === 'auto';
+  const usesStlink = isStm32 || config?.programmer?.transport === 'stlink';
+  const hasBuildEntry = !!(state?.build?.entry ?? state?.build?.sketch);
+  const validatesFirmware = validatesExistingFirmware(board, state?.build);
 
   const notify = useCallback((message: string, error = false) => setToast({ message, error }), []);
   const refresh = useCallback(async () => {
@@ -158,8 +147,7 @@ export function useStudio() {
       let nextActive: string;
       if (session) {
         nextOpen = session.openFiles.filter(exists);
-        if (current && exists(current) && !nextOpen.includes(current))
-          nextOpen = [...nextOpen, current];
+        if (current && exists(current) && !nextOpen.includes(current)) nextOpen = [...nextOpen, current];
         nextActive =
           current && nextOpen.includes(current)
             ? current
@@ -183,9 +171,7 @@ export function useStudio() {
     }
     const nextOpen = openFilesRef.current.filter(exists);
     const nextActive =
-      activePathRef.current && exists(activePathRef.current)
-        ? activePathRef.current
-        : (nextOpen[0] ?? '');
+      activePathRef.current && exists(activePathRef.current) ? activePathRef.current : (nextOpen[0] ?? '');
     openFilesRef.current = nextOpen;
     activePathRef.current = nextActive;
     setOpenFiles(nextOpen);
@@ -243,9 +229,7 @@ export function useStudio() {
         ? { kind: 'layout' }
         : view === 'ai'
           ? { kind: 'automation' }
-          : view === 'settings'
-            ? { kind: 'settings' }
-            : { kind: 'editor', ...(activePath ? { file: activePath } : {}) };
+          : { kind: 'editor', ...(activePath ? { file: activePath } : {}) };
     const hash = workspaceRouteHash(route);
     if (window.location.hash !== hash) {
       try {
@@ -285,6 +269,7 @@ export function useStudio() {
         ![
           'status.fileSaved',
           'status.configSaved',
+          'status.buildEntrySet',
           'status.buildSucceeded',
           'status.buildFailed',
           'status.projectOpened',
@@ -300,7 +285,7 @@ export function useStudio() {
             setState(next);
             if (!configDirty) setConfig(next.config);
             setStale(next.buildStale ?? false);
-            if (event.message === 'status.fileSaved' || event.message === 'status.configSaved')
+            if (['status.fileSaved', 'status.configSaved', 'status.buildEntrySet'].includes(event.message))
               setStale(true);
           })
           .catch((error) => notify(String(error), true));
@@ -358,6 +343,18 @@ export function useStudio() {
         notify(t('toast.configSaved'));
       }
     });
+  const setBuildEntry = (entry: string) =>
+    perform('action.setBuildEntry', async () => {
+      // The entry is persisted in be. Do not let an older unsaved descriptor
+      // silently overwrite it later; ordinary source drafts remain untouched.
+      if (Object.keys(drafts).some((file) => file.toLowerCase() === 'be')) throw new Error('toast.saveFirst');
+      const pendingConfig = configDirty ? config : null;
+      await window.blode.setBuildEntry(entry);
+      await refresh();
+      if (pendingConfig) setConfig(pendingConfig);
+      setStale(true);
+      notify(t('toast.buildEntrySet'));
+    });
   /** Rename a file or a whole folder and keep tabs/drafts pointing at the new paths. */
   const renamePath = (from: string, to: string) =>
     perform('action.rename', async () => {
@@ -395,18 +392,24 @@ export function useStudio() {
       notify(t('toast.deleted'));
     });
   const build = () =>
-    perform('action.build', async () => {
+    perform(validatesFirmware ? 'action.validateFirmware' : 'action.build', async () => {
+      if (!board?.capabilities.some((capability) => capability === 'compile' || capability === 'flash'))
+        throw new Error('error.detectBoardFirst');
       setTab('output');
       await saveFiles();
       if (config && configDirty) await window.blode.saveConfig(config);
       const result = await window.blode.build();
       await refresh();
       setStale(!result.success);
-      if (result.success) notify(t('toast.built'));
+      if (result.success) notify(t(validatesFirmware ? 'toast.firmwareValidated' : 'toast.built'));
     });
   const flash = () => {
-    if (!config?.port) {
-      notify(t('toast.noPort'), true);
+    if (!board?.capabilities.includes('flash')) {
+      notify(t('error.detectBoardFirst'), true);
+      return;
+    }
+    if (usesStlink ? !config?.programmer?.serialNumber : !config?.port) {
+      notify(t(usesStlink ? 'error.selectDebugProbe' : 'toast.noPort'), true);
       return;
     }
     if (!state?.lastBuild?.success || state.buildStale || stale || dirty || configDirty) {
@@ -417,24 +420,19 @@ export function useStudio() {
   };
   const probe = () =>
     perform('action.probe', async () => {
-      if (!config?.port) throw new Error('toast.noPort');
+      if (!config) return;
+      if (!isAuto && (usesStlink ? !config.programmer?.serialNumber : !config.port))
+        throw new Error(usesStlink ? 'error.selectDebugProbe' : 'toast.noPort');
       setTab('output');
-      const boardBefore = config.boardId;
+      setProbeFailure(null);
       try {
-        const output = await window.blode.probe(config.port);
-        if (boardBefore !== 'auto') {
-          // A manually selected board keeps its layout; only the measured capacity changes.
-          const detected = detectedFlashSize(output);
-          if (detected && detected !== config.flashSize) {
-            const updated = { ...config, flashSize: detected };
-            await window.blode.saveConfig(updated);
-            setConfig(updated);
-            setStale(true);
-            notify(`${t('toast.flashDetected')} ${bytes(detected)}`);
-          }
-          return;
-        }
-        // The core promotes the detected chip to a registered adapter and persists its layout.
+        // The core dispatches using persisted transport/serial settings. Probing
+        // never saves editor drafts, so recognition cannot discard pending text.
+        await window.blode.saveConfig(config);
+        setState((current) => (current ? { ...current, config } : current));
+        if (configDirty) setStale(true);
+        await window.blode.probe(isAuto || usesStlink ? undefined : config.port);
+        // The core resolves the device and owns its platform/capacity parsing.
         const next = await refresh();
         const detectedBoard = next.boards.find((item) => item.id === next.config.boardId);
         if (detectedBoard && next.config.boardId !== 'auto') {
@@ -453,26 +451,25 @@ export function useStudio() {
       `time: ${new Date().toISOString()}`,
       `locale: ${locale}`,
       `board: ${config?.boardId ?? ''}`,
+      `transport: ${config?.programmer?.transport ?? (isAuto ? 'auto' : 'serial')}`,
+      `probe: ${config?.programmer?.serialNumber ?? ''}`,
+      `swd kHz: ${config?.programmer?.frequencyKhz ?? ''}`,
       `port: ${config?.port ?? ''}`,
       '',
       ...logs.map((event) => `${event.time} [${event.level}] ${event.message}`),
     ].join('\n');
-  const downloadProbeLog = () => {
-    const url = URL.createObjectURL(new Blob([probeLog()], { type: 'text/plain;charset=utf-8' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `blode-probe-${new Date().toISOString().replace(/[:.]/g, '-')}.log`;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify(t('toast.logDownloaded'));
+  const downloadProbeLog = async () => {
+    try {
+      const result = await window.blode.exportProbeLog(probeLog());
+      if (result === 'saved') notify(t('toast.logDownloaded'));
+      if (result === 'download-started') notify(t('toast.logDownloadStarted'));
+    } catch (error) {
+      notify(messageOf(error), true);
+    }
   };
   const sendProbeFeedback = async () => {
     try {
-      await navigator.clipboard.writeText(
-        `${probeLog()}\n\nhttps://github.com/mioolio/blode/issues/new`,
-      );
+      await navigator.clipboard.writeText(`${probeLog()}\n\nhttps://github.com/mioolio/blode/issues/new`);
       notify(t('toast.reportCopied'));
     } catch (error) {
       notify(messageOf(error), true);
@@ -486,6 +483,28 @@ export function useStudio() {
     perform('action.refresh', async () => {
       const ports = await window.blode.listPorts();
       setState((current) => (current ? { ...current, ports } : current));
+    });
+  const refreshDebugProbes = () =>
+    perform('action.refresh', async () => {
+      // Enumerate using the transport, tool directory and SWD speed shown in
+      // the inspector, including a connection choice that is not yet applied.
+      if (config && configDirty) {
+        await window.blode.saveConfig(config);
+        setStale(true);
+      }
+      const debugProbes = await window.blode.listDebugProbes();
+      const next = await refresh();
+      setState({ ...next, debugProbes });
+    });
+  const refreshAutoDevices = () =>
+    perform('action.refresh', async () => {
+      if (config && configDirty) {
+        await window.blode.saveConfig(config);
+        setStale(true);
+      }
+      const detection = await window.blode.scanDevices();
+      const next = await refresh();
+      setState({ ...next, detection });
     });
   const openProjectWith = (select: () => Promise<boolean>) =>
     perform('action.open', async () => {
@@ -512,6 +531,18 @@ export function useStudio() {
       await window.blode.installToolchain();
       await refresh();
       notify(t('toast.installed'));
+    });
+  const installDriver = (id: DriverId) =>
+    perform('action.installDriver', async () => {
+      setTab('output');
+      await window.blode.installDriver(id);
+      await refresh();
+      notify(t('toast.driverInstalled'));
+    });
+  const refreshDrivers = () =>
+    perform('action.refresh', async () => {
+      const drivers = await window.blode.refreshDrivers();
+      setState((current) => (current ? { ...current, drivers } : current));
     });
   const serialToggle = () =>
     perform('device.serial', async () => {
@@ -663,20 +694,30 @@ export function useStudio() {
     errors,
     warnings,
     board,
+    isStm32,
+    isAuto,
+    usesStlink,
+    validatesFirmware,
+    hasBuildEntry,
     notify,
     refresh,
     perform,
     save,
     saveConfig,
+    setBuildEntry,
     renamePath,
     removeEntry,
     build,
     flash,
     probe,
     refreshPorts,
+    refreshDebugProbes,
+    refreshAutoDevices,
     openProject,
     openProjectMarker,
     install,
+    installDriver,
+    refreshDrivers,
     serialToggle,
     copy,
     editorCommand,

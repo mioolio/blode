@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { getBoardAdapter, listBoards } from '../extensions/registry.js';
 import { createDefaultPartitions } from '../extensions/boards/esp32-s3/partitions.js';
-import { buildFlashArgs, buildProbeArgs } from '../extensions/programmers/esptool.js';
+import { buildFlashArgs, buildProbeArgs } from '../extensions/boards/esp32-s3/programmer.js';
 import { parseConfig } from '../src/core/config.js';
 
 describe('board adapters', () => {
@@ -14,8 +14,10 @@ describe('board adapters', () => {
     edited.partitions[0]!.size = 1;
     assert.equal(adapter.createConfig().partitions[0]!.size, 0x8000);
     const definitions = listBoards();
-    definitions[0]!.flashSizes.length = 0;
-    assert.ok(listBoards()[0]!.flashSizes.length > 0);
+    definitions.find((board) => board.id === 'esp32-s3')!.flashSizes.length = 0;
+    assert.ok(listBoards().find((board) => board.id === 'esp32-s3')!.flashSizes.length > 0);
+    assert.equal(getBoardAdapter('auto').createConfig().flashSize, 0);
+    assert.deepEqual(getBoardAdapter('auto').createConfig().partitions, []);
   });
   for (const size of [4, 8, 16, 32])
     it(`fills a ${size} MiB image without gaps, overlap or exceeding capacity`, () => {
@@ -26,8 +28,11 @@ describe('board adapters', () => {
       const last = partitions.at(-1)!;
       assert.equal(last.offset + last.size, size * 1024 * 1024);
       assert.equal(partitions.find((partition) => partition.type === 'app')!.offset % 0x10000, 0);
-    assert.deepEqual(partitions.find(partition => partition.id === 'coredump'), { id: 'coredump', name: 'coredump', type: 'data', offset: 0x310000, size: 0x10000 });
-    assert.equal(partitions.find(partition => partition.id === 'filesystem')!.offset, 0x320000);
+      assert.deepEqual(
+        partitions.find((partition) => partition.id === 'coredump'),
+        { id: 'coredump', name: 'coredump', type: 'data', offset: 0x310000, size: 0x10000 },
+      );
+      assert.equal(partitions.find((partition) => partition.id === 'filesystem')!.offset, 0x320000);
     });
   it('synchronizes FlashSize and PSRAM while keeping runtime baud out of compiler options', () => {
     const adapter = getBoardAdapter('esp32-s3');
@@ -39,7 +44,7 @@ describe('board adapters', () => {
     assert.throws(() => adapter.getFqbn(config), /errors.boardFqbnMismatch/);
   });
   it('rejects unknown adapters rather than falling back to another chip', () => {
-    assert.throws(() => getBoardAdapter('stm32'), /errors.unknownBoard/);
+    assert.throws(() => getBoardAdapter('unregistered-chip'), /errors.unknownBoard/);
   });
   it('resolves managed Python automatically and preserves required system reservations', () => {
     const adapter = getBoardAdapter('esp32-s3');
@@ -66,8 +71,8 @@ describe('board adapters', () => {
   it('keeps existing single-app configurations without a coredump region valid', () => {
     const adapter = getBoardAdapter('esp32-s3');
     const config = adapter.createConfig();
-    config.partitions = config.partitions.filter(partition => partition.id !== 'coredump');
-    const filesystem = config.partitions.find(partition => partition.id === 'filesystem')!;
+    config.partitions = config.partitions.filter((partition) => partition.id !== 'coredump');
+    const filesystem = config.partitions.find((partition) => partition.id === 'filesystem')!;
     filesystem.offset -= 0x10000;
     filesystem.size += 0x10000;
     assert.doesNotThrow(() => adapter.validateConfig(config));
@@ -87,7 +92,7 @@ describe('board catalogue', () => {
     assert.equal(automatic.createConfig().boardId, 'auto');
     assert.doesNotThrow(() => parseConfig(automatic.createConfig()));
     assert.throws(
-      () => parseConfig({ ...automatic.createConfig(), boardId: 'stm32' }),
+      () => parseConfig({ ...automatic.createConfig(), boardId: 'unregistered-chip' }),
       /errors.unknownBoard/,
     );
   });

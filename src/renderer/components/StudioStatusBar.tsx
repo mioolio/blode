@@ -5,8 +5,19 @@ import { projectFootprint } from '../workspace/resources';
 
 /** StudioStatusBar renders one workspace surface; application actions stay in useStudio. */
 export function StudioStatusBar({ studio }: { studio: Studio }) {
-  const { t, busy, errors, warnings, state, config, setView, drafts } = studio;
+  const { t, busy, errors, warnings, state, config, setView, drafts, usesStlink, isAuto } = studio;
   const footprint = projectFootprint(state?.inventory, state?.files ?? [], drafts);
+  const appCapacity =
+    config?.partitions
+      .filter((partition) => partition.type === 'app')
+      .reduce((sum, partition) => sum + partition.size, 0) ?? 0;
+  const flashTotal = appCapacity || state?.lastBuild?.flashTotal || 0;
+  const automaticChoice = isAuto && (!config?.programmer || config.programmer.transport === 'auto');
+  const connectedDevice = automaticChoice
+    ? ''
+    : usesStlink
+      ? config?.programmer?.serialNumber && `ST-Link ${config.programmer.serialNumber}`
+      : config?.port;
   return (
     <footer className="statusbar">
       <span className="status-left">
@@ -35,16 +46,16 @@ export function StudioStatusBar({ studio }: { studio: Studio }) {
           MCP
         </button>
         <i />
-        <span className={`status-item ${config?.port ? '' : 'muted'}`}>
+        <span className={`status-item ${connectedDevice ? '' : 'muted'}`}>
           <Usb size={11} strokeWidth={2} aria-hidden="true" />
-          {config?.port || t('status.offline')}
+          {connectedDevice || t(automaticChoice ? 'device.autoSelection' : 'status.offline')}
         </span>
         <i />
         <span className="status-item">
           <MemoryStick size={11} strokeWidth={2} aria-hidden="true" />
           {state?.lastBuild?.success
-            ? `${t('memory.flash')} ${bytes(state.lastBuild.flashUsed)} / ${bytes(state.lastBuild.flashTotal)}`
-            : `${t('resource.appCapacity')} ${bytes(config?.partitions.find((partition) => partition.type === 'app')?.size ?? 0)}`}
+            ? `${t('memory.flash')} ${bytes(state.lastBuild.flashUsed)} / ${bytes(flashTotal)}`
+            : `${t('resource.appCapacity')} ${bytes(flashTotal)}`}
         </span>
       </span>
     </footer>

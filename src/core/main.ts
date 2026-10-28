@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, session, shell } from 'electron';
-import { promises as fs } from 'node:fs';
+import { appendFileSync, mkdirSync, promises as fs, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { createCore, type CoreService } from './service';
@@ -9,8 +9,57 @@ import { EVENT_CHANNEL, IPC_CHANNEL, type LogEvent } from '../shared/contracts';
 import { loadAppConfig, installDebugControls } from './debug';
 import { PROJECT_MARKER, safeWorkspacePath } from './workspace';
 import { startWebServer, type WebServerHandle } from './web';
+import { exportProbeLog } from './log-export';
+import { MAX_PROBE_LOG_BYTES } from '../shared/probe-log';
 
 app.setName('Blode Studio');
+// Keep drafts in Local Storage, but avoid persistent GPU/Dawn cache handles.
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+  // Graphite has its own persistent cache, independent of the shader-cache flag.
+  if (process.platform === 'win32') app.commandLine.appendSwitch('disable-skia-graphite');
+  const disabled = app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean);
+  app.commandLine.appendSwitch(
+    'disable-features',
+    [...new Set([...disabled, 'GpuPersistentCache', 'SkiaGraphiteUsePersistentCache'])].join(','),
+  );
+}
+// The Windows development shell must remain usable with problematic GPU drivers.
+// Explicit 0 opts back into hardware rendering for diagnostics.
+if (
+  process.env.BLODE_DISABLE_GPU === '1' ||
+  (!app.isPackaged && process.platform === 'win32' && process.env.BLODE_DISABLE_GPU !== '0')
+)
+  app.disableHardwareAcceleration();
+// Development launches pass a workspace log so early exits leave a readable trace.
+const devLogFile = process.env.BLODE_DEV_LOG;
+function logBoot(message: string): void {
+  if (!devLogFile) return;
+  try {
+    appendFileSync(devLogFile, `${new Date().toISOString()} ${message}\n`, 'utf8');
+  } catch {
+    /* A broken diagnostic log must never block startup. */
+  }
+}
+logBoot(`start pid=${process.pid} packaged=${app.isPackaged} electron=${process.versions.electron}`);
+// Configure and check the path in Electron itself: the parent Node process may
+// have broader filesystem access than the desktop process.
+if (!app.isPackaged && process.env.BLODE_DEV_USER_DATA) {
+  try {
+    const userData = path.resolve(process.env.BLODE_DEV_USER_DATA);
+    mkdirSync(userData, { recursive: true });
+    app.setPath('userData', userData);
+    app.setPath('sessionData', userData);
+    const probe = path.join(userData, `.write-probe-${process.pid}`);
+    writeFileSync(probe, '', { flag: 'wx' });
+    unlinkSync(probe);
+    logBoot(`userData writable ${userData}`);
+  } catch (error) {
+    logBoot(`fatal userData is not writable: ${String(error)}`);
+    console.error('Blode Studio development user data is not writable:', error);
+    app.exit(1);
+  }
+}
 // Follow the operating system theme; the renderer reads the same preference via CSS.
 nativeTheme.themeSource = 'system';
 const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#0b0e14' : '#eef1f6');
@@ -21,7 +70,29 @@ let web: WebServerHandle | null = null;
 let closing = false;
 const developmentUrl = process.env.ELECTRON_RENDERER_URL;
 const ownLock = app.requestSingleInstanceLock();
+logBoot(`singleInstanceLock=${ownLock} userData=${app.getPath('userData')}`);
 if (!ownLock) app.quit();
+// A forcibly closed terminal must not leave an invisible browser holding its profile.
+if (!app.isPackaged && ownLock && /^\d+$/.test(process.env.BLODE_DEV_PARENT_PID ?? '')) {
+  const parentPid = Number(process.env.BLODE_DEV_PARENT_PID);
+  const parentWatch = setInterval(() => {
+    try {
+      process.kill(parentPid, 0);
+    } catch {
+      logBoot('development launcher exited; closing orphaned desktop');
+      app.quit();
+    }
+  }, 1000);
+  parentWatch.unref();
+  process.once('disconnect', () => {
+    logBoot('development launcher disconnected');
+    app.quit();
+  });
+  app.once('will-quit', () => clearInterval(parentWatch));
+}
+app.on('child-process-gone', (_event, details) => {
+  logBoot(`child-process-gone ${details.type} ${details.reason} exit=${details.exitCode}`);
+});
 app.on('second-instance', () => {
   if (window?.isMinimized()) window.restore();
   window?.focus();
@@ -39,6 +110,7 @@ async function verifyBoardFolder(root: string): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  logBoot(`bootstrap appPath=${app.getAppPath()} renderer=${developmentUrl ?? 'file'}`);
   const applicationConfig = await loadAppConfig(path.join(app.getAppPath(), 'config', 'application.json'));
   // Board adapters are code, but every chip model must declare itself in this folder.
   await verifyBoardFolder(
@@ -46,7 +118,9 @@ async function bootstrap(): Promise<void> {
       ? path.join(process.resourcesPath, 'boards')
       : path.join(app.getAppPath(), 'extensions', 'boards'),
   );
+  logBoot('board folder verified');
   const dataRoot = process.env.BLODE_DATA_ROOT || app.getPath('userData');
+  logBoot(`dataRoot=${dataRoot}`);
   // No workspace is opened on startup; the welcome screen asks for a project area.
   const projectRoot = process.env.BLODE_PROJECT_ROOT || '';
   const emit = (event: LogEvent) => {
@@ -77,6 +151,12 @@ async function bootstrap(): Promise<void> {
     // A repository-local tools folder keeps local builds independent of AppData.
     toolchainRoot:
       process.env.BLODE_TOOLCHAIN_ROOT || (app.isPackaged ? undefined : path.join(app.getAppPath(), 'tools')),
+    // Vendor driver archives are read-only extras; extraction happens under userData.
+    driverRoot:
+      process.env.BLODE_DRIVER_ROOT ||
+      (app.isPackaged
+        ? path.join(process.resourcesPath, 'drivers', 'STSW-LINK')
+        : path.join(app.getAppPath(), 'tools', 'STSW-LINK')),
   });
   // The UI and all automation routes use the same service instance and locks.
   const state = core.getState.bind(core);
@@ -90,6 +170,7 @@ async function bootstrap(): Promise<void> {
     },
   });
   pipe = await startPipeServer({ api: core, dataRoot, onEvent: emit });
+  logBoot(`pipe ready ${pipe.endpoint}`);
   if (applicationConfig.web.enabled) {
     try {
       web = await startWebServer({
@@ -104,6 +185,9 @@ async function bootstrap(): Promise<void> {
       console.error('Blode web workspace unavailable', error);
     }
   }
+  logBoot('creating window');
+  let windowShown = false;
+  let rendererRecoveryUsed = false;
   window = new BrowserWindow({
     title: 'Blode Studio',
     width: 1500,
@@ -122,6 +206,54 @@ async function bootstrap(): Promise<void> {
     },
   });
   window.removeMenu();
+  let interfaceCheck: ReturnType<typeof setInterval> | undefined;
+  window.webContents.on('did-finish-load', () => {
+    clearInterval(interfaceCheck);
+    let pending = false;
+    interfaceCheck = setInterval(async () => {
+      if (pending || !window || window.isDestroyed()) return;
+      pending = true;
+      try {
+        const mounted = await window.webContents.executeJavaScript(
+          `!!document.querySelector('#root > .studio .ide-menubar') || (!!document.querySelector('#root > .studio') && document.querySelector('#root').innerText.length > 20)`,
+        );
+        if (!mounted) return;
+        clearInterval(interfaceCheck);
+        windowShown = true;
+        window.show();
+        logBoot('window ready interface=mounted');
+        if (devLogFile && process.env.BLODE_RENDER_DIAGNOSTICS === '1') {
+          const capture = await window.webContents.capturePage();
+          await fs.writeFile(path.join(path.dirname(devLogFile), 'dev-renderer.png'), capture.toPNG());
+        }
+      } catch (error) {
+        logBoot(`renderer-interface-error ${String(error)}`);
+      } finally {
+        pending = false;
+      }
+    }, 250);
+  });
+  window.once('closed', () => clearInterval(interfaceCheck));
+  window.webContents.on('console-message', (_event, ...args: unknown[]) => {
+    logBoot(
+      `renderer-console ${args.map((value) => (typeof value === 'object' ? JSON.stringify(value) : String(value))).join(' ')}`,
+    );
+  });
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    logBoot(`preload-error ${preloadPath} ${error.stack ?? error.message}`);
+  });
+  window.webContents.on('did-fail-load', (_event, code, description, url) => {
+    logBoot(`did-fail-load ${code} ${description} ${url}`);
+  });
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logBoot(`render-process-gone ${details.reason} exit=${details.exitCode}`);
+    if (closing || !windowShown || window?.isDestroyed()) return;
+    if (!rendererRecoveryUsed && details.reason !== 'clean-exit') {
+      rendererRecoveryUsed = true;
+      logBoot('recovering crashed renderer');
+      window?.webContents.reloadIgnoringCache();
+    } else app.quit();
+  });
   const disposeDebugControls = installDebugControls(window, {
     ...applicationConfig.debug,
     enabled: !app.isPackaged && applicationConfig.debug.enabled,
@@ -138,8 +270,31 @@ async function bootstrap(): Promise<void> {
 
   const noArgs = z.tuple([]);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    exportProbeLog: {
+      args: z.tuple([z.string().max(MAX_PROBE_LOG_BYTES)]),
+      run: async (content) =>
+        exportProbeLog({
+          content,
+          // Logs must remain exportable even if refreshing project state fails.
+          projectRoot: await core!
+            .getState()
+            .then((state) => state.projectRoot)
+            .catch(() => ''),
+          dataRoot,
+          choosePath: async (defaultPath) => {
+            const result = await dialog.showSaveDialog(window!, {
+              title: 'Export probe log / 导出探测日志',
+              defaultPath,
+              filters: [{ name: 'Probe log', extensions: ['log'] }],
+            });
+            return result.canceled ? undefined : result.filePath;
+          },
+        }),
+    },
     getState: { args: noArgs, run: () => core!.getState() },
     listPorts: { args: noArgs, run: () => core!.listPorts() },
+    listDebugProbes: { args: noArgs, run: () => core!.listDebugProbes() },
+    scanDevices: { args: noArgs, run: () => core!.scanDevices() },
     saveFile: {
       args: z.tuple([z.string().min(1).max(1024), z.string().max(1_048_576)]),
       run: (file, content) => core!.saveFile(file, content),
@@ -149,6 +304,10 @@ async function bootstrap(): Promise<void> {
       run: (relative) => core!.createFile(relative),
     },
     saveConfig: { args: z.tuple([z.unknown()]), run: (config) => core!.saveConfig(config) },
+    setBuildEntry: {
+      args: z.tuple([z.string().min(1).max(1024)]),
+      run: (relative) => core!.setBuildEntry(relative),
+    },
     createDirectory: {
       args: z.tuple([z.string().min(1).max(1024)]),
       run: (relative) => core!.createDirectory(relative),
@@ -180,6 +339,8 @@ async function bootstrap(): Promise<void> {
     flash: { args: noArgs, run: () => core!.flash() },
     probe: { args: z.tuple([z.string().max(128).optional()]), run: (port) => core!.probe(port) },
     installToolchain: { args: noArgs, run: () => core!.installToolchain() },
+    refreshDrivers: { args: noArgs, run: () => core!.driverStatuses(true) },
+    installDriver: { args: z.tuple([z.literal('stlink')]), run: (id) => core!.installDriver(id) },
     serialOpen: {
       args: z.tuple([z.string().max(128).optional(), z.number().int().min(1200).max(3_000_000).optional()]),
       run: (port, baud) => core!.serialOpen(port, baud),
@@ -234,7 +395,9 @@ async function bootstrap(): Promise<void> {
     if (!parsed.success) throw new Error('error.invalidArguments');
     return route.run(...(parsed.data as unknown[]));
   });
-  window.once('ready-to-show', () => window?.show());
+  window.once('ready-to-show', () => {
+    window?.show();
+  });
   if (developmentUrl) {
     const url = new URL(developmentUrl);
     if (url.origin !== 'http://127.0.0.1:5173') throw new Error('error.invalidDevServer');
@@ -247,8 +410,13 @@ if (ownLock)
     .whenReady()
     .then(bootstrap)
     .catch((error) => {
-      console.error(error);
-      dialog.showErrorBox('Blode Studio', String(error));
+      logBoot(`fatal ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+      // The launcher decides whether this attempt is recoverable and reports
+      // the complete startup log only if recovery ultimately fails.
+      if (!devLogFile) console.error(error);
+      // The development launcher reports failures and can retry a sandbox crash;
+      // a modal error box would block that recovery until somebody dismisses it.
+      if (!devLogFile) dialog.showErrorBox('Blode Studio', String(error));
       app.quit();
     });
 app.on('window-all-closed', () => app.quit());
@@ -256,5 +424,13 @@ app.on('before-quit', (event) => {
   if (closing) return;
   event.preventDefault();
   closing = true;
-  void Promise.allSettled([pipe?.close(), web?.close(), core?.shutdown()]).then(() => app.quit());
+  const deadline = setTimeout(() => {
+    logBoot('shutdown deadline reached');
+    app.exit(0);
+  }, 5000);
+  deadline.unref();
+  void Promise.allSettled([pipe?.close(), web?.close(), core?.shutdown()]).then(() => {
+    clearTimeout(deadline);
+    app.quit();
+  });
 });

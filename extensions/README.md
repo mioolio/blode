@@ -1,18 +1,31 @@
-# 扩展边界
+# 扩展与平台包
 
-每个目录只处理一类责任：`boards/<型号>/` 保存设备事实、默认分区和编译选项；`programmers/` 仅生成烧录器参数；`completions/` 保存按语言声明的补全、成员补全与悬停数据；`menus/` 保存资源管理器右键菜单的声明式条目；`registry.ts` 管理显式注册。串口占用、进程启动、文件访问、校验和下载由核心服务统一处理。适配器不得读写磁盘、联网或直接访问 Electron。
+具体设备以完整目录组织：`boards/esp32-s3/` 与 `boards/stm32/` 各自拥有 adapter、runtime、toolchain/programmer 及所需 layout、protocol、driver 文件。`boards/auto/` 只提供中性扫描配置；未识别时容量为 0、没有分区。
 
-`completions/` 下的模块只包含纯数据，不得导入 Node、Electron 或 Monaco。新增语言补全时创建 `completions/<语言>.ts` 并导出 `LanguageCompletions`，再在 `completions/index.ts` 显式注册；同一语言可注册多个补全包，渲染层的适配器会合并结果。Arduino 补全示范见 `completions/arduino.ts`。
+## 配置与运行时
 
-`menus/explorer.ts` 只描述菜单项、显示条件和命令 ID，具体命令由渲染层的处理器执行；新增条目不需要修改资源管理器组件。当前示范包含新建文件/文件夹、在资源管理器中显示、复制路径、重命名、删除和刷新。
+types.ts 的 BoardAdapter 定义设备事实、能力、默认配置与校验，不在纯配置层执行进程或操作窗口。能力字符串中 `layout` 表示平台有布局页，`partitions` 表示该页允许任意分区编辑；固定布局平台只用 `layout` 提供容量与应用区分配，不开放任意分区。有状态的检测、安装、构建与烧录实现 runtime.ts 中的 PlatformRuntime，由工厂接收 RuntimeHost。
 
-新增型号时：
+宿主 SDK 提供受控工程路径、进程、源码、串口、网络、事件和取消信号。平台可以拆分自己的工具下载、厂商命令、解析与布局，但不导入 src/core 或另一个平台目录；目录内部使用相对导入。
 
-1. 在 `boards/<型号>/` 创建 `manifest.json`、`adapter.ts` 和说明；遵循 `extensions/types.ts` 的 `BoardAdapter`。
-2. 定义独立的 `descriptionKey`，在语言 JSON 中提供翻译。型号、FQBN、分区名称是机器标识，不需要翻译。
-3. 在 `registry.ts` 显式导入并注册。清单不是自动运行的脚本入口，工作区放入第三方清单不会获得执行权限。
-4. 增加型号特有的参数/分区测试，检查真实板卡后再声明对应硬件支持。
+具体平台 manifest 当前使用 `runtimeApiVersion: 1` 并声明 runtime 文件。复制时须匹配目标宿主的 `extensions/runtime.ts` 与 shared 契约，版本字段不是自动兼容协商机制。
 
-当前内置两个适配器：`esp32-s3` 面向 ESP32-S3；`generic` 是可自动识别芯片的通用 **Espressif** 二进制烧录器。不同厂商的 MCU 应新建适配目录并实现相应协议，例如 STM32/OpenOCD；esptool 不能烧录 STM32。
+## 增加或复制平台
 
-`manifest.json` 的 `apiVersion: 1` 描述扩展契约版本。当前为随应用一起编译的可信扩展机制，未提供任意 JS 热安装功能。
+1. 创建或复制完整 boards/<platform>，至少包含 manifest、adapter、runtime 和 README，按需增加工具链、协议、布局及驱动描述。
+2. 在 registry.ts 显式注册 adapter，在 runtime-registry.ts 显式注册 runtime 工厂；具体平台 ID 对应，auto 只出现在配置 registry。
+3. 操作系统驱动事实由平台 driver.ts 导出，在 drivers/index.ts 注册；通用安装执行器留在 core。
+4. 增加配置、参数、输入边界和运行时测试，维护描述、状态及错误的中英文资源。
+5. 隔离复制目录后打包，确认不依赖 core 或其他平台，再单独记录硬件验证。
+
+S3 与 STM32 已完成单目录隔离 bundle 检查。这证明依赖边界，不保证任意板卡、固件或宿主版本可直接使用。
+
+平台随应用静态编译。将目录或清单放入用户工程不会使其执行；没有任意 JavaScript 热安装或目录热执行。可信 runtime 可以使用 Node 能力，不等于提供第三方代码沙箱。
+
+## 其他扩展
+
+- completions/ 只保存片段、符号、成员和悬停数据，不导入 Node、Electron 或 Monaco；在 completions/index.ts 注册。
+- menus/explorer.ts 声明右键菜单的标题、显示条件和命令 ID，renderer 执行实际动作。编译入口选择只写入 be.build.entry，可指文件或目录，不立即编译。
+- drivers/types.ts 与 drivers/index.ts 提供描述和注册；ST-Link 事实来自 boards/stm32/driver.ts，归档位于应用 tools/STSW-LINK/。
+
+平台细节见 [ESP32-S3](boards/esp32-s3/README.md) 与 [STM32](boards/stm32/README.md)，通用约定见 [架构说明](../docs/ARCHITECTURE.md)。

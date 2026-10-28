@@ -64,6 +64,10 @@ async function invoke(api: CoreApi, method: string, args: unknown[]): Promise<un
       return api.getState();
     case 'listPorts':
       return api.listPorts();
+    case 'listDebugProbes':
+      return api.listDebugProbes();
+    case 'scanDevices':
+      return api.scanDevices();
     case 'saveFile':
       return api.saveFile(String(args[0]), String(args[1]));
     case 'createFile':
@@ -76,6 +80,10 @@ async function invoke(api: CoreApi, method: string, args: unknown[]): Promise<un
       return api.deleteEntry(String(args[0]));
     case 'saveConfig':
       return api.saveConfig(args[0] as Awaited<ReturnType<CoreApi['getState']>>['config']);
+    case 'setBuildEntry':
+      if (args.length !== 1 || typeof args[0] !== 'string' || !args[0] || args[0].length > 1024)
+        throw new Error('rpc.invalidParams');
+      return api.setBuildEntry(args[0]);
     case 'build':
       return api.build();
     case 'flash':

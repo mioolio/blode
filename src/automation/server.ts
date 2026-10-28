@@ -46,7 +46,9 @@ async function restrictCredential(file: string): Promise<void> {
   if (!account || /[\r\n]/.test(account)) throw new Error('rpc.credentialAccount');
   await run(
     path.join(systemRoot, 'System32', 'icacls.exe'),
-    [file, '/inheritance:r', '/grant:r', `${account}:(R,W)`],
+    // Modify includes DELETE: atomic rename and shutdown cleanup need it when
+    // the parent directory does not grant DeleteChild. Read/write alone fails.
+    [file, '/inheritance:r', '/grant:r', `${account}:(M)`],
     { windowsHide: true },
   );
 }

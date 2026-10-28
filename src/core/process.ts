@@ -3,6 +3,9 @@ import { spawn } from 'node:child_process';
 export interface CommandResult {
   code: number;
   output: string;
+  /** Kept separate for machine-readable tools; stdout/stderr chunks can interleave. */
+  stdout?: string;
+  stderr?: string;
 }
 export interface RunOptions {
   cwd?: string;
@@ -28,6 +31,8 @@ export async function runCommand(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
+    let stdout = '';
+    let stderr = '';
     let pending = '';
     let settled = false;
     const stop = () => {
@@ -68,8 +73,14 @@ export async function runCommand(
       pending = lines.pop() ?? '';
       for (const line of lines) if (line.trim()) options.onLine?.(line);
     };
-    child.stdout.on('data', consume);
-    child.stderr.on('data', consume);
+    child.stdout.on('data', (data: Buffer) => {
+      stdout = (stdout + data.toString('utf8')).slice(-2_000_000);
+      consume(data);
+    });
+    child.stderr.on('data', (data: Buffer) => {
+      stderr = (stderr + data.toString('utf8')).slice(-2_000_000);
+      consume(data);
+    });
     child.once('error', (error) => {
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', abort);
@@ -84,7 +95,7 @@ export async function runCommand(
       if (pending.trim()) options.onLine?.(pending);
       if (!settled) {
         settled = true;
-        resolve({ code: code ?? -1, output });
+        resolve({ code: code ?? -1, output, stdout, stderr });
       }
     });
   });

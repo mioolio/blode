@@ -6,5 +6,5 @@
   "entry": "adapter.ts",
   "name": "自动检测",
   "descriptionKey": "boards.autoDescription",
-  "capabilities": ["probe", "serial", "partitions"]
+  "capabilities": ["probe", "serial"]
 }

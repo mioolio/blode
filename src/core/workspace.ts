@@ -221,10 +221,7 @@ export interface LoadedProject {
 }
 
 /** `be` is the source of truth; `.blode/project.json` remains for older projects. */
-export async function loadProjectDescriptor(
-  root: string,
-  fallback: ProjectConfig,
-): Promise<LoadedProject> {
+export async function loadProjectDescriptor(root: string, fallback: ProjectConfig): Promise<LoadedProject> {
   await fs.mkdir(root, { recursive: true });
   const marker = await safeWorkspacePath(root, PROJECT_MARKER);
   try {
@@ -274,6 +271,26 @@ export async function persistConfig(root: string, config: ProjectConfig): Promis
   const file = await safeWorkspacePath(root, '.blode/project.json', { internal: true });
   await fs.writeFile(temporary, JSON.stringify(config, null, 2) + '\n', 'utf8');
   await fs.rename(temporary, file);
+}
+
+/** Persist an explicit entry without replacing other declared build inputs. */
+export async function persistBuildEntry(
+  root: string,
+  config: ProjectConfig,
+  relative: string,
+): Promise<ProjectBuild> {
+  const normalized = relative.replaceAll('\\', '/');
+  const target = normalized === '.' ? await fs.realpath(root) : await safeWorkspacePath(root, normalized);
+  const stat = await fs.stat(target);
+  if (!stat.isFile() && !stat.isDirectory()) throw new Error('error.invalidPath');
+  const descriptor = await loadProjectDescriptor(root, config);
+  const build = { ...descriptor.build, entry: normalized };
+  const marker = await safeWorkspacePath(root, PROJECT_MARKER);
+  const temporary = await safeWorkspacePath(root, '.blode/build-entry.tmp', { internal: true });
+  await fs.mkdir(path.dirname(temporary), { recursive: true });
+  await fs.writeFile(temporary, JSON.stringify({ ...config, build }, null, 2) + '\n', 'utf8');
+  await fs.rename(temporary, marker);
+  return build;
 }
 
 /** Inventory covers every regular project file, including assets that the editor cannot open. */

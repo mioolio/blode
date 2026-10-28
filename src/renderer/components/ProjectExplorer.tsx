@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { ChevronDown, ChevronRight, FilePlus, FolderOpen, FolderTree, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, FilePlus, FolderOpen, FolderTree, Play, RefreshCw } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { buildFileTree, type FileTreeNode } from '../workspace/fileTree';
 import { bytes } from '../utils';
@@ -26,6 +26,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
     perform,
     refresh,
     notify,
+    setBuildEntry,
   } = studio;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [collapsedRoot, setCollapsedRoot] = useState('');
@@ -48,6 +49,17 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
   const nodes = useMemo(() => buildFileTree(state?.inventory?.entries ?? []), [state?.inventory?.entries]);
   const editableFiles = useMemo(() => new Set(state?.files.map((file) => file.path) ?? []), [state?.files]);
   const rootOpen = collapsedRoot !== rootPath;
+  const buildEntry = (state?.build?.entry ?? state?.build?.sketch ?? '')
+    .replaceAll('\\', '/')
+    .replace(/^\.\//, '')
+    .replace(/\/+$/, '');
+  const menuEntryPath = menu?.node?.path ?? '.';
+  const menuIsBuildEntry = menuEntryPath === buildEntry;
+  const entryMarker = (
+    <span className="tree-build-entry" title={t('project.buildEntry')} aria-label={t('project.buildEntry')}>
+      <Play size={11} strokeWidth={1.8} aria-hidden="true" />
+    </span>
+  );
 
   const toggle = (path: string) =>
     setCollapsed((current) => {
@@ -187,6 +199,9 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
       case 'explorer.newFolder':
         startCreate(parentPrefix(node), 'directory');
         break;
+      case 'explorer.setBuildEntry':
+        void setBuildEntry(node?.path ?? '.');
+        break;
       case 'explorer.reveal':
         void window.blode.revealEntry(path).catch((error) => notify(String(error), true));
         break;
@@ -258,11 +273,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
       </span>
       <span className="tree-disclosure" aria-hidden="true">
         {node.kind === 'directory' &&
-          (open ? (
-            <ChevronDown size={13} strokeWidth={2} />
-          ) : (
-            <ChevronRight size={13} strokeWidth={2} />
-          ))}
+          (open ? <ChevronDown size={13} strokeWidth={2} /> : <ChevronRight size={13} strokeWidth={2} />)}
       </span>
       {node.kind === 'directory' ? (
         <FolderIcon open={open} />
@@ -301,6 +312,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
       const isDirectory = node.kind === 'directory';
       const open = !collapsed.has(`${rootPath}:${node.path}`);
       const active = !isDirectory && activePath === node.path && view === 'code';
+      const isBuildEntry = node.path === buildEntry;
       return (
         <div
           key={`${node.kind}:${node.path}`}
@@ -313,9 +325,9 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
             renderRenameRow(node, depth, open)
           ) : (
             <button
-              className={`file-row explorer-row ${isDirectory ? 'is-directory' : 'is-file'} ${active ? 'active' : ''}`}
+              className={`file-row explorer-row ${isDirectory ? 'is-directory' : 'is-file'} ${active ? 'active' : ''} ${isBuildEntry ? 'is-build-entry' : ''}`}
               style={{ paddingLeft: 6 }}
-              title={node.path}
+              title={`${node.path}${isBuildEntry ? ` · ${t('project.buildEntry')}` : ''}`}
               onClick={() => {
                 if (isDirectory) {
                   setSelected({ path: node.path, kind: 'directory' });
@@ -339,6 +351,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
               </span>
               {isDirectory ? <FolderIcon open={open} /> : <FileIcon name={node.name} />}
               <span className="tree-name">{node.name}</span>
+              {isBuildEntry && entryMarker}
               {!isDirectory &&
                 (drafts[node.path] !== undefined ? (
                   <i className="dirty-dot" title={t('project.unsaved')} />
@@ -398,7 +411,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
       {state?.workspaceOpen && (
         <button
           className="project-root explorer-root"
-          title={rootPath}
+          title={`${rootPath}${buildEntry === '.' ? ` · ${t('project.buildEntry')}` : ''}`}
           onClick={() => {
             setSelected(null);
             setCollapsedRoot(rootOpen ? rootPath : '');
@@ -413,6 +426,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
           )}
           <FolderIcon open={rootOpen} size={16} />
           <strong>{rootName}</strong>
+          {buildEntry === '.' && entryMarker}
           <span className="root-tag">{t('project.localTag')}</span>
         </button>
       )}
@@ -442,6 +456,20 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
           target={menu.node ? (menu.node.kind === 'directory' ? 'folder' : 'file') : 'root'}
           onCommand={runMenuCommand}
           onClose={() => setMenu(null)}
+          checkedCommands={menuIsBuildEntry ? ['explorer.setBuildEntry'] : []}
+          disabledCommands={
+            busy
+              ? [
+                  'explorer.setBuildEntry',
+                  'explorer.newFile',
+                  'explorer.newFolder',
+                  'explorer.rename',
+                  'explorer.delete',
+                ]
+              : menuIsBuildEntry
+                ? ['explorer.setBuildEntry']
+                : []
+          }
         />
       )}
     </aside>

@@ -1,24 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, access, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { CoreApi, AppState, LogEvent } from '../src/shared/contracts';
 import { startPipeServer } from '../src/automation/server';
 import { PipeClient } from '../src/automation/client';
 import { RpcError, MAX_FRAME_BYTES, type RpcResponse } from '../src/automation/protocol';
-import { EventBuffer } from '../src/automation/routes';
+import { EventBuffer, routeSchemas } from '../src/automation/routes';
 import { createMcpServer } from '../src/automation/mcp';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
-function fakeApi(): { api: CoreApi; writes: string[]; flashes: () => number } {
+function fakeApi(): { api: CoreApi; writes: string[]; flashes: () => number; builds: () => number } {
   const writes: string[] = [];
   let flashCount = 0;
+  let buildCount = 0;
   const state: AppState = {
     projectRoot: '/project',
     workspaceOpen: true,
+    build: {},
     config: {
       version: 1,
       name: 'test',
@@ -40,17 +44,23 @@ function fakeApi(): { api: CoreApi; writes: string[]; flashes: () => number } {
     buildStale: false,
     boards: [],
     ports: [{ path: 'COM3' }],
+    debugProbes: [],
+    detection: { candidates: [], unavailablePlatforms: [] },
     lastBuild: null,
     toolchain: { arduinoCli: false, esp32Core: false, python: true, esptool: true, versions: {} },
+    drivers: [],
     pipe: { endpoint: '', tokenFile: '' },
     web: { endpoint: '', tokenFile: '', allowExternal: false },
   };
   return {
     writes,
     flashes: () => flashCount,
+    builds: () => buildCount,
     api: {
       getState: async () => state,
       listPorts: async () => state.ports,
+      listDebugProbes: async () => state.debugProbes,
+      scanDevices: async () => state.detection,
       saveFile: async (file) => {
         writes.push(file);
       },
@@ -59,16 +69,23 @@ function fakeApi(): { api: CoreApi; writes: string[]; flashes: () => number } {
       renameEntry: async () => {},
       deleteEntry: async () => {},
       saveConfig: async () => {},
-      build: async () => ({
-        success: true,
-        flashUsed: 1024,
-        flashTotal: 8 * 1024 * 1024,
-        ramUsed: 128,
-        ramTotal: 512 * 1024,
-        artifacts: ['firmware.bin'],
-        timestamp: new Date().toISOString(),
-        output: 'ok',
-      }),
+      setBuildEntry: async (entry) => {
+        state.build = { ...state.build, entry };
+        state.buildStale = true;
+      },
+      build: async () => {
+        buildCount++;
+        return {
+          success: true,
+          flashUsed: 1024,
+          flashTotal: 8 * 1024 * 1024,
+          ramUsed: 128,
+          ramTotal: 512 * 1024,
+          artifacts: ['firmware.bin'],
+          timestamp: new Date().toISOString(),
+          output: 'ok',
+        };
+      },
       flash: async () => {
         flashCount++;
       },
@@ -114,6 +131,7 @@ test('real named pipe validates auth, framing, route schemas, explicit flash con
   try {
     await t.test('actual socket round trip and fragmented UTF-8 frames', async () => {
       assert.deepEqual(await client.request('ports.list'), [{ path: 'COM3' }]);
+      assert.deepEqual(await client.request('probes.list'), []);
       const frame = request('file.write', { path: 'src/中文.ino', content: '// 中文' });
       const response = await rawRequest(server.endpoint, [frame.slice(0, 9), frame.slice(9)]);
       assert.ok('result' in response);
@@ -126,6 +144,12 @@ test('real named pipe validates auth, framing, route schemas, explicit flash con
       assert.ok('error' in response);
       assert.equal(response.error.code, -32001);
       assert.equal(fake.flashes(), 0);
+      const entry = await rawRequest(server.endpoint, [
+        request('build.entry.set', { path: '.' }, '0'.repeat(64)),
+      ]);
+      assert.ok('error' in entry);
+      assert.equal(entry.error.code, -32001);
+      assert.equal((await fake.api.getState()).build.entry, undefined);
     });
     await t.test('malformed JSON, unknown methods and invalid params are standard RPC errors', async () => {
       const malformed = await rawRequest(server.endpoint, ['{broken}\n']);
@@ -168,6 +192,20 @@ test('real named pipe validates auth, framing, route schemas, explicit flash con
       await assert.rejects(client.request('project.readFile', { path: 'C:\\Users\\token' }));
       await assert.rejects(client.request('project.readFile', { path: '.secret' }));
     });
+    await t.test('build entry is an explicit configuration change and does not start a build', async () => {
+      for (const params of [{}, { path: '' }, { path: 42 }, { path: 'src/main.c', extra: true }]) {
+        await assert.rejects(
+          client.request('build.entry.set', params),
+          (error: unknown) => error instanceof RpcError && error.code === -32602,
+        );
+      }
+      for (const entry of ['src/main.c', 'src', '.']) {
+        await client.request('build.entry.set', { path: entry });
+        assert.equal(((await client.request('state.get')) as AppState).build.entry, entry);
+      }
+      assert.equal(fake.builds(), 0);
+      assert.equal((await fake.api.getState()).buildStale, true);
+    });
     await t.test('serial and build events are readable through a bounded cursor', async () => {
       server.publish({ kind: 'serial', level: 'info', message: 'hello', time: '2026-01-01T00:00:00Z' });
       const output = (await client.request('events.poll')) as {
@@ -199,8 +237,19 @@ test('real named pipe validates auth, framing, route schemas, explicit flash con
       await mcpClient.connect(clientTransport);
       try {
         const tools = await mcpClient.listTools();
-        assert.equal(tools.tools.length, 13);
+        assert.equal(tools.tools.length, Object.keys(routeSchemas).length);
         assert.ok(tools.tools.find((tool) => tool.name === 'blode_flash_run')?.annotations?.destructiveHint);
+        const entryTool = tools.tools.find((tool) => tool.name === 'blode_build_entry_set');
+        assert.equal(entryTool?.annotations?.readOnlyHint, false);
+        assert.equal(entryTool?.annotations?.destructiveHint, true);
+        assert.equal(entryTool?.annotations?.idempotentHint, true);
+        const entry = await mcpClient.callTool({
+          name: 'blode_build_entry_set',
+          arguments: { path: 'src/main.c' },
+        });
+        assert.equal(entry.isError, undefined);
+        assert.equal((await fake.api.getState()).build.entry, 'src/main.c');
+        assert.equal(fake.builds(), 0);
         const ports = await mcpClient.callTool({ name: 'blode_ports_list', arguments: {} });
         assert.equal(ports.isError, undefined);
         assert.ok(JSON.stringify(ports.content).includes('COM3'));
@@ -230,3 +279,45 @@ test('event ring bounds retained data and reports dropped history', () => {
   assert.equal(output.events[0].event.message.length, 8192);
   assert.equal(events.poll(999).dropped, true);
 });
+
+test(
+  'Windows credentials can be renamed and removed without parent DeleteChild permission',
+  {
+    skip: process.platform !== 'win32',
+  },
+  async () => {
+    const temporary = await mkdtemp(path.join(tmpdir(), 'blode-credential-test-'));
+    const directory = path.join(temporary, 'automation');
+    await mkdir(directory);
+    const run = promisify(execFile);
+    const systemDirectory = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
+    const { stdout } = await run(path.join(systemDirectory, 'whoami.exe'), [], { windowsHide: true });
+    const account = stdout.trim();
+    const icacls = path.join(systemDirectory, 'icacls.exe');
+    let server: Awaited<ReturnType<typeof startPipeServer>> | undefined;
+    try {
+      // Reproduce folders where a file must grant DELETE itself; the directory
+      // cannot provide the alternative DeleteChild permission for rename/unlink.
+      await run(icacls, [directory, '/deny', `${account}:(DC)`], { windowsHide: true });
+      let previousToken = '';
+      for (let attempt = 0; attempt < 2; attempt++) {
+        server = await startPipeServer({ api: fakeApi().api, dataRoot: temporary });
+        const token = (await readFile(server.tokenFile, 'utf8')).trim();
+        assert.match(token, /^[a-f0-9]{64}$/);
+        assert.notEqual(token, previousToken);
+        assert.deepEqual((await readdir(directory)).sort(), ['connection.json', 'token']);
+        assert.deepEqual(await new PipeClient(server.connectionFile).request('ports.list'), [
+          { path: 'COM3' },
+        ]);
+        await server.close();
+        server = undefined;
+        assert.deepEqual(await readdir(directory), []);
+        previousToken = token;
+      }
+    } finally {
+      await server?.close();
+      await run(icacls, [directory, '/remove:d', account], { windowsHide: true });
+      await rm(temporary, { recursive: true, force: true });
+    }
+  },
+);

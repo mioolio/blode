@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { Minus, Square, X } from 'lucide-react';
+import { ChevronRight, Minus, Settings2, Square, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
+import { supportsLayout } from '../workspace/capabilities';
 
 interface MenuAction {
   label: string;
   run?: () => void;
   shortcut?: string;
   disabled?: boolean;
+  children?: MenuAction[];
   separator?: false;
 }
 interface MenuSeparator {
@@ -17,6 +19,143 @@ interface Menu {
   id: string;
   label: string;
   items: MenuItem[];
+}
+
+function MenuPopup({
+  id,
+  label,
+  items,
+  t,
+  onChoose,
+  onClose,
+  onSibling,
+}: {
+  id: string;
+  label: string;
+  items: MenuItem[];
+  t: Studio['t'];
+  onChoose(): void;
+  onClose(): void;
+  onSibling?: (direction: number) => void;
+}) {
+  const [submenu, setSubmenu] = useState<string | null>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const parents = useRef(new Map<string, HTMLButtonElement>());
+  const openSubmenu = (key: string, childId: string, focus = false) => {
+    setSubmenu(key);
+    if (focus)
+      requestAnimationFrame(() =>
+        document
+          .getElementById(childId)
+          ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+          ?.focus(),
+      );
+  };
+  const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return;
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const buttons = [
+        ...(popup.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []),
+      ].filter((button) => button.closest('[role="menu"]') === popup.current);
+      if (!buttons.length) return;
+      setSubmenu(null);
+      const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const next =
+        event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? buttons.length - 1
+            : (current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next]?.focus();
+    } else if (event.key === 'Escape' || event.key === 'ArrowLeft') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (submenu) {
+        parents.current.get(submenu)?.focus();
+        setSubmenu(null);
+      } else if (event.key === 'ArrowLeft' && onSibling) onSibling(-1);
+      else onClose();
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      event.stopPropagation();
+      onSibling?.(1);
+    }
+  };
+  return (
+    <div
+      className={`ide-menu-popup${onSibling ? '' : ' ide-submenu-popup'}`}
+      id={id}
+      role="menu"
+      aria-label={label}
+      ref={popup}
+      onKeyDown={navigate}
+    >
+      {items.map((item, index) => {
+        if (item.separator) return <div className="ide-menu-separator" role="separator" key={index} />;
+        const childId = `${id}-submenu-${index}`;
+        const expanded = submenu === item.label;
+        return (
+          <div
+            className="ide-menu-entry"
+            key={item.label}
+            onPointerEnter={() => (item.children ? openSubmenu(item.label, childId) : setSubmenu(null))}
+            onPointerLeave={() => item.children && setSubmenu(null)}
+          >
+            <button
+              className="ide-menu-item"
+              role="menuitem"
+              tabIndex={-1}
+              disabled={item.disabled || (!item.run && !item.children)}
+              aria-haspopup={item.children ? 'menu' : undefined}
+              aria-expanded={item.children ? expanded : undefined}
+              aria-controls={item.children ? childId : undefined}
+              ref={(button) => {
+                if (button) parents.current.set(item.label, button);
+                else parents.current.delete(item.label);
+              }}
+              onKeyDown={(event) => {
+                if (item.children && event.key === 'ArrowRight') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openSubmenu(item.label, childId, true);
+                }
+              }}
+              onClick={(event) => {
+                if (item.children) {
+                  openSubmenu(item.label, childId, event.detail === 0);
+                } else {
+                  onChoose();
+                  item.run?.();
+                }
+              }}
+            >
+              <span>{t(item.label)}</span>
+              {item.children ? (
+                <ChevronRight size={12} aria-hidden="true" />
+              ) : (
+                item.shortcut && <kbd>{t(item.shortcut)}</kbd>
+              )}
+            </button>
+            {item.children && expanded && (
+              <MenuPopup
+                id={childId}
+                label={t(item.label)}
+                items={item.children}
+                t={t}
+                onChoose={onChoose}
+                onClose={() => {
+                  setSubmenu(null);
+                  parents.current.get(item.label)?.focus();
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Standard desktop menus. Enabled items dispatch implemented workspace actions. */
@@ -37,7 +176,9 @@ export function StudioHeader({ studio }: { studio: Studio }) {
     isWeb,
   } = studio;
   const [opened, setOpened] = useState<string | null>(null);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const menuRoot = useRef<HTMLElement>(null);
+  const settingsRoot = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const workspaceOpen = !!state?.workspaceOpen;
   const unavailable = !!busy || !workspaceOpen;
@@ -58,8 +199,6 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         { label: 'welcome.selectMarker', run: openProjectMarker, disabled: !!busy },
         { label: 'project.openFolder', run: openProject, disabled: !!busy },
         { label: 'action.save', run: save, shortcut: 'shortcut.ctrlS', disabled: unavailable },
-        separator,
-        { label: 'menu.preferences', run: () => setView('settings'), disabled: !workspaceOpen },
         separator,
         { label: 'menu.closeWindow', run: () => window.blode?.windowAction('close') },
       ],
@@ -112,10 +251,12 @@ export function StudioHeader({ studio }: { studio: Studio }) {
       label: 'menu.view',
       items: [
         { label: 'workspace.code', run: () => setView('code') },
-        { label: 'workspace.layout', run: () => setView('layout'), disabled: !workspaceOpen },
+        {
+          label: 'workspace.layout',
+          run: () => setView('layout'),
+          disabled: !workspaceOpen || !supportsLayout(studio.board),
+        },
         { label: 'workspace.ai', run: () => setView('ai') },
-        separator,
-        { label: 'workspace.settings', run: () => setView('settings'), disabled: !workspaceOpen },
       ],
     },
     {
@@ -134,8 +275,21 @@ export function StudioHeader({ studio }: { studio: Studio }) {
       id: 'run',
       label: 'menu.run',
       items: [
-        { label: 'action.build', run: build, shortcut: 'shortcut.build', disabled: unavailable },
-        { label: 'action.flash', run: flash, disabled: unavailable },
+        {
+          label: studio.validatesFirmware ? 'action.validateFirmware' : 'action.build',
+          run: build,
+          shortcut: 'shortcut.build',
+          disabled:
+            unavailable ||
+            !studio.board?.capabilities.some(
+              (capability) => capability === 'compile' || capability === 'flash',
+            ),
+        },
+        {
+          label: 'action.flash',
+          run: flash,
+          disabled: unavailable || !studio.board?.capabilities.includes('flash'),
+        },
       ],
     },
     {
@@ -153,9 +307,13 @@ export function StudioHeader({ studio }: { studio: Studio }) {
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
       if (!menuRoot.current?.contains(event.target as Node)) setOpened(null);
+      if (!settingsRoot.current?.contains(event.target as Node)) setSettingsMenuOpen(false);
     };
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setOpened(null);
+      if (!event.defaultPrevented && (event.key === 'Escape' || event.key === 'Tab')) {
+        setOpened(null);
+        setSettingsMenuOpen(false);
+      }
     };
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape);
@@ -164,22 +322,6 @@ export function StudioHeader({ studio }: { studio: Studio }) {
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, []);
-
-  const navigateItems = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    const buttons = [
-      ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'),
-    ];
-    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    const next =
-      event.key === 'Home'
-        ? 0
-        : event.key === 'End'
-          ? buttons.length - 1
-          : (current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
-    buttons[next]?.focus();
-  };
 
   return (
     <header className="topbar">
@@ -200,16 +342,15 @@ export function StudioHeader({ studio }: { studio: Studio }) {
                 if (opened) setOpened(menu.id);
               }}
               onKeyDown={(event) => {
-                if (event.key === 'ArrowDown') {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                   event.preventDefault();
                   setOpened(menu.id);
-                  requestAnimationFrame(() =>
-                    menuRoot.current
-                      ?.querySelector<HTMLButtonElement>(
-                        `[id="${menuId}-${menu.id}"] [role="menuitem"]:not(:disabled)`,
-                      )
-                      ?.focus(),
-                  );
+                  requestAnimationFrame(() => {
+                    const buttons = document
+                      .getElementById(`${menuId}-${menu.id}`)
+                      ?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+                    if (buttons?.length) buttons[event.key === 'ArrowUp' ? buttons.length - 1 : 0].focus();
+                  });
                 }
                 if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
                   event.preventDefault();
@@ -225,38 +366,64 @@ export function StudioHeader({ studio }: { studio: Studio }) {
               {t(menu.label)}
             </button>
             {opened === menu.id && (
-              <div
-                className="ide-menu-popup"
+              <MenuPopup
+                key={menu.id}
                 id={`${menuId}-${menu.id}`}
-                role="menu"
-                aria-label={t(menu.label)}
-                onKeyDown={navigateItems}
-              >
-                {menu.items.map((item, itemIndex) =>
-                  item.separator ? (
-                    <div className="ide-menu-separator" role="separator" key={itemIndex} />
-                  ) : (
-                    <button
-                      className="ide-menu-item"
-                      role="menuitem"
-                      key={item.label}
-                      disabled={item.disabled || !item.run}
-                      onClick={() => {
-                        setOpened(null);
-                        item.run?.();
-                      }}
-                    >
-                      <span>{t(item.label)}</span>
-                      {item.shortcut && <kbd>{t(item.shortcut)}</kbd>}
-                    </button>
-                  ),
-                )}
-              </div>
+                label={t(menu.label)}
+                items={menu.items}
+                t={t}
+                onChoose={() => setOpened(null)}
+                onClose={() => {
+                  setOpened(null);
+                  menuRoot.current
+                    ?.querySelector<HTMLButtonElement>(`[aria-controls="${menuId}-${menu.id}"]`)
+                    ?.focus();
+                }}
+                onSibling={(direction) => {
+                  const next = menus[(index + direction + menus.length) % menus.length];
+                  setOpened(next.id);
+                  requestAnimationFrame(() =>
+                    document
+                      .getElementById(`${menuId}-${next.id}`)
+                      ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+                      ?.focus(),
+                  );
+                }}
+              />
             )}
           </div>
         ))}
       </nav>
       <span className="topbar-spacer" aria-hidden="true" />
+      <div className="header-settings" ref={settingsRoot}>
+        <button
+          className={`header-settings-trigger ${settingsMenuOpen ? 'open' : ''}`}
+          aria-label={t('workspace.settings')}
+          title={t('workspace.settings')}
+          aria-haspopup="menu"
+          aria-expanded={settingsMenuOpen}
+          onClick={() => setSettingsMenuOpen((current) => !current)}
+        >
+          <Settings2 size={14} strokeWidth={1.9} aria-hidden="true" />
+        </button>
+        {settingsMenuOpen && (
+          <div className="settings-popover" role="menu" aria-label={t('workspace.settings')}>
+            <span className="settings-popover-label">{t('workspace.settings')}</span>
+            {(['general', 'toolchain', 'drivers'] as const).map((section) => (
+              <button
+                key={section}
+                role="menuitem"
+                onClick={() => {
+                  setSettingsMenuOpen(false);
+                  window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section } }));
+                }}
+              >
+                {t(`settings.${section}`)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       {!isWeb && (
         <div className="window-controls">
           <button

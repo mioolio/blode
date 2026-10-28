@@ -24,6 +24,7 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
     confirmFlash,
     setConfirmFlash,
     busy,
+    state,
     config,
     board,
     perform,
@@ -34,12 +35,22 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
     downloadProbeLog,
     sendProbeFeedback,
     chooseBoardManually,
+    isStm32,
+    usesStlink,
+    validatesFirmware,
   } = studio;
   // Tool output can be long; the protocol key is the readable summary and the log keeps details.
   const probeDetail =
     probeFailure && /^(?:error|errors)\./.test(probeFailure.message)
       ? t(probeFailure.message)
       : t('error.probeFailed');
+  const build = state?.lastBuild?.success ? state.lastBuild : null;
+  const appRegion = config?.partitions.find((partition) => partition.type === 'app');
+  const firmwareUsed = build?.flashUsed ?? 0;
+  const overlappedRegions =
+    config?.partitions.filter((partition) => partition.type !== 'app' && partition.offset < firmwareUsed) ??
+    [];
+  const resourceWarning = !!appRegion && (firmwareUsed > appRegion.size || overlappedRegions.length > 0);
   return (
     <>
       {toast && (
@@ -66,7 +77,21 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
               </span>
               <h2>{t('dialog.flashTitle')}</h2>
             </div>
-            <p>{t('dialog.flashBody')}</p>
+            <p>
+              {t(
+                isStm32
+                  ? validatesFirmware
+                    ? 'dialog.stm32FlashBody'
+                    : 'dialog.stm32CompiledFlashBody'
+                  : 'dialog.flashBody',
+              )}
+            </p>
+            {resourceWarning && <p className="layout-warning">{t('dialog.resourceWarning')}</p>}
+            {overlappedRegions.length > 0 && (
+              <p className="layout-warning">
+                {t('layout.regionOverlap')} {overlappedRegions.map((partition) => partition.name).join(', ')}
+              </p>
+            )}
             <div className="flash-target">
               <span className="flash-target-item">
                 <Cpu size={13} strokeWidth={1.8} aria-hidden="true" />
@@ -74,8 +99,19 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
               </span>
               <span className="flash-target-item">
                 <Usb size={13} strokeWidth={1.8} aria-hidden="true" />
-                {config?.port}
+                {usesStlink ? `ST-Link ${config?.programmer?.serialNumber ?? ''}` : config?.port}
               </span>
+              {isStm32 && (
+                <span className="flash-target-item">
+                  {t('dialog.flashAddress')} · 0x
+                  {(
+                    0x08000000 +
+                    (config?.partitions.find((partition) => partition.type === 'app')?.offset ?? 0)
+                  )
+                    .toString(16)
+                    .padStart(8, '0')}
+                </span>
+              )}
             </div>
             <div className="modal-actions">
               <button className="secondary" onClick={() => setConfirmFlash(false)}>
@@ -83,6 +119,7 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
               </button>
               <button
                 className="primary"
+                disabled={!!busy}
                 onClick={() => {
                   setConfirmFlash(false);
                   void perform('action.flash', async () => {

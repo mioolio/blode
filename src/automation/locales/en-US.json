@@ -6,11 +6,14 @@
   "config.set": "Save the complete project configuration, including board, port, toolchain and Flash partitions. Custom toolchain paths must refer to executables trusted by the user.",
   "build.run": "Compile saved source files and return firmware artifacts, actual Flash/RAM usage and tool output.",
   "flash.run": "Flash built firmware to the selected device. This changes device storage. Set confirm=true only after the user authorizes flashing.",
-  "device.probe": "Identify the serial device's chip and Flash without writing storage. The device may reset.",
-  "toolchain.install": "Download the official toolchain and ESP32 core. Set confirm=true only after the user authorizes downloading and installing.",
+  "device.probe": "Automatically identify ESP32-S3 or STM32 when one device candidate is present. Select a target when several are connected. Save the identified platform without programming firmware.",
+  "toolchain.install": "Install the tools for the selected transport: the Espressif toolchain or ST-Link tools. Set confirm=true only after user authorization to download and install.",
   "serial.open": "Open the serial monitor with optional port and baudRate. Read output through events.poll.",
   "serial.close": "Close the serial monitor and release the port.",
   "serial.write": "Send data text to the open serial port.",
   "events.poll": "Read build, status and serial events. Pass the previous cursor as after. dropped=true indicates older events have expired.",
-  "bridge.failed": "Pipe connection failed. Ensure Blode Studio is running and check the connection file specified by BLODE_CONNECTION_FILE or --connection."
+  "bridge.failed": "Pipe connection failed. Ensure Blode Studio is running and check the connection file specified by BLODE_CONNECTION_FILE or --connection.",
+  "probes.list": "List ST-Link debug probes and available target information without programming firmware.",
+  "devices.scan": "Scan supported USB serial and ST-Link candidates. Return device candidates and platforms missing detection tools, without programming firmware.",
+  "build.entry.set": "Set a project file or folder as the build entry and save it in be, without starting a build."
 }

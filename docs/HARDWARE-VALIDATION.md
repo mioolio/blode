@@ -1,5 +1,7 @@
 # 本机硬件验证记录
 
+> 历史记录：本页保留 2026-10-28 的实机过程。文中的例程、目录、端口和脚本参数是当时状态，不能作为当前操作步骤。根例程目录已移除；当前硬件脚本必须显式指定仓库外已有工程，见 [开发说明](DEVELOPMENT.md)。
+
 日期：2026-10-28（Asia/Shanghai）。本次验证针对用户连接的开发板，结果不是模拟数据。
 
 Windows PnP 报告：`USB-SERIAL CH340 (COM3)`，VID `1A86` / PID `7523`，状态 `OK`。`Win32_SerialPort` 只列出 COM1，因此串口枚举使用 SerialPort/SetupAPI，不能只依赖该 WMI 类。
@@ -50,7 +52,7 @@ Hard resetting via RTS pin...
 2026-10-28 18:55（Asia/Shanghai），通过项目自身 `CoreService` 完成真实构建和烧录；没有生成或打包桌面安装程序。
 
 - 工具链：Arduino CLI `1.5.1`、Espressif Arduino Core `3.3.12`、esptool `5.6.0`。CLI 归档强制验证官方 SHA-256，开发板依赖由 Arduino CLI 按索引校验。
-- 示例：`examples/blink` 复制到 `.tools/hardware-workspace/Blink`；UART 心跳输出，不依赖 LED 引脚。选择 `esp32-s3`、COM3、16 MiB Flash、PSRAM 关闭。
+- 当时的历史固件来自现已移除的 `examples/blink`，当时复制到 `.tools/hardware-workspace/Blink`；UART 心跳输出，不依赖 LED 引脚。该次配置为 `esp32-s3`、COM3、16 MiB Flash、PSRAM 关闭。这些路径不再作为当前脚本输入。
 - 编译报告：Flash 使用 `273837` 字节，应用分区 `3145728` 字节，剩余 `2871891` 字节；静态 RAM 使用 `21600` 字节，可用上限 `327680` 字节，剩余 `306080` 字节。
 - 烧录速率 `460800`。bootloader：地址 `0x00000000`、`19968` 字节；分区表：地址 `0x00008000`、`3072` 字节；应用镜像：地址 `0x00010000`、`273984` 字节。三段均返回 `Hash of data verified.`，烧录退出码 `0`。
 - 监视器以 `115200` 打开 COM3，收到启动标识以及连续 5 条心跳（0–4）。日志保存于 `.tools/hardware-run.log`。

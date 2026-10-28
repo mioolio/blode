@@ -14,6 +14,13 @@ export const explorerContextMenu: ContextMenuEntry[] = [
   },
   { separator: true },
   {
+    id: 'set-build-entry',
+    labelKey: 'action.setBuildEntry',
+    command: 'explorer.setBuildEntry',
+    when: ['file', 'folder', 'root'],
+  },
+  { separator: true },
+  {
     id: 'reveal',
     labelKey: 'action.reveal',
     command: 'explorer.reveal',

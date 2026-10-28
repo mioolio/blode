@@ -3,11 +3,9 @@ export const workspaceRoutes = {
   editor: '/workspace/editor',
   layout: '/workspace/layout',
   automation: '/workspace/automation',
-  settings: '/workspace/settings',
 } as const;
 
-export type WorkspaceRoute =
-  { kind: 'editor'; file?: string } | { kind: 'layout' } | { kind: 'automation' } | { kind: 'settings' };
+export type WorkspaceRoute = { kind: 'editor'; file?: string } | { kind: 'layout' } | { kind: 'automation' };
 
 const decodeFile = (segments: string) =>
   segments

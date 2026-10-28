@@ -1,14 +1,27 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import type { AppState, BuildResult, CoreApi, LogEvent, ProjectConfig } from '../shared/contracts';
-import type { BoardAdapter } from '../../extensions/types';
+import type {
+  AppState,
+  BuildResult,
+  CoreApi,
+  DriverId,
+  DriverStatus,
+  DebugProbeInfo,
+  DetectionScan,
+  DetectionCandidate,
+  ToolchainStatus,
+  LogEvent,
+  ProjectConfig,
+} from '../shared/contracts';
+import type { CreatePlatformRuntimes, RuntimeHost } from '../../extensions/runtime';
+import { createPlatformRuntimes } from '../../extensions/runtime-registry';
 import { getBoardAdapter, listBoards } from '../../extensions/registry';
-import { buildFlashArgs, buildProbeArgs } from '../../extensions/programmers/esptool';
-import { parseConfig, type ProjectBuild } from './config';
+import { parseConfig, parseProjectDescriptor, type ProjectBuild } from './config';
 import {
   loadProjectDescriptor,
   persistConfig,
+  persistBuildEntry,
   readProjectFiles,
   safeWorkspacePath,
   writeProjectFile,
@@ -19,12 +32,12 @@ import {
   renameProjectEntry,
   deleteProjectEntry,
   ensureProjectMarker,
+  PROJECT_MARKER,
 } from './workspace';
 import { loadBuildState, saveBuildState, hashArtifacts, artifactsMatch } from './build-state';
-import { toPartitionCsv } from './partitions';
 import { runCommand } from './process';
-import { Toolchains } from './toolchain';
 import { SerialConnection } from './serial';
+import { Drivers } from './drivers';
 
 export interface CoreOptions {
   /** Empty when the application starts without a workspace. */
@@ -35,10 +48,16 @@ export interface CoreOptions {
   toolchainEnv?: NodeJS.ProcessEnv;
   /** Optional portable toolchain root; defaults to `<dataRoot>/toolchains`. */
   toolchainRoot?: string;
+  /** Optional directory with bundled Windows driver archives; defaults to `tools/STSW-LINK`. */
+  driverRoot?: string;
+  /** Injectable hardware boundary; used by integration tests without touching a device. */
+  createRuntimes?: CreatePlatformRuntimes;
 }
 export interface CoreService extends CoreApi {
   shutdown(): Promise<void>;
   setProjectRoot(root: string): Promise<void>;
+  driverStatuses(refresh?: boolean): Promise<DriverStatus[]>;
+  installDriver(id: DriverId): Promise<DriverStatus[]>;
 }
 
 /** Hardware and filesystem services have one owner, independent of any window. */
@@ -65,20 +84,18 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   const lifecycle = new AbortController();
   const emit = (message: string, level: LogEvent['level'] = 'info', kind: LogEvent['kind'] = 'log') =>
     options.onEvent({ kind, level, message, time: new Date().toISOString() });
-  const toolchains = new Toolchains(
-    options.dataRoot,
-    (line) => emit(line),
-    {
-      fetcher: options.fetcher,
-      env: options.toolchainEnv,
-      signal: lifecycle.signal,
-    },
-    options.toolchainRoot,
-  );
   const serial = new SerialConnection(
     (data) => emit(data, 'info', 'serial'),
     (error) => emit(error.message, 'error', 'serial'),
   );
+  const drivers = new Drivers({
+    archiveRoot: options.driverRoot ?? path.join(process.cwd(), 'tools', 'STSW-LINK'),
+    dataRoot: options.dataRoot,
+    log: (line, level = 'info') => emit(line, level),
+    signal: lifecycle.signal,
+  });
+  let debugProbes: DebugProbeInfo[] = [];
+  let detection: DetectionScan = { candidates: [], unavailablePlatforms: [] };
   const closeSerial = async () => {
     const wasOpen = serial.isOpen;
     await serial.close();
@@ -104,23 +121,185 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     if (!ports.some((port) => port.path === requested)) throw new Error('error.portUnavailable');
     return requested;
   };
+  const host: RuntimeHost = {
+    dataRoot: options.dataRoot,
+    toolchainRoot: options.toolchainRoot,
+    fetcher: options.fetcher,
+    env: options.toolchainEnv,
+    signal: lifecycle.signal,
+    runCommand,
+    emit,
+    projectRoot: requireWorkspace,
+    readProjectFiles: () => readProjectFiles(requireWorkspace()),
+    resolveWorkspacePath: (relative, flags) => safeWorkspacePath(requireWorkspace(), relative, flags),
+    async resetDirectory(relative) {
+      if (relative !== '.blode/build' && !relative.startsWith('.blode/staging/'))
+        throw new Error('error.invalidPath');
+      const root = requireWorkspace();
+      const target = await safeWorkspacePath(root, relative, { internal: true });
+      const resolvedRelative = path.relative(root, target).replaceAll('\\', '/');
+      if (
+        resolvedRelative !== relative ||
+        path.isAbsolute(resolvedRelative) ||
+        resolvedRelative.startsWith('..')
+      )
+        throw new Error('error.invalidPath');
+      await fs.rm(target, { recursive: true, force: true });
+      await fs.mkdir(target, { recursive: true });
+      return target;
+    },
+    listPorts: () => SerialConnection.list(),
+    requirePort,
+    closeSerial,
+  };
+  const runtimes = (options.createRuntimes ?? createPlatformRuntimes)(host);
+  const runtimeById = new Map(runtimes.map((runtime) => [runtime.id, runtime]));
+  if (runtimeById.size !== runtimes.length) throw new Error('error.invalidPlatformRegistry');
+  const runtimeFor = (id: string) => {
+    const runtime = runtimeById.get(id);
+    if (!runtime) throw new Error('errors.unknownBoard');
+    return runtime;
+  };
+  const invalidateRuntimes = () => runtimes.forEach((runtime) => runtime.invalidate());
+  const selectedTransport = () => config.programmer?.transport ?? 'auto';
+  const toolchainStatus = async (refresh = false): Promise<ToolchainStatus> => {
+    const active =
+      config.boardId !== 'auto'
+        ? runtimeFor(config.boardId)
+        : runtimes.find((runtime) => runtime.transport === selectedTransport());
+    if (active) return active.status(config, refresh);
+    const statuses = await Promise.all(runtimes.map((runtime) => runtime.status(config, refresh)));
+    const combined: ToolchainStatus = {
+      arduinoCli: false,
+      esp32Core: false,
+      python: false,
+      esptool: false,
+      versions: {},
+    };
+    for (const status of statuses) {
+      for (const key of ['arduinoCli', 'esp32Core', 'python', 'esptool', 'stlink', 'armCompiler'] as const)
+        combined[key] ||= !!status[key];
+      Object.assign(combined.versions, status.versions);
+    }
+    return combined;
+  };
+  const scan = async (): Promise<DetectionScan> => {
+    const scanned = await Promise.allSettled(runtimes.map((runtime) => runtime.discover(config)));
+    const candidates: DetectionCandidate[] = [];
+    const unavailablePlatforms: string[] = [];
+    scanned.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        for (const candidate of result.value) {
+          if (
+            candidate.platformId !== runtimes[index].id ||
+            candidate.transport !== runtimes[index].transport
+          )
+            throw new Error('error.invalidPlatformRegistry');
+          if (!candidates.some((existing) => existing.id === candidate.id)) candidates.push(candidate);
+        }
+      } else unavailablePlatforms.push(runtimes[index].id);
+    });
+    debugProbes = candidates.flatMap((candidate) => (candidate.debugProbe ? [candidate.debugProbe] : []));
+    detection = { candidates, unavailablePlatforms };
+    return structuredClone(detection);
+  };
+  const connectedUnavailable = async () => {
+    const statuses = await drivers.statuses();
+    return detection.unavailablePlatforms.filter((id) =>
+      getBoardAdapter(id).definition.requiredDrivers?.some((driver) =>
+        statuses.some((status) => status.id === driver && status.connected),
+      ),
+    );
+  };
+  const autoSelection = async (port?: string) => {
+    if (port) {
+      const runtime = runtimes.find((item) => item.transport === 'serial');
+      if (!runtime) throw new Error('error.noDetectionDevices');
+      return { runtime, selection: { port } };
+    }
+    const transport = selectedTransport();
+    const serialNumber = config.programmer?.serialNumber;
+    const explicit = transport === 'serial' ? config.port : transport === 'stlink' ? serialNumber : '';
+    if (explicit) {
+      const runtime = runtimes.find((item) => item.transport === transport);
+      if (!runtime) throw new Error('error.noDetectionDevices');
+      return { runtime, selection: transport === 'serial' ? { port: explicit } : { serialNumber: explicit } };
+    }
+    const scanned = await scan();
+    const candidates = scanned.candidates.filter(
+      (candidate) => transport === 'auto' || candidate.transport === transport,
+    );
+    if (candidates.length > 1) throw new Error('error.multipleDetectionDevices');
+    if (!candidates.length) {
+      const missing = await connectedUnavailable();
+      if (missing.length) throw new Error('error.detectionToolsMissing ' + missing.join(', '));
+      throw new Error('error.noDetectionDevices');
+    }
+    const candidate = candidates[0];
+    return {
+      runtime: runtimeFor(candidate.platformId),
+      selection: { port: candidate.port, serialNumber: candidate.serialNumber },
+    };
+  };
   const fingerprint = async (
     source = undefined as Awaited<ReturnType<typeof readProjectFiles>> | undefined,
   ) => {
     source ??= await readProjectFiles(projectRoot);
-    // Ignore port/speed only: changing a physical port must not invalidate firmware.
+    const buildConfig = (value: ProjectConfig) => ({
+      ...value,
+      port: '',
+      baudRate: 0,
+      ...(value.programmer ? { programmer: { ...value.programmer, serialNumber: '', frequencyKhz: 0 } } : {}),
+    });
+    const stable = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(stable)
+        : value && typeof value === 'object'
+          ? Object.fromEntries(
+              Object.entries(value)
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([key, item]) => [key, stable(item)]),
+            )
+          : value;
+    const inputs = source.map((file) => {
+      if (file.path !== PROJECT_MARKER) return file;
+      try {
+        const descriptor = parseProjectDescriptor(JSON.parse(file.content));
+        return {
+          ...file,
+          content: JSON.stringify(
+            stable({ config: buildConfig(descriptor.config), build: descriptor.build }),
+          ),
+        };
+      } catch {
+        // Invalid descriptors still change the fingerprint; never ignore their contents.
+        return file;
+      }
+    });
+    // The be descriptor repeats the configuration. Normalize its runtime options
+    // too, while retaining all build inputs and the expected target chip identity.
     return createHash('sha256')
-      .update(JSON.stringify({ ...config, port: '', baudRate: 0 }))
-      .update(JSON.stringify(source))
+      .update(JSON.stringify(stable(buildConfig(config))))
+      .update(JSON.stringify(inputs))
       .digest('hex');
   };
   const currentFingerprint = async (source?: Awaited<ReturnType<typeof readProjectFiles>>) => {
     let value = await fingerprint(source);
-    if (config.boardId === 'generic')
+    const runtime = runtimeById.get(config.boardId);
+    const extra = runtime?.buildInputs ? await runtime.buildInputs(config, projectBuild) : [];
+    for (const input of [...new Set([...(runtime?.sourceInputs ?? []), ...extra])].sort()) {
+      const bytes = await fs
+        .readFile(await safeWorkspacePath(projectRoot, input))
+        .catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+          return null;
+        });
       value = createHash('sha256')
         .update(value)
-        .update(await fs.readFile(await safeWorkspacePath(projectRoot, 'firmware.bin')))
+        .update(bytes ? 'present' : 'missing')
+        .update(bytes ?? input)
         .digest('hex');
+    }
     return value;
   };
   const persistSuccessfulBuild = async () => {
@@ -158,58 +337,27 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     );
     await restoreSuccessfulBuild();
   }
-  const probeDevice = async (port: string): Promise<string> => {
-    await closeSerial();
-    const python = await toolchains.pythonPath(config);
-    const result = await runCommand(python, buildProbeArgs(port), {
-      timeout: 45_000,
-      onLine: (line) => emit(line),
-      signal: lifecycle.signal,
-    });
-    if (result.code !== 0) throw new Error(result.output || 'error.probeFailed');
-    return result.output;
-  };
-  /** The longest chip pattern wins; an unrecognized chip is never guessed into a board. */
-  const detectAdapter = (output: string): BoardAdapter | null => {
-    const text = output.toLowerCase();
-    let best: { adapter: BoardAdapter; length: number } | null = null;
-    for (const definition of listBoards()) {
-      for (const pattern of definition.probePatterns ?? []) {
-        if (!pattern || !text.includes(pattern.toLowerCase())) continue;
-        if (pattern.length > (best?.length ?? 0))
-          best = { adapter: getBoardAdapter(definition.id), length: pattern.length };
-      }
-    }
-    return best?.adapter ?? null;
-  };
-  const detectedFlashSize = (output: string): number | null => {
-    const match = output.match(/(?:Detected flash size|Flash size)\s*:\s*([\d.]+)\s*MB/i);
-    const size = match ? Number(match[1]) * 1024 * 1024 : NaN;
-    return Number.isFinite(size) && size >= 1_048_576 ? Math.round(size) : null;
-  };
-  const assertProbeCompatible = (output: string) => {
-    const patterns = getBoardAdapter(config.boardId).definition.probePatterns ?? [];
-    if (patterns.length && !patterns.some((pattern) => output.toLowerCase().includes(pattern.toLowerCase())))
-      throw new Error('error.chipMismatch');
-    const flashMatch = output.match(/(?:Detected flash size|Flash size)\s*:\s*(\d+)\s*MB/i);
-    if (flashMatch && config.flashSize > Number(flashMatch[1]) * 1_048_576)
-      throw new Error('error.deviceFlashTooSmall');
-  };
-  const buildPath = async () => safeWorkspacePath(projectRoot, '.blode/build', { internal: true });
-
   const api: CoreService = {
     async getState(): Promise<AppState> {
-      const [ports, toolchain] = await Promise.all([SerialConnection.list(), toolchains.status(config)]);
+      const [ports, toolchain, driverStatuses] = await Promise.all([
+        SerialConnection.list(),
+        toolchainStatus(),
+        drivers.statuses(),
+      ]);
       if (!projectRoot)
         return {
           projectRoot: '',
           workspaceOpen: false,
           config: structuredClone(config),
+          build: structuredClone(projectBuild),
           files: [],
           inventory: { entries: [], totalBytes: 0, fileCount: 0, directoryCount: 0, truncated: false },
           boards: listBoards(),
           ports,
+          debugProbes: structuredClone(debugProbes),
+          detection: structuredClone(detection),
           toolchain,
+          drivers: driverStatuses,
           lastBuild: null,
           buildStale: false,
           pipe: { endpoint: '', tokenFile: '' },
@@ -224,11 +372,15 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         projectRoot,
         workspaceOpen: true,
         config: structuredClone(config),
+        build: structuredClone(projectBuild),
         files,
         inventory,
         boards: listBoards(),
         ports,
+        debugProbes: structuredClone(debugProbes),
+        detection: structuredClone(detection),
         toolchain,
+        drivers: driverStatuses,
         lastBuild: lastBuild ? structuredClone(lastBuild) : null,
         buildStale,
         pipe: { endpoint: '', tokenFile: '' },
@@ -238,9 +390,40 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     async listPorts() {
       return SerialConnection.list();
     },
+    async listDebugProbes() {
+      return withLock(async () => {
+        const connections = (
+          await Promise.all(
+            runtimes
+              .filter((runtime) => runtime.transport === 'stlink')
+              .map((runtime) => runtime.discover(config)),
+          )
+        ).flat();
+        debugProbes = connections.flatMap((connection) =>
+          connection.debugProbe ? [connection.debugProbe] : [],
+        );
+        return structuredClone(debugProbes);
+      });
+    },
+    async scanDevices() {
+      return withLock(scan);
+    },
     async saveFile(relative, content) {
       return withLock(async () => {
+        let descriptor: ReturnType<typeof parseProjectDescriptor> | undefined;
+        if (relative.toLowerCase() === PROJECT_MARKER) {
+          try {
+            descriptor = parseProjectDescriptor(JSON.parse(content));
+          } catch {
+            throw new Error('error.invalidProjectDescriptor');
+          }
+        }
         await writeProjectFile(requireWorkspace(), relative, content);
+        if (descriptor) {
+          config = descriptor.config;
+          projectBuild = descriptor.build;
+          invalidateRuntimes();
+        }
         emit('status.fileSaved', 'success');
       });
     },
@@ -274,8 +457,15 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         getBoardAdapter(parsed.boardId).validateConfig(parsed);
         await persistConfig(requireWorkspace(), parsed);
         config = parsed;
-        toolchains.invalidate();
+        projectBuild = (await loadProjectDescriptor(requireWorkspace(), config)).build;
+        invalidateRuntimes();
         emit('status.configSaved', 'success');
+      });
+    },
+    async setBuildEntry(relative) {
+      return withLock(async () => {
+        projectBuild = await persistBuildEntry(requireWorkspace(), config, relative);
+        emit('status.buildEntrySet', 'success', 'status');
       });
     },
     async build() {
@@ -284,204 +474,85 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         if (config.boardId === 'auto') throw new Error('error.detectBoardFirst');
         const adapter = getBoardAdapter(config.boardId);
         adapter.validateConfig(config);
+        const before = await currentFingerprint();
         emit('status.buildStarted', 'info', 'status');
-        if (config.boardId === 'generic') {
-          // A generic adapter writes an already-built merged image; it does not invent a compiler.
-          const binary = await safeWorkspacePath(projectRoot, 'firmware.bin');
-          const stat = await fs.stat(binary).catch(() => {
-            throw new Error('error.noFirmware');
-          });
-          const app = config.partitions.find((p) => p.type === 'app')!;
-          if (stat.size <= 0 || stat.size > app.size) throw new Error('error.firmwareTooLarge');
-          builtFingerprint = await currentFingerprint();
-          artifactHashes = await hashArtifacts(projectRoot, ['firmware.bin']);
-          lastBuild = {
-            success: true,
-            flashUsed: stat.size,
-            ramUsed: 0,
-            flashTotal: app.size,
-            ramTotal: adapter.definition.ramSize,
-            artifacts: ['firmware.bin'],
-            timestamp: new Date().toISOString(),
-            output: 'status.firmwareValidated',
-          };
-          await persistSuccessfulBuild();
-          emit('status.firmwareValidated', 'success');
-          return structuredClone(lastBuild);
-        }
-        const status = await toolchains.status(config, true);
-        if (!status.arduinoCli || !status.esp32Core) throw new Error('error.toolchainMissing');
-        const allFiles = await readProjectFiles(projectRoot);
-        let files = allFiles;
-        if (projectBuild.files?.length) {
-          const byPath = new Map(allFiles.map((file) => [file.path, file]));
-          files = projectBuild.files.map((declared) => {
-            const file = byPath.get(declared.replaceAll('\\', '/'));
-            if (!file) throw new Error('error.projectFileMissing');
-            return file;
-          });
-        }
-        const declaredSketch = projectBuild.sketch?.replaceAll('\\', '/');
-        let main = declaredSketch ? files.find((file) => file.path === declaredSketch) : undefined;
-        if (declaredSketch && !main) throw new Error('error.projectFileMissing');
-        main ??=
-          files.find((file) => file.path.endsWith('.ino') && !file.path.includes('/')) ??
-          files.find((file) => file.path.endsWith('.ino'));
-        if (!main) throw new Error('error.noSketch');
-        const sketchName = path.basename(projectRoot).replace(/[^a-zA-Z0-9_]/g, '_') || 'sketch';
-        const stage = await safeWorkspacePath(projectRoot, `.blode/staging/${sketchName}`, {
-          internal: true,
-        });
-        // Internal directories are checked before deletion; never delete a computed external target.
-        const relativeStage = path.relative(projectRoot, stage);
-        if (!relativeStage.startsWith(`.blode${path.sep}staging${path.sep}`))
-          throw new Error('error.invalidPath');
-        await fs.rm(stage, { recursive: true, force: true });
-        await fs.mkdir(stage, { recursive: true });
-        for (const file of files) {
-          const destination = path.join(stage, file === main ? `${sketchName}.ino` : file.path);
-          await fs.mkdir(path.dirname(destination), { recursive: true });
-          await fs.writeFile(destination, file.content, 'utf8');
-        }
-        await fs.writeFile(path.join(stage, 'partitions.csv'), toPartitionCsv(config.partitions));
-        const outputDirectory = await buildPath();
-        const relativeBuild = path.relative(projectRoot, outputDirectory);
-        if (relativeBuild !== `.blode${path.sep}build`) throw new Error('error.invalidPath');
-        await fs.rm(outputDirectory, { recursive: true, force: true });
-        await fs.mkdir(outputDirectory, { recursive: true });
-        const before = await fingerprint();
-        const result = await toolchains.runCli(
-          config,
-          [
-            'compile',
-            '--fqbn',
-            adapter.getFqbn(config),
-            '--build-path',
-            outputDirectory,
-            '--warnings',
-            'all',
-            '--build-property',
-            `upload.maximum_size=${config.partitions.find((p) => p.type === 'app')!.size}`,
-            stage,
-          ],
-          900_000,
-        );
-        // Arduino's merged image assumes fixed addresses; advertise only authoritative segments.
-        const expectedBinaries = [
-          `${sketchName}.ino.bin`,
-          `${sketchName}.ino.bootloader.bin`,
-          `${sketchName}.ino.partitions.bin`,
-        ];
-        const binaries = (await fs.readdir(outputDirectory)).filter((file) =>
-          expectedBinaries.includes(file),
-        );
-        const sketchBinary = binaries.find((file) => file === `${sketchName}.ino.bin`);
-        const binarySize = sketchBinary ? (await fs.stat(path.join(outputDirectory, sketchBinary))).size : 0;
-        const buildResult = parseBuildOutput(result.output, {
-          success: result.code === 0 && expectedBinaries.every((file) => binaries.includes(file)),
-          flashTotal: config.partitions.find((p) => p.type === 'app')!.size,
-          ramTotal: adapter.definition.ramSize,
-          binarySize,
-          artifacts: binaries.map((file) => `.blode/build/${file}`),
-        });
-        if (buildResult.success && before === (await fingerprint())) {
-          lastBuild = buildResult;
+        const result = await runtimeFor(config.boardId).build(config, projectBuild);
+        if (result.success && before === (await currentFingerprint())) {
+          lastBuild = result;
           builtFingerprint = before;
-          artifactHashes = await hashArtifacts(projectRoot, lastBuild.artifacts);
+          artifactHashes = await hashArtifacts(projectRoot, result.artifacts);
           await persistSuccessfulBuild();
-        } else if (buildResult.success) {
-          buildResult.success = false;
+        } else if (result.success) {
+          result.success = false;
           emit('error.sourceChanged', 'error');
         }
         emit(
-          buildResult.success ? 'status.buildSucceeded' : 'status.buildFailed',
-          buildResult.success ? 'success' : 'error',
+          result.success ? 'status.buildSucceeded' : 'status.buildFailed',
+          result.success ? 'success' : 'error',
           'status',
         );
-        return structuredClone(buildResult);
+        return structuredClone(result);
       });
     },
     async flash() {
       return withLock(async () => {
         requireWorkspace();
         if (config.boardId === 'auto') throw new Error('error.detectBoardFirst');
+        getBoardAdapter(config.boardId).validateConfig(config);
         if (!lastBuild?.success || !builtFingerprint || builtFingerprint !== (await currentFingerprint()))
           throw new Error('error.buildRequired');
         if (!(await artifactsMatch(projectRoot, artifactHashes))) throw new Error('error.artifactChanged');
-        const port = await requirePort();
-        const probe = await probeDevice(port);
-        assertProbeCompatible(probe);
         emit('status.flashStarted', 'info', 'status');
-        if (config.boardId === 'generic') {
-          const binary = await safeWorkspacePath(projectRoot, 'firmware.bin');
-          const app = config.partitions.find((p) => p.type === 'app')!;
-          const result = await runCommand(
-            await toolchains.pythonPath(config),
-            buildFlashArgs(
-              port,
-              config.baudRate,
-              [{ path: binary, offset: app.offset, size: (await fs.stat(binary)).size }],
-              'auto',
-              config.flashSize,
-            ),
-            { timeout: 180_000, onLine: (line) => emit(line), signal: lifecycle.signal },
-          );
-          if (result.code !== 0) throw new Error(result.output || 'error.flashFailed');
-        } else {
-          const bootloaderFile = lastBuild.artifacts.find((file) => file.endsWith('.bootloader.bin'));
-          const partitionFile = lastBuild.artifacts.find((file) => file.endsWith('.partitions.bin'));
-          const applicationFile = lastBuild.artifacts.find((file) => file.endsWith('.ino.bin'));
-          if (!bootloaderFile || !partitionFile || !applicationFile) throw new Error('error.noFirmware');
-          // Arduino's default upload recipe fixes the app at 0x10000. Explicit segments
-          // make the visual map authoritative and avoid writing OTA metadata over NVS.
-          const segments = await Promise.all(
-            [
-              { file: bootloaderFile, offset: 0 },
-              { file: partitionFile, offset: 0x8000 },
-              { file: applicationFile, offset: config.partitions.find((p) => p.type === 'app')!.offset },
-            ].map(async (segment) => {
-              const fullPath = await safeWorkspacePath(projectRoot, segment.file, { internal: true });
-              return { path: fullPath, offset: segment.offset, size: (await fs.stat(fullPath)).size };
-            }),
-          );
-          const result = await runCommand(
-            await toolchains.pythonPath(config),
-            buildFlashArgs(port, config.baudRate, segments, 'esp32s3', config.flashSize),
-            { timeout: 180_000, onLine: (line) => emit(line), signal: lifecycle.signal },
-          );
-          if (result.code !== 0) throw new Error(result.output || 'error.flashFailed');
-        }
+        await runtimeFor(config.boardId).flash(config, lastBuild);
         emit('status.flashSucceeded', 'success', 'status');
       });
     },
     async probe(port) {
       return withLock(async () => {
-        const output = await probeDevice(await requirePort(port));
-        // A manually selected board keeps its adapter; automatic mode promotes the chip.
-        if (config.boardId !== 'auto') return output;
-        const adapter = detectAdapter(output);
-        if (!adapter) throw new Error('error.boardNotDetected');
-        const flash = detectedFlashSize(output);
-        const base =
-          flash && adapter.createConfigForFlash
-            ? adapter.createConfigForFlash(flash)
-            : adapter.createConfig();
-        const next: ProjectConfig = {
-          ...base,
-          name: config.name,
-          port: config.port,
-          baudRate: adapter.definition.recommendedBaudRate ?? base.baudRate,
-          boardId: adapter.definition.id,
-        };
-        adapter.validateConfig(next);
+        const active =
+          config.boardId === 'auto'
+            ? await autoSelection(port)
+            : {
+                runtime: runtimeFor(config.boardId),
+                selection: { port, serialNumber: config.programmer?.serialNumber },
+              };
+        const result = await active.runtime.probe(config, active.selection);
+        if (result.config.boardId !== active.runtime.id) throw new Error('error.invalidPlatformRegistry');
+        const next = parseConfig(result.config);
         if (projectRoot) await persistConfig(projectRoot, next);
         config = next;
-        toolchains.invalidate();
-        return output;
+        if (result.debugProbes) debugProbes = structuredClone(result.debugProbes);
+        invalidateRuntimes();
+        return result.output;
       });
     },
     async installToolchain() {
-      return withLock(async () => toolchains.install(config));
+      return withLock(async () => {
+        let runtime =
+          config.boardId !== 'auto'
+            ? runtimeFor(config.boardId)
+            : runtimes.find((item) => item.transport === selectedTransport());
+        if (!runtime) {
+          const scanned = await scan();
+          if (scanned.candidates.length === 1) runtime = runtimeFor(scanned.candidates[0].platformId);
+          else if (scanned.candidates.length > 1) throw new Error('error.multipleDetectionDevices');
+          else {
+            const missing = await connectedUnavailable();
+            if (missing.length === 1) runtime = runtimeFor(missing[0]);
+          }
+        }
+        if (!runtime) throw new Error('error.selectPlatformForTools');
+        await runtime.install(config);
+        invalidateRuntimes();
+        await scan();
+        return toolchainStatus(true);
+      });
+    },
+    async driverStatuses(refresh = false) {
+      return drivers.statuses(refresh);
+    },
+    async installDriver(id) {
+      return withLock(async () => drivers.install(id));
     },
     async serialOpen(port, baudRate = 115200) {
       return withLock(async () => {
@@ -502,10 +573,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         const resolved = await fs.realpath(root);
         // Reading/creating `be` is the explicit project-area association step.
         await ensureProjectMarker(resolved);
-        const loaded = await loadProjectDescriptor(
-          resolved,
-          getBoardAdapter('auto').createConfig(),
-        );
+        const loaded = await loadProjectDescriptor(resolved, getBoardAdapter('auto').createConfig());
         const nextConfig = loaded.config;
         getBoardAdapter(nextConfig.boardId).validateConfig(nextConfig);
         await closeSerial();
@@ -516,7 +584,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         lastBuild = null;
         builtFingerprint = '';
         artifactHashes = {};
-        toolchains.invalidate();
+        invalidateRuntimes();
         await restoreSuccessfulBuild();
         stopWatching = watchWorkspace(
           projectRoot,
@@ -533,30 +601,4 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     },
   };
   return api;
-}
-
-export function parseBuildOutput(
-  output: string,
-  defaults: {
-    success: boolean;
-    flashTotal: number;
-    ramTotal: number;
-    binarySize: number;
-    artifacts: string[];
-  },
-): BuildResult {
-  const flash = output.match(/Sketch uses\s+([\d,]+)\s+bytes/i);
-  const ram = output.match(/Global variables use\s+([\d,]+)\s+bytes/i);
-  const ramMaximum = output.match(/Global variables use[^\r\n]*Maximum is\s+([\d,]+)\s+bytes/i);
-  const number = (value: string | undefined) => Number(value?.replaceAll(',', '') ?? 0);
-  return {
-    success: defaults.success,
-    flashUsed: flash ? number(flash[1]) : defaults.binarySize,
-    ramUsed: number(ram?.[1]),
-    flashTotal: defaults.flashTotal,
-    ramTotal: ramMaximum ? number(ramMaximum[1]) : defaults.ramTotal,
-    artifacts: defaults.artifacts,
-    timestamp: new Date().toISOString(),
-    output,
-  };
 }

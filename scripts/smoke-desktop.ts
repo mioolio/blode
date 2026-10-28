@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { PipeClient, defaultConnectionFile } from '../src/automation/client';
 import { RpcError } from '../src/automation/protocol';
+import { routeSchemas } from '../src/automation/routes';
 import type { AppState, PortInfo, ProjectFile } from '../src/shared/contracts';
 
 interface Check {
@@ -57,12 +58,6 @@ export async function smokeDesktop(connectionFile = defaultConnectionFile()): Pr
   passed('core path traversal error mapped through JSON-RPC');
 
   const realRoot = await fs.realpath(state.projectRoot);
-  const hardwareExample = path.join(repository, 'examples', 'blink');
-  assert.notEqual(
-    realRoot.toLowerCase(),
-    hardwareExample.toLowerCase(),
-    'Use a separate UI project while the hardware example is building',
-  );
   const filename = `blode_protocol_smoke_${randomUUID().replaceAll('-', '')}.h`;
   const fullPath = path.resolve(realRoot, filename);
   assert.equal(path.dirname(fullPath), realRoot);
@@ -109,7 +104,12 @@ export async function smokeDesktop(connectionFile = defaultConnectionFile()): Pr
   try {
     await mcp.connect(transport);
     const tools = await mcp.listTools();
-    assert.equal(tools.tools.length, 13);
+    assert.deepEqual(
+      tools.tools.map((tool) => tool.name).sort(),
+      Object.keys(routeSchemas)
+        .map((method) => `blode_${method.replaceAll('.', '_')}`)
+        .sort(),
+    );
     assert.ok(tools.tools.some((tool) => tool.name === 'blode_state_get'));
     assert.ok(tools.tools.find((tool) => tool.name === 'blode_flash_run')?.annotations?.destructiveHint);
     passed('built MCP stdio bridge launched as a real Node child; initialization and tools/list');

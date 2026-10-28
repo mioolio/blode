@@ -1,16 +1,21 @@
-# ESP32-S3 适配
+# ESP32-S3 平台包
 
-此目录只负责 ESP32-S3 设备参数与编译配置。烧录与串口生命周期由核心服务负责。
+此目录拥有 S3 的配置、工具链、运行时、烧录和布局实现。它通过 ../../runtime.ts 的 RuntimeHost 使用通用宿主服务，不导入 src/core 或 STM32 平台实现。
 
-- Arduino FQBN：`esp32:esp32:esp32s3`；使用 Espressif 官方稳定索引。
-- 支持配置 4 / 8 / 16 / 32 MiB Flash；默认配置为 8 MiB，不能据此推断实际硬件容量。
-- `getFqbn()` 将 FlashSize 与界面配置保持一致，保留用户明确填写的 PSRAM、USB 等编译选项。上传波特率由实际烧录器设置，不写入 FQBN，避免不同核心版本的 UploadSpeed 菜单差异导致编译失败。
-- PSRAM 默认为 `disabled`，因为不同模块的封装/总线不一致。确定硬件型号后可在 FQBN 添加 `:PSRAM=opi` 或对应选项。
-- 静态 RAM 预算按 Arduino 默认 `upload.maximum_data_size=327680` 字节展示，它不是芯片总 SRAM，也不包含外部 PSRAM。
-- 默认单 factory 应用布局：bootloader `0x0`、partition table `0x8000`、NVS `0x9000`、PHY `0xf000`、应用 `0x10000`（3 MiB）、core dump `0x310000`（64 KiB）、SPIFFS `0x320000` 至 Flash 末端；不默认启用 OTA。core dump 预留区供官方核心保存崩溃信息，避免新核心启动时报告缺少该分区。旧配置仍然有效，不自动重排已保存的用户分区。
-- ESP32-S3 的 bootloader 与 partition table 保留区位置/大小固定；适配器会拒绝移动、删除或新增 system 区。当前版本仅接受一个 factory 应用分区；多应用/OTA 需要扩展契约加入明确 subtype 与启动选择后再实现。
-- 托管模式的 Python 路径默认为空，由核心选择项目/应用专用虚拟环境；自定义模式可显式指定 Python 可执行文件。
+| 文件                      | 责任                                                  |
+| ------------------------- | ----------------------------------------------------- |
+| adapter.ts、manifest.json | 设备事实、默认配置、能力及校验                        |
+| runtime.ts                | 扫描、识别、安装、构建和烧录生命周期                  |
+| toolchain.ts              | Arduino CLI、Arduino-ESP32、Python/esptool 检测与安装 |
+| programmer.ts             | S3 esptool 参数，不声明其他 ESP 型号支持              |
+| layout.ts、partitions.ts  | S3 几何约束、默认分区与 CSV                           |
 
-`createDefaultPartitions(flashSize)` 返回新数组。切换容量时必须重新生成布局或显式调整现有分区，否则核心校验会拒绝越界布局。
+Arduino FQBN 为 esp32:esp32:esp32s3，Flash 配置支持 4/8/16/32 MiB。默认容量不代表硬件实测，识别结果必须匹配本平台。PSRAM 默认关闭，用户根据模块总线显式配置；运行时上传速率不塞入编译菜单。
 
-官方参考：[Arduino-ESP32 安装与稳定索引](https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html)、[ESP32-S3 分区表](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/partition-tables.html)、[板卡选项定义](https://github.com/espressif/arduino-esp32/blob/master/boards.txt)。本机检测结果见 [硬件验证记录](../../../docs/HARDWARE-VALIDATION.md)。
+布局固定 bootloader 0x0、分区表 0x8000；默认单 factory 应用位于 0x10000，另有 NVS、PHY、core dump 和文件系统区。默认布局调整不自动重排已保存用户分区。系统保留区不能移动/删除，当前不开放多应用 OTA。
+
+构建使用完整 Arduino sketch 和 src/ 下模块，平台生成 staging 及 partitions.csv，真实工具输出决定容量。设置 be.build.entry 只是选定文件/目录，不立即编译，也不把任意 C 文件自动转换为 Arduino 程序。显式 build.sketch/build.files 继续由 runtime 解释。
+
+默认开发工具在应用 tools/，用户工程与构建缓存在仓库外；Python 优先用专用环境。串口与取消、通用锁由 host 提供，芯片输出判断、FQBN、工具下载与烧录地址归本目录。
+
+manifest 声明 runtimeApiVersion:1。复制整个目录后须匹配宿主 SDK，在 extensions/registry.ts 和 extensions/runtime-registry.ts 同时注册，并提供语言资源。目录已通过隔离复制 bundle 检查，不代表所有板卡接线与模组均经过硬件验证。历史实机数据见 [硬件记录](../../../docs/HARDWARE-VALIDATION.md)。

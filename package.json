@@ -7,10 +7,13 @@
   "type": "module",
   "main": "dist/main.cjs",
   "scripts": {
+    "postinstall": "node scripts/windows-runtime.mjs",
     "dev": "node scripts/dev.mjs",
+    "repair:permissions": "node scripts/windows-runtime.mjs",
     "build": "npm run typecheck && node scripts/build.mjs && vite build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "prestart": "node scripts/windows-runtime.mjs",
     "start": "electron .",
     "package": "npm run build && electron-builder --win portable",
     "mcp": "tsx scripts/mcp-bridge.ts",
@@ -52,22 +55,19 @@
     ],
     "extraResources": [
       {
-        "from": "examples",
-        "to": "examples",
-        "filter": [
-          "**/*",
-          "!**/.blode/build/**",
-          "!**/.blode/staging/**"
-        ]
-      },
-      {
         "from": "docs",
         "to": "docs"
       },
       {
         "from": "extensions/boards",
         "to": "boards",
-        "filter": ["*/manifest.json"]
+        "filter": [
+          "*/manifest.json"
+        ]
+      },
+      {
+        "from": "tools/STSW-LINK",
+        "to": "drivers/STSW-LINK"
       }
     ],
     "asarUnpack": [

@@ -5,8 +5,21 @@ import { RpcError } from './protocol';
 import zh from './locales/zh-CN.json';
 import en from './locales/en-US.json';
 
-const readOnly = new Set<RouteName>(['state.get', 'ports.list', 'project.readFile', 'events.poll']);
-const destructive = new Set<RouteName>(['flash.run', 'file.write', 'config.set', 'serial.write']);
+const readOnly = new Set<RouteName>([
+  'state.get',
+  'ports.list',
+  'probes.list',
+  'devices.scan',
+  'project.readFile',
+  'events.poll',
+]);
+const destructive = new Set<RouteName>([
+  'flash.run',
+  'file.write',
+  'config.set',
+  'build.entry.set',
+  'serial.write',
+]);
 
 /** MCP is only a transport adapter: it calls the same validated pipe routes as any AI. */
 export function createMcpServer(client = new PipeClient(), language = process.env.BLODE_LANG): McpServer {
@@ -21,7 +34,7 @@ export function createMcpServer(client = new PipeClient(), language = process.en
         annotations: {
           readOnlyHint: readOnly.has(method),
           destructiveHint: destructive.has(method),
-          idempotentHint: readOnly.has(method) || method === 'serial.close',
+          idempotentHint: readOnly.has(method) || method === 'serial.close' || method === 'build.entry.set',
           openWorldHint: method === 'toolchain.install',
         },
       },

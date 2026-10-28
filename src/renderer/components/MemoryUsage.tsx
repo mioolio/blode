@@ -3,6 +3,7 @@ import type { AppState, ProjectConfig } from '../../shared/contracts';
 import { useI18n } from '../i18n';
 import { bytes, percentage } from '../utils';
 import { projectFootprint } from '../workspace/resources';
+import { validatesExistingFirmware } from '../workspace/buildMode';
 
 /** Pre-build disk/layout facts are separate from linked firmware measurements. */
 export function MemoryUsage({
@@ -20,6 +21,14 @@ export function MemoryUsage({
   const footprint = projectFootprint(state?.inventory, state?.files ?? [], drafts);
   const build = state?.lastBuild?.success ? state.lastBuild : null;
   const board = state?.boards.find((item) => item.id === config?.boardId);
+  const validatesFirmware = validatesExistingFirmware(board, state?.build);
+  const isStm32 = config?.boardId === 'stm32';
+  const needsDetection = config?.boardId === 'auto';
+  const detectedRam = isStm32
+    ? state?.debugProbes?.find(
+        (probe) => probe.serialNumber.toLowerCase() === config.programmer?.serialNumber.toLowerCase(),
+      )?.ramSize
+    : undefined;
   const appCapacity =
     config?.partitions
       .filter((partition) => partition.type === 'app')
@@ -64,59 +73,69 @@ export function MemoryUsage({
           {t(footprint.truncated ? 'resource.truncated' : 'resource.sourceNotice')}
         </p>
       </section>
-      <section className="inspector-section memory-section">
-        <div className="section-heading">
-          <span className="heading-label">
-            <Gauge size={12} strokeWidth={1.9} aria-hidden="true" />
-            {t('memory.title')}
-          </span>
-          <span className="measurement-state">
-            {t(
-              build
-                ? stale || state?.buildStale
-                  ? 'memory.previous'
-                  : 'memory.compiled'
-                : 'memory.uncompiled',
-            )}
-          </span>
-        </div>
-        <dl className="resource-facts">
-          <div>
-            <dt>{t('resource.physicalFlash')}</dt>
-            <dd>{bytes(config?.flashSize ?? 0)}</dd>
+      {needsDetection ? (
+        <section className="inspector-section memory-section">
+          <p className="subtle-note">{t('resource.detectFirst')}</p>
+        </section>
+      ) : (
+        <section className="inspector-section memory-section">
+          <div className="section-heading">
+            <span className="heading-label">
+              <Gauge size={12} strokeWidth={1.9} aria-hidden="true" />
+              {t('memory.title')}
+            </span>
+            <span className="measurement-state">
+              {t(
+                build
+                  ? stale || state?.buildStale
+                    ? 'memory.previous'
+                    : validatesFirmware
+                      ? 'memory.validated'
+                      : 'memory.compiled'
+                  : 'memory.uncompiled',
+              )}
+            </span>
           </div>
-          <div>
-            <dt>{t('resource.appCapacity')}</dt>
-            <dd>{bytes(appCapacity)}</dd>
-          </div>
-        </dl>
-        {(['flash', 'ram'] as const).map((type) => {
-          const known = !!build && (type === 'flash' || build.ramTotal > 0);
-          const used = type === 'flash' ? (build?.flashUsed ?? 0) : (build?.ramUsed ?? 0);
-          const total =
-            type === 'flash' ? (build?.flashTotal ?? appCapacity) : (build?.ramTotal ?? board?.ramSize ?? 0);
-          return (
-            <div className={`memory-meter ${type}`} key={type}>
-              <div className="meter-title">
-                <span>{t(`memory.${type}`)}</span>
-                <strong>{known ? `${percentage(used, total).toFixed(1)}%` : t('memory.unmeasured')}</strong>
-              </div>
-              <div className={`meter-track ${known ? '' : 'unmeasured'}`}>
-                <i style={{ width: `${percentage(used, total)}%` }} />
-              </div>
-              <div className="meter-labels">
-                <span>
-                  {known ? bytes(used) : t('memory.unmeasured')} / {bytes(total)}
-                </span>
-                <span>
-                  {t('memory.free')} {known ? bytes(Math.max(0, total - used)) : t('memory.unmeasured')}
-                </span>
-              </div>
+          <dl className="resource-facts">
+            <div>
+              <dt>{t('resource.physicalFlash')}</dt>
+              <dd>{bytes(config?.flashSize ?? 0)}</dd>
             </div>
-          );
-        })}
-        {!build && <p className="subtle-note">{t('resource.pendingFirmware')}</p>}
-      </section>
+            <div>
+              <dt>{t('resource.appCapacity')}</dt>
+              <dd>{bytes(appCapacity)}</dd>
+            </div>
+          </dl>
+          {(['flash', 'ram'] as const).map((type) => {
+            const known = !!build && (type === 'flash' || build.ramTotal > 0);
+            const used = type === 'flash' ? (build?.flashUsed ?? 0) : (build?.ramUsed ?? 0);
+            const total =
+              type === 'flash'
+                ? appCapacity || build?.flashTotal || 0
+                : build?.ramTotal || detectedRam || board?.ramSize || 0;
+            return (
+              <div className={`memory-meter ${type}`} key={type}>
+                <div className="meter-title">
+                  <span>{t(`memory.${type}`)}</span>
+                  <strong>{known ? `${percentage(used, total).toFixed(1)}%` : t('memory.unmeasured')}</strong>
+                </div>
+                <div className={`meter-track ${known ? '' : 'unmeasured'}`}>
+                  <i style={{ width: `${percentage(used, total)}%` }} />
+                </div>
+                <div className="meter-labels">
+                  <span>
+                    {known ? bytes(used) : t('memory.unmeasured')} / {bytes(total)}
+                  </span>
+                  <span>
+                    {t('memory.free')} {known ? bytes(Math.max(0, total - used)) : t('memory.unmeasured')}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+          {!build && <p className="subtle-note">{t('resource.pendingFirmware')}</p>}
+        </section>
+      )}
     </>
   );
 }

@@ -1,85 +1,83 @@
-# 开发约定与现有能力
+# 开发约定
 
-## 本地开发循环
+## 本地循环与运行数据
 
-执行 `npm ci` 后使用 `npm run dev`。脚本先通过 esbuild 编译主进程、preload 与 MCP 桥，再启动 Vite 和 Electron。renderer 源码可热更新；core、automation、shared 运行时代码、preload、extensions 或构建脚本变化后，必须关闭开发进程并重新启动。当前没有主进程自动重启 watch。
+执行 npm ci 后使用 npm run dev。启动脚本先构建 main、preload 与 MCP 桥，再启动 Vite 和 Electron。renderer 可热更新；core、shared、automation、preload、平台包或构建脚本修改后需重启开发进程，当前没有主进程自动重启 watch。
 
-`npm run typecheck` 检查 TypeScript 跨模块契约；`npm test` 使用 Node test runner 与 tsx，覆盖有实际边界意义的逻辑；`npm run build` 完成类型检查与主进程/前端生产构建。`npm start` 运行已有的 `dist/`，不会替代构建。
+开发模式用户数据位于 .tools/dev-user-data，与安装版和其他 checkout 分开；该目录已被 Git 和 Vite 忽略。主进程在申请单实例锁前验证目录写入与删除，启动日志写入 .tools/dev-main.log。开发工具链默认使用仓库 tools/，不与项目 .blode/ 混放。
 
-开发环境可通过 `BLODE_PROJECT_ROOT` 指定工程目录、`BLODE_DATA_ROOT` 指定应用数据目录。两者不同：前者保存源码及 `.blode/project.json`，后者保存托管工具链与系统管道连接信息。硬件验证脚本额外支持 `BLODE_PORT`；端口必须在当前电脑上实际存在。
+| 环境变量             | 用途                                           |
+| -------------------- | ---------------------------------------------- |
+| BLODE_DEV_USER_DATA  | 覆盖开发模式的 Electron 用户数据目录           |
+| BLODE_DATA_ROOT      | 覆盖核心应用数据目录，如管道凭据和驱动解压目录 |
+| BLODE_TOOLCHAIN_ROOT | 覆盖平台工具链根目录                           |
+| BLODE_DRIVER_ROOT    | 覆盖 Windows 驱动归档目录                      |
+| BLODE_PROJECT_ROOT   | 显式指定用户工程；硬件脚本要求为仓库外已有工程 |
+| BLODE_PORT           | 仅在显式指定时覆盖硬件脚本使用的串口           |
 
-## 软件模块边界
+Windows 工作区文件可能继承 Low 完整性标签，使可执行文件以低完整性运行而不能写桌面、下载或 AppData。依赖安装及开发启动前检查已知本地运行时，必要时将低于 Medium 的可执行文件标签恢复为 Medium；也可执行 npm run repair:permissions。该修复保留 DACL 和更高的完整性级别。普通权限、锁或初始化错误不触发 sandbox 降级；仅已知的 Windows 断点启动/渲染崩溃允许一次兼容重试。
 
-只把设备专属参数放入 `extensions/boards/<型号>/`。串口枚举、文件访问、操作锁、命令执行由 core 负责；UI 通过 preload 能力白名单调用核心；AI 通过同一 CoreApi 调用核心。不要从 React 组件导入 Node API，也不要在型号适配器中复制编译进程管理。
+开发服务器现在通过 Vite API 在启动器进程内运行。按 profile 获取操作系统级独占会话后，启动器只回收精确匹配本机 Electron 路径和 user-data-dir 的孤儿进程树；仍有活启动器的窗口和其他 profile 不被清理。旧 Vite 子进程也仅在 Node 路径、脚本路径精确匹配且父进程已消失时回收，不全局终止 Electron 或 Node。
 
-`ProjectConfig` 是版本化配置，当前 `version: 1`。修改其字段时必须同时检查 shared 类型、Zod schema、默认配置、renderer 编辑表单、管道路由与文档示例。稳定机器标识如 `esp32-s3`、FQBN 和分区名不是翻译后的展示文案。
+每次 Electron 尝试有独立启动日志和 30 秒可见窗口期限；重试前停止本次拥有的进程树。主进程通过 IPC/父进程存活检查随开发启动器退出，关闭资源有 5 秒期限，避免不可见实例长期占用 profile。开发模式禁用有争用风险的 GPU 持久缓存/Graphite 路径，必要时再尝试软件渲染；不删除用户数据、Local Storage 或工程。AMD 视频处理器等 GPU 警告不能单独视为启动失败，最终以窗口就绪和进程状态验证。
 
-插件清单用于描述随程序编译的可信适配器；registry 显式注册。当前没有读取工程目录任意 JS 并执行的扩展机制。第三方编译器配置代表用户选择的可执行程序与包索引，应使用可信来源。所有命令参数以数组传给 `spawn`，不能改为拼接 shell 字符串。
+## 平台边界
 
-## 工程代码布局
+当前只有 auto、esp32-s3、stm32。auto 是中性检测配置，容量为 0、分区为空；不显示某厂商编译目标、分区或虚构资源。候选连接和已识别芯片分开，多候选需明确选择。
 
-应用本身采用 Node/TypeScript；ESP32-S3 固件使用官方 Arduino-ESP32 支持的 C/C++。最薄入口保存在工程根目录 `.ino`，功能模块推荐放在 `src/<功能>/`，例如：
+厂商的默认配置、识别、工具链、构建、烧录、布局和驱动事实放在 extensions/boards/<platform>/。核心保留通用锁、工程路径、配置、输入/产物哈希、构建缓存、串口及进程宿主，不增加厂商分支。平台 runtime 只依赖本目录、公共类型和 extensions/runtime.ts 宿主 SDK，不导入 core 或另一平台。
 
-```text
-sensor-node/
-  sensor-node.ino
-  include/
-    settings.h
-  src/
-    sensors/
-      temperature.h
-      temperature.cpp
-    transport/
-      telemetry.h
-      telemetry.cpp
-  .blode/
-    project.json
-```
+具体平台需在 extensions/registry.ts 与 extensions/runtime-registry.ts 双显式注册。manifest 的 runtimeApiVersion 必须与目标宿主 SDK 相容；复制文件夹不会自动执行代码。当前是随应用构建的可信模块，不提供任意 JS 的热安装或隔离运行。
 
-Arduino CLI 递归编译 `src/` 下的 C/C++ 文件，不会递归编译任意命名的根目录子文件夹；不要把需要单独编译的 `.cpp` 仅放在根目录的 `modules/`，也不要把 `.ino` 放进 `src/`。[Arduino Sketch 规范](https://arduino.github.io/arduino-cli/1.5/sketch-specification/) 定义了这些规则。主服务将已保存文件放入受控 staging 目录，必要时将主 `.ino` 名称匹配 staging 工程目录。
+## 工程与入口
 
-`.blode/` 是本地配置和构建区，不能作为公共头文件目录或插件目录。运行时限制与忽略目录由 `workspace.ts` 定义；超出边界的工程应明确调整限制后再接入，不能把 UI 中未显示的文件当作已纳入构建的证明。
+应用仓库不包含随启动创建的固件工程。打开用户文件夹后，通过根目录 be 保存配置，旧 .blode/project.json 仍可读取。be.build 保存构建选择，保存配置必须保留这一段。
 
-## 编辑器、可读性与容量
+文件树右键“设为编译入口”仅更新 be.build.entry，值为工程相对文件或目录，不立即编译。入口解释属于平台：S3 仍需完整 Arduino sketch；STM32 仍需匹配目标的启动、链接和构建配置，不能从 main.c 推导整板环境。
 
-Monaco 本地打包，不依赖 CDN。当前提供语法高亮、括号匹配、缩进与代码折叠、搜索，以及来自 `extensions/completions/` 的声明式补全：Arduino 常用 API 带签名与说明、代码片段、`Serial.`/`Wire.`/`ESP.` 成员补全和符号悬停。新增或修改补全时只改该目录的纯数据并在 `index.ts` 注册，不要在 `CodeEditor` 中堆叠语言专用逻辑。C/C++ 补全仍不是完整的编译器语义服务；尚未集成 clangd 的头文件索引、类型推断、跨文件跳转或实时编译诊断。
+S3 建议根目录主 .ino 与 src/<module>/ 下的 C/C++ 组织。Arduino 的子目录构建规则由其工具链决定；平台 runtime 将授权源码复制到 .blode/staging 并生成分区 CSV。STM32 不套用 Arduino 或 ESP 的 staging/布局规则。
 
-编辑器标签、工作区视图和哈希路由共同决定当前界面：`/workspace/editor/<文件路径>`、`/workspace/layout`、`/workspace/automation`、`/workspace/settings`。布局和自动化以可关闭的编辑器标签呈现，刷新会按完整路由恢复。浏览器工作台通过 `src/core/web.ts` 提供本机 HTTP + SSE，渲染层在缺少 preload 时由 `web-bridge.ts` 接入同一 `CoreApi`；默认只监听 `127.0.0.1:47821`。
+STM32 的 build.entry 可为文件、目录或点号；有入口才请求 Arm Compiler 6 源码构建，无入口保留 firmware.bin 验证。项目 Arm 启动与 scatter 优先；内置启动/链接模板仅用于已知 0x410 STM32F1 中容量目标，未知芯片拒绝猜 CPU 与内存。GNU .ld 不能直接交给 armlink，完整限制见 [STM32](STM32.md)。
 
-后续接入 LSP 时应新增独立语言服务模块，管理 language server 进程、文档版本、诊断事件与 Monaco provider 生命周期；复用核心路径边界。不能让每个板卡文件夹各启动一套 UI 编辑器。
+本机 Arm Compiler 6.22 已从 E 盘迁入 tools/armclang，原 license_terms 保留，源码仓库不跟踪工具二进制。平台目录可单独分享，但不因此获得编译器重分发或本机 Community 授权的转授。
 
-可读性面板展示行数、注释行比例、超过 100 字符的行等启发式指标；这些不是代码质量评分，也不能证明程序正确。构建输出和错误面板保留编译器原始诊断。
+.blode/ 是项目私有构建与缓存区，不用于公共头文件或扩展代码。工程路径拒绝穿越和不安全的符号链接/目录联接；源码编辑索引有深度、数量与单文件大小限制，不能将资源树中出现的所有文件都视为已参与构建。
 
-固件 Flash 用量取自实际构建报告，缺少报告时使用生成应用镜像的字节数；静态 RAM 来自编译输出，不包含运行时堆峰值、任务栈或外部 PSRAM。`ESP.getFreeHeap()` 等运行输出与静态 RAM 预算是不同指标。尚未编译时显示等待；编辑后提示需重新编译，不以源码字符数伪装固件大小。
+## 界面与能力
 
-## 图形分区与烧录约束
+文件、布局和自动化以可关闭编辑页签呈现，按工程保存会话；首选项由顶栏齿轮打开“常规/工具链/驱动”二级菜单并以弹窗呈现，不再占用编辑页签。语言和驱动操作无需打开工程。
 
-图形编辑控制保存后的配置，核心校验容量、地址范围、对齐和重叠，再生成 `partitions.csv`。ESP32-S3 的 bootloader 在 `0x0`，partition table 在 `0x8000`，系统保留区固定；应用按 64 KiB 对齐，数据按 Flash sector 对齐。当前适配器仅支持一个 factory 应用分区。
+构建/固件验证、布局与烧录按平台 capabilities 开放。`layout` 提供布局页，`partitions` 允许任意分区编辑；auto 不显示布局，STM32 在固定布局中调整容量与应用区，剩余 Flash 保留。旧会话中的不可用布局页只显示说明，不产生可编辑的 ESP 默认分区。
 
-OTA 需要显式 subtype、otadata、应用选择与一致的启动策略，目前未实现。不要仅增加第二个 app 块就声称实现了 OTA。ESP32-S3 烧录由核心将实际 bootloader、分区表、应用镜像映射到明确地址，避免默认 Arduino 上传配方中的固定地址与用户图形布局不一致。
+Monaco 本地打包。补全位于 extensions/completions，当前有 Arduino API 提示、片段、成员与悬停；未实现完整 clangd 语义服务。资源树菜单位于 extensions/menus，纯数据条目与 renderer 处理器分离。
 
-烧录前要求当前源码/配置有成功构建、构建镜像未被修改、串口存在、实际芯片与 Flash 容量相容。与串口监视器共享设备时，应先由核心关闭监视连接。通用烧录器当前适用于 esptool 支持的 ESP 芯片；其他厂商应添加对应 programmer 协议。
+日志桌面导出由主进程原生另存为并实际写入，完成后才提示保存；取消不提示成功。网页端只发起 Blob 下载并提示已发起。导出文本有编码后大小限制，IPC 不接受任意输出路径。
 
-## 工具链版本与网络
+## 构建与验证
 
-应用依赖以 `package-lock.json` 固定，托管工具链在用户主动安装/更新时解析官方稳定版本，CLI 压缩包使用官方 SHA-256 校验，实际版本写入应用数据目录的 lock 记录。安装后的工具链不会在每次编译时自动更新。自定义模式使用用户选择的 CLI、Python 与 FQBN，但当前编译核心仍以 Arduino-ESP32 为实现范围。
+npm run typecheck 检查跨模块契约，npm test 覆盖协议与边界，npm run build 完成类型与生产构建。平台目录还需做复制后隔离 bundle 检查；这只验证不依赖 core/其他平台，不能当作真实板卡测试。
 
-首次安装需要访问 Arduino、Espressif 与 GitHub 的官方服务；不随仓库分发所有架构的大型编译器包，也没有下载 Python 解释器。使用自定义 Python 时，应在该解释器环境准备 esptool；托管模式优先使用项目或应用专用虚拟环境。
+构建容量来自编译工具或实际二进制。Flash 总容量、可写区域、链接后的 RAM 预算与运行时空闲内存分别显示，不能以源码字符数推算固件大小。STM32 默认模板的 RAM 占用包含静态数据及链接器保留的 1 KiB 栈，不代表运行时峰值；启动使用 AC6 标准 __main 完成运行库初始化。成功记录位于 .blode/build-state.json，输入或产物改动使 buildStale，失败构建不伪造成功数据。
 
-## 国际化与 AI 接口
-
-界面默认 `zh-CN`；renderer 英文资源文件为 `en.json`，状态值为 `en`。AI 描述英文资源为 `src/automation/locales/en-US.json`。添加界面文案时同步维护两种 JSON 的键集合，组件只引用键；外部编译器日志保持原始内容。
-
-JSON-RPC 系统管道与 MCP stdio 桥共用路由 schema，而不是另写一套构建/烧录代码。接口映射、认证、消息边界、超时行为及调用示例详见 [AI-PIPE.md](AI-PIPE.md)。新增 AI 能力时先扩展 CoreApi，再补充路由、MCP 描述和协议往返测试。
-
-## 实机验证
-
-`scripts/verify-hardware.ts` 面向本次连接的 16MB ESP32-S3：设置配置、只读探测后进行实际构建；传入 `--install` 才安装工具链，传入 `--flash` 才向设备写入并读取串口心跳。其他板卡或容量须先修改验证配置。运行前关闭占用同一串口的监视器；不要把该脚本当作通用无副作用测试。
+硬件脚本要求先指定仓库外已有、含有效描述符的工程：
 
 ```powershell
+$env:BLODE_PROJECT_ROOT = 'D:\\firmware\\my-device'
+npx tsx scripts/verify-hardware.ts
+# 安装工具需要显式参数：
 npx tsx scripts/verify-hardware.ts --install
-# 确认目标设备与固件后，下面的命令会写入设备：
+# 核对设备和固件后，显式允许写入：
 npx tsx scripts/verify-hardware.ts --flash
 ```
 
-真实结果保存在 [HARDWARE-VALIDATION.md](HARDWARE-VALIDATION.md)。文档必须区分探测成功、构建成功、Flash 写入验证与程序运行验证，不能用其中一个替代另一个。
+脚本尊重工程板卡、容量、布局与工具路径，不自动建例程、不默认 COM3、不覆盖成 16 MiB，也不自动打开心跳串口。默认执行识别与构建/验证，--install 才安装，--flash 才烧录。日志写入仓库 .tools/hardware-run.log。不要将该脚本作为无硬件副作用的单元测试运行。
+
+历史硬件数据见 [HARDWARE-VALIDATION.md](HARDWARE-VALIDATION.md)，结果必须分别说明识别、构建、烧录和运行验证。
+
+## 国际化与自动化
+
+renderer 使用 zh-CN.json/en.json，automation 使用 zh-CN.json/en-US.json；新增文案同时维护键集合，厂商输出保留原文。修改 ProjectConfig 时同步 shared 类型、schema、默认配置、平台、UI 和路由。
+
+系统管道与 MCP 共用 routes.ts schema 和 CoreApi，新增设备或入口能力先实现核心契约再接传输，不在桥接层复制平台逻辑。说明见 [AI-PIPE.md](AI-PIPE.md)。
+
+Windows 开发版默认使用软件渲染以兼容显卡驱动；设置 BLODE_DISABLE_GPU=0 可显式测试硬件加速。Electron 主窗口以交互程序方式启动，不能使用后台辅助进程的隐藏启动选项。启动就绪须确认 React 工作区已经挂载，不能仅依赖 ready-to-show；页面初始加载期间显示启动提示。截图诊断仅在 BLODE_RENDER_DIAGNOSTICS=1 时生成。

@@ -11,9 +11,12 @@ const filePath = z.string().min(1).max(1024);
 export const routeSchemas = {
   'state.get': empty,
   'ports.list': empty,
+  'probes.list': empty,
+  'devices.scan': empty,
   'project.readFile': z.object({ path: filePath }).strict(),
   'file.write': z.object({ path: filePath, content: z.string().max(1_000_000) }).strict(),
   'config.set': z.object({ config: configSchema }).strict(),
+  'build.entry.set': z.object({ path: filePath }).strict(),
   'build.run': empty,
   'flash.run': z.object({ confirm: z.literal(true) }).strict(),
   'device.probe': z.object({ port }).strict(),
@@ -69,6 +72,10 @@ export async function dispatch(
       return api.getState();
     case 'ports.list':
       return api.listPorts();
+    case 'probes.list':
+      return api.listDebugProbes();
+    case 'devices.scan':
+      return api.scanDevices();
     case 'project.readFile': {
       const { path } = routeSchemas['project.readFile'].parse(input);
       const normalized = path.replaceAll('\\', '/');
@@ -90,6 +97,10 @@ export async function dispatch(
     }
     case 'config.set': {
       await api.saveConfig(routeSchemas['config.set'].parse(input).config);
+      return null;
+    }
+    case 'build.entry.set': {
+      await api.setBuildEntry(routeSchemas['build.entry.set'].parse(input).path);
       return null;
     }
     case 'build.run':

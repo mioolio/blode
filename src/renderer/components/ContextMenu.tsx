@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Check } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getContextMenu } from '../../../extensions/menus';
 import type { MenuTarget } from '../../../extensions/menus/types';
@@ -10,9 +11,19 @@ interface Props {
   target: MenuTarget;
   onCommand: (command: string) => void;
   onClose: () => void;
+  disabledCommands?: readonly string[];
+  checkedCommands?: readonly string[];
 }
 
-export function ContextMenu({ x, y, target, onCommand, onClose }: Props) {
+export function ContextMenu({
+  x,
+  y,
+  target,
+  onCommand,
+  onClose,
+  disabledCommands = [],
+  checkedCommands = [],
+}: Props) {
   const { t } = useI18n();
   const menu = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: x, top: y });
@@ -61,12 +72,17 @@ export function ContextMenu({ x, y, target, onCommand, onClose }: Props) {
           <button
             key={entry.id}
             role="menuitem"
+            disabled={disabledCommands.includes(entry.command)}
+            title={checkedCommands.includes(entry.command) ? t('project.buildEntry') : undefined}
             onClick={() => {
               onCommand(entry.command);
               onClose();
             }}
           >
             <span>{t(entry.labelKey)}</span>
+            {checkedCommands.includes(entry.command) && (
+              <Check size={12} strokeWidth={2} aria-hidden="true" />
+            )}
             {entry.shortcut && <kbd>{t(entry.shortcut)}</kbd>}
           </button>
         ),

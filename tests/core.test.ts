@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { validatePartitions, toPartitionCsv } from '../src/core/partitions';
+import { validatePartitions, toPartitionCsv } from '../extensions/boards/esp32-s3/layout';
 import { parseConfig } from '../src/core/config';
 import {
   safeWorkspacePath,
@@ -15,10 +15,11 @@ import {
   scanProjectInventory,
   watchWorkspace,
 } from '../src/core/workspace';
-import { parseBuildOutput, createCore } from '../src/core/service';
+import { createCore } from '../src/core/service';
+import { parseBuildOutput } from '../extensions/boards/esp32-s3/runtime';
 import { loadBuildState } from '../src/core/build-state';
 import { esp32S3Adapter } from '../extensions/boards/esp32-s3/adapter';
-import { genericAdapter } from '../extensions/boards/generic/adapter';
+import { stm32Adapter } from '../extensions/boards/stm32/adapter';
 import { runCommand } from '../src/core/process';
 
 test('partition validation rejects overlap, bounds and misaligned app addresses', () => {
@@ -71,7 +72,16 @@ test('strict config rejects extra command fields and insecure third-party URLs',
     /invalidConfig/,
   );
   assert.deepEqual(parseConfig(config), config);
-  assert.deepEqual(parseConfig(genericAdapter.createConfig()), genericAdapter.createConfig());
+  const colored = {
+    ...config,
+    partitions: config.partitions.map((partition, index) =>
+      index === 0 ? { ...partition, color: '#112233' } : partition,
+    ),
+  };
+  assert.deepEqual(parseConfig(colored), colored);
+  const migrated = parseConfig({ ...config, boardId: 'generic' });
+  assert.equal(migrated.boardId, 'auto');
+  assert.equal(migrated.programmer?.transport, 'auto');
 });
 
 test('workspace restricts traversal, protected paths and symlink escapes', async () => {
@@ -227,7 +237,10 @@ test('successful capacities survive core restart and become stale after source o
   const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'blode-build-data-'));
   let core: Awaited<ReturnType<typeof createCore>> | null = null;
   try {
-    await persistConfig(root, genericAdapter.createConfig());
+    const config = stm32Adapter.createConfig();
+    config.programmer!.serialNumber = '0123456789ABCDEF';
+    config.programmer!.targetChipId = '0x410';
+    await persistConfig(root, config);
     await fs.writeFile(path.join(root, 'firmware.bin'), Buffer.alloc(1234, 7));
     core = await createCore({ projectRoot: root, dataRoot, onEvent: () => {} });
     const built = await core.build();

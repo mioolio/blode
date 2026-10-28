@@ -4,5 +4,7 @@ export function bytes(value: number): string {
   return `${value} B`;
 }
 export const hex = (value: number) => `0x${value.toString(16).toUpperCase().padStart(6, '0')}`;
+/** Absolute MCU addresses need the full 32-bit width; offsets keep the compact form. */
+export const hexAddress = (value: number) => `0x${value.toString(16).toUpperCase().padStart(8, '0')}`;
 export const percentage = (used: number, total: number) =>
   total > 0 ? Math.min(100, (used / total) * 100) : 0;

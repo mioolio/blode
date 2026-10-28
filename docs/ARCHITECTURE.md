@@ -1,91 +1,81 @@
-# 模块化架构与扩展约定
+# 平台包与宿主架构
 
-Blode Studio 的目标是兼容不同单片机与硬件开发场景。核心进程只处理工程、进程、文件、串口和通用生命周期；芯片事实、编译参数、分区规则和烧录协议放在 `extensions/` 的独立适配目录中。新增硬件优先新增目录，不修改核心流程。
-
-欢迎在 <https://github.com/mioolio/blode> 提交新的板卡、烧录器或补全适配。
+设备实现按平台归属。`extensions/boards/<platform>/` 组合该平台的配置、检测、工具链、构建、烧录、布局和驱动描述；`src/core` 提供通用宿主能力，不按厂商拼接工具命令。当前只有检测配置 `auto` 和具体平台 `esp32-s3`、`stm32`。
 
 ## 目录责任
 
-| 目录                         | 唯一责任                                                | 允许依赖                         |
-| ---------------------------- | ------------------------------------------------------- | -------------------------------- |
-| `src/shared/`                | 跨进程 TypeScript 数据契约与通道常量                    | TypeScript 类型                  |
-| `src/core/`                  | Electron 主进程、工程文件、配置、编译、串口与工具链服务 | shared、extensions、Node API     |
-| `src/renderer/`              | 多面板界面、Monaco 编辑器、图形配置、国际化             | shared 类型、preload 暴露的 API  |
-| `extensions/boards/<model>/` | 单一型号的默认配置、容量、分区与编译参数适配            | shared、extensions/types         |
-| `extensions/boards/generic/` | 通用默认板卡配置                                        | shared、extensions/types         |
-| `extensions/programmers/`    | 烧录协议命令参数生成                                    | shared、extensions/types         |
-| `extensions/completions/`    | 按语言声明的补全、成员补全与悬停数据                    | 纯 TypeScript 数据，无 Node API  |
-| `src/automation/`            | 系统管道、标准方法映射、客户端与 MCP 传输适配           | shared、核心配置 schema、CoreApi |
-| `scripts/`                   | 开发构建与 MCP 启动入口                                 | 构建工具、automation             |
-| `examples/`                  | 可实际编译的示例工程                                    | 板卡 API                         |
-| `tests/`                     | 关键协议、边界和数据校验测试                            | 被测模块                         |
-| `docs/`                      | 使用、架构、管道与实机验证说明                          | 无运行时依赖                     |
+| 位置                             | 责任                                                              |
+| -------------------------------- | ----------------------------------------------------------------- |
+| `src/shared/contracts.ts`        | 跨进程数据、CoreApi、构建与检测结果类型                           |
+| `extensions/types.ts`            | 纯配置 BoardAdapter：设备事实、默认值与校验                       |
+| `extensions/runtime.ts`          | RuntimeHost、PlatformRuntime 与工厂 SDK                           |
+| `extensions/boards/<platform>/`  | 平台 adapter/runtime/toolchain/programmer/layout/driver，按需拆分 |
+| `extensions/registry.ts`         | 板卡配置和元数据的可信静态注册                                    |
+| `extensions/runtime-registry.ts` | 具体平台 runtime 工厂的可信静态注册                               |
+| `extensions/drivers/`            | 驱动类型与注册，厂商事实来自平台目录                              |
+| `src/core/`                      | 通用锁、工程路径、配置、进程宿主、哈希、缓存、串口                |
+| `src/renderer/`                  | 编辑器、设备能力显示、菜单、首选项、国际化                        |
+| `src/automation/`                | 认证传输、schema 路由、客户端与 MCP                               |
 
-新增功能先确定它的责任目录。板卡目录不得直接创建窗口、调用 shell 或访问前端状态；前端不得导入 Node 的 `fs`、`net`、`child_process`。跨模块通过显式函数与数据契约通信，避免全局可变状态。
+平台 runtime 不导入 core 或另一个平台实现；类型来自 shared，宿主契约来自 `extensions/runtime.ts`。平台内部使用相对导入，复制完整目录即可保留内部依赖。纯 adapter 定义配置，有状态的工具与设备操作由 runtime 组织。
+
+宿主还包含 Electron IPC、网页服务、日志导出和通用驱动安装执行器。这些基础设施不定义厂商 Flash 地址、FQBN、下载源或芯片识别规则。
 
 ## 调用流
 
 ```mermaid
 flowchart LR
-    UI[React / Monaco] --> Preload[Electron preload]
-    Preload --> IPC[IPC allowlist]
-    AI[任意 AI] --> Pipe[Named pipe / Unix socket]
-    MCP[MCP client] --> Bridge[stdio bridge]
-    Bridge --> Pipe
-    IPC --> Core[CoreApi service]
-    Pipe --> Router[JSON-RPC schema router]
-    Router --> Core
-    Core --> Workspace[工程与配置]
-    Core --> Toolchain[工具链进程]
-    Core --> Serial[串口]
-    Core --> Registry[板卡 registry]
-    Registry --> S3[esp32-s3 adapter]
-    Registry --> Generic[generic adapter]
-    Core --> Programmer[默认 esptool programmer]
+    UI[React / Monaco] --> IPC[preload 与 IPC 白名单]
+    AI[JSON-RPC / MCP] --> Routes[统一 schema 路由]
+    IPC --> Core[通用 CoreApi service]
+    Routes --> Core
+    Core --> Registry[runtime-registry]
+    Registry --> S3[esp32-s3 平台包]
+    Registry --> STM32[stm32 平台包]
+    S3 --> Host[RuntimeHost SDK]
+    STM32 --> Host
+    Host --> OS[工程路径 / 进程 / 串口 / 事件]
 ```
 
-`src/shared/contracts.ts` 中的 `CoreApi` 是界面与 AI 的共同能力边界。界面先保存编辑内容，再请求构建；编译和烧录使用磁盘上的已保存工程，避免显示内容与固件内容不一致。`BuildResult` 代表编译工具实测结果，不能把源代码字符数当作固件 Flash 或 RAM 用量。
+核心维护工程选择、互斥与取消、文件保存、配置落盘、输入指纹、产物哈希和成功构建缓存，按 registry 分派平台。平台决定如何扫描、识别、安装、构建和烧录，返回统一结果。
 
-## 核心服务分工
+## 宿主 SDK 与检测
 
-- `workspace.ts` 负责工程配置落盘、源文件索引及路径边界，拒绝目录穿越和不安全的符号链接/目录联接。
-- `config.ts` 定义 Zod schema 并结合分区验证；所有入口复用同一核心校验。
-- `partitions.ts` 验证 Flash 范围、对齐和分区重叠。
-- `process.ts` 负责带参数数组的进程执行、输出和超时，禁止通过拼接命令注入 shell。
-- `serial.ts` 负责端口枚举、打开/关闭及数据事件。
-- `toolchain.ts` 负责官方工具链检测和安装，或使用配置中可信的自定义可执行文件。
-- `service.ts` 组合上述服务，维护工程状态并实现 `CoreApi`；它不承担界面布局或型号专属参数生成。
+RuntimeHost 提供带超时/取消的参数数组进程执行、受控工程路径解析、构建目录重建、源码读取、串口选择、事件、网络和取消信号。平台解析厂商输出；工程输入与可清理路径先经过宿主边界。平台内部归档可使用 Node 文件 API，但不得导入核心实现。
 
-Electron 使用 context isolation，preload 只公开能力白名单。板卡信息从 registry 返回数据，renderer 不直接运行扩展代码。当前扩展以 TypeScript 模块静态注册；没有实现任意第三方 JavaScript 插件热加载或沙箱。第三方编译文件可通过受控工具链配置接入，配置来源必须可信。
+PlatformRuntime 包含 `status/install/discover/probe/build/flash/invalidate`；`sourceInputs` 声明源码编辑索引之外的固定输入，可选 buildInputs 返回编译器额外读取的源码、头文件与链接输入，用于完整指纹校验。`auto` 没有具体 runtime，而是汇总已注册平台候选：
 
-## 新增一个型号
+- USB 串口只是候选，平台 probe 必须验证真实芯片。
+- 多候选不默认取第一项；缺工具与没有设备分别报告。
+- 未识别时容量为 0、分区为空，不开放构建、烧录和布局。
+- 识别成功后平台产生配置，由核心校验、保存和清理缓存。
 
-1. 创建 `extensions/boards/<唯一型号 id>/`，放置 `manifest.json`、`adapter.ts` 和该型号需要的分区等文件。
-2. 实现 `extensions/types.ts` 的板卡适配契约，只生成型号参数与默认配置。
-3. 在 `extensions/registry.ts` 注册适配器；界面通过 `getState().boards` 获取板卡列表。
-4. 为该型号添加容量/分区/参数测试，在该目录 README 记录 Flash、RAM、PSRAM、USB 与串口差异。
-5. 在 renderer 的中文、英文 JSON 中添加 manifest 对应的 `descriptionKey`。
+## 复制与注册
 
-通用能力放在 programmer 或 core，不能复制整套核心到每个型号目录。只有型号确实不同的逻辑才放入型号目录。例如 ESP32-S3 的 FQBN、Flash 档位与默认分区属于 S3；Windows 串口枚举属于 core；esptool 参数属于 programmer。
+具体平台 manifest 声明 `entry`、`runtime`、`apiVersion` 和 `runtimeApiVersion`，当前运行时契约为 1。复制前必须匹配目标宿主的 SDK 与 shared 数据契约；版本字段不代表自动兼容协商。
 
-## 编译、容量与布局
+1. 复制完整平台目录，包含工具链、协议、布局、驱动事实和说明。
+2. 在 `extensions/registry.ts` 显式注册 adapter。
+3. 在 `extensions/runtime-registry.ts` 显式注册 runtime 工厂；auto 只注册配置。
+4. 需要驱动时，在 `extensions/drivers/index.ts` 注册平台导出的描述，补齐语言资源。
+5. 执行类型、边界和隔离 bundle 检查，再单独记录硬件验证。
 
-内置配置选择官方稳定 Arduino CLI 与 Espressif ESP32 核心；安装时解析当时的官方稳定版本，安装后的实际版本可读取。版本不是硬编码的“永远最新”，发布渠道更新不等于自动修改用户已有工具链。
+S3 与 STM32 已做单目录复制后的隔离打包检查，不依赖 core 或彼此目录。检查证明源码依赖边界，不能替代工具环境、接线、链接地址和硬件烧录验证。
 
-Flash 容量、RAM 容量和应用分区容量是不同概念。图形分区编辑可以配置应用与数据区域，必须通过边界、重叠和对齐验证，再生成编译所需分区文件；实际固件大小来自构建。硬件识别出的 Flash 容量需要与所选板卡配置核对，不能用默认值替代实测值。
+所有平台随应用静态编译。当前不扫描工程文件夹并执行任意 JavaScript，没有目录热安装、热执行或第三方插件沙箱。修改 runtime 后需重建并重启主进程。
 
-## 编辑器补全
+## 构建、缓存与能力
 
-补全数据放在 `extensions/completions/`，每个文件导出 `LanguageCompletions`（片段、符号、成员组与触发字符），在 `extensions/completions/index.ts` 显式注册。渲染层的 `src/renderer/editor/completionProvider.ts` 只负责把数据转换为 Monaco provider，并按 `Owner.` 前缀提供成员补全与悬停说明；同一个语言允许注册多个补全包。新增或修改语言补全不得修改编辑器组件，也不得在该目录导入 Node、Electron 或 Monaco。
+`be.build` 保存输入。右键“设为编译入口”只更新 `build.entry`，可选文件或目录，不立即编译；平台解释入口。构建使用已保存文件，输入、构建配置或产物变化会使缓存过期。串口号和传输速率不作为固件源码变化。
 
-## 国际化
+S3 平台生成、校验 ESP 布局与 CSV；STM32 不套用 ESP 分区，烧录模式限制从 Flash 起点写入单一固件，布局页因此只分配应用区，剩余 Flash 保留。`layout` 能力开放布局页，`partitions` 能力允许任意分区编辑；界面以 capabilities 决定编译、验证和布局动作，不以默认容量代替实测值。平台通过 `BoardDefinition.layout` 提供 Flash 起始地址，renderer 不按板卡 ID 分支。`flashSizeOverride` 表示用户手动修正容量，平台重新识别时不得覆盖；STM32 只接受不大于探测值的覆盖。STM32 链接以物理 Flash 生成完整镜像，但编译结果按应用区与数据/系统保留区逐段检查；越界会产生警告，烧录确认仍允许用户二次确认，超出物理 Flash 或 RAM 则拒绝。
 
-前端界面文案放入 `src/renderer` 下的语言 JSON，组件通过变量键引用。默认 `zh-CN`，`en-US` 保持键集合一致；添加语言时复制完整键集合。型号 manifest 只保存 `descriptionKey`，不在适配代码中硬编码界面句子。
+STM32 源码构建仍需要匹配芯片的启动文件、链接脚本、架构选项和构建配置；不能从单个 main.c 推导全部板卡信息，具体范围以平台说明为准。
 
-AI 协议错误使用稳定机器键，MCP 描述放入 `src/automation/locales/zh-CN.json` 和 `en-US.json`，由 `BLODE_LANG` 选择。外部编译器、串口设备输出保持原文，避免改变诊断内容；文档、代码符号和编程语言关键字不属于翻译资源。
+## 前端、驱动与协议
 
-## AI 接口
+renderer 不导入 Node 或直接启动编译器，preload 只公开能力白名单。项目选择、原生日志另存为和 Windows 驱动安装属于桌面能力；网页端只报告“已发起下载”。首选项按常规、工具链和驱动定位，语言与驱动操作无需工程。
 
-`protocol.ts` 定义帧、连接信息及限制；`routes.ts` 维护唯一方法 schema 映射；`server.ts` 负责传输、token 与连接生命周期；`client.ts` 提供可复用客户端；`mcp.ts` 根据相同 schema 注册 MCP 工具。新增能力应先扩展 `CoreApi` 与实现，再添加路由、MCP 描述和真实往返测试，不能在传输层复制一套工作逻辑。
+ST-Link 的 INF、USB ID 和归档描述位于 STM32 平台 driver.ts，通用执行器完成 PnP 查询、解压与显式提权安装。驱动可用不等于命令行工具已安装，调试器也不等于 COM 串口。
 
-详见 [AI-PIPE.md](AI-PIPE.md)。实机状态及尚未完成的烧录验证见 [HARDWARE-VALIDATION.md](HARDWARE-VALIDATION.md)。
+补全与资源管理器菜单是显式注册的纯数据。renderer 使用 zh-CN.json/en.json，automation 使用 zh-CN.json/en-US.json，外部工具输出保留原文。JSON-RPC routes.ts 是方法 schema 唯一映射，MCP 从同一表生成工具，不复制平台逻辑。详见 [AI-PIPE.md](AI-PIPE.md)。

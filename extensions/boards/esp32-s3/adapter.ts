@@ -1,6 +1,7 @@
 import type { BoardAdapter } from '../../types.js';
 import type { ProjectConfig } from '../../../src/shared/contracts.js';
 import { createDefaultPartitions } from './partitions.js';
+import { validatePartitions } from './layout.js';
 
 export const ESP32_PACKAGE_URL = 'https://espressif.github.io/arduino-esp32/package_esp32_index.json';
 const MiB = 1024 * 1024;
@@ -34,8 +35,7 @@ function createConfig(): ProjectConfig {
 /** A detected capacity regenerates the layout instead of stretching the default one. */
 function createConfigForFlash(flashSize: number): ProjectConfig {
   const config = createConfig();
-  if (!Number.isInteger(flashSize / MiB) || flashSize < 4 * MiB || flashSize > MAX_FLASH_SIZE)
-    return config;
+  if (!Number.isInteger(flashSize / MiB) || flashSize < 4 * MiB || flashSize > MAX_FLASH_SIZE) return config;
   config.flashSize = flashSize;
   config.partitions = createDefaultPartitions(flashSize);
   return config;
@@ -75,17 +75,19 @@ export const esp32S3Adapter: BoardAdapter = {
     probePatterns: ['ESP32-S3'],
     ramSize: 327680,
     defaultConfig: createConfig(),
-    capabilities: ['compile', 'flash', 'probe', 'serial', 'partitions'],
+    capabilities: ['compile', 'flash', 'probe', 'serial', 'layout', 'partitions'],
   },
   createConfig,
   createConfigForFlash,
   getFqbn,
   validateConfig(config) {
     if (config.boardId !== 'esp32-s3') throw new Error('errors.boardMismatch');
+    if (!config.toolchain.fqbn) throw new Error('error.invalidConfig');
+    if (config.programmer && config.programmer.transport !== 'serial')
+      throw new Error('error.debugTransportMismatch');
     if (!this.definition.flashSizes.includes(config.flashSize) && !isCustomFlashSize(config.flashSize))
       throw new Error('errors.unsupportedFlashSize');
-    if (!UPLOAD_BAUD_RATES.includes(config.baudRate))
-      throw new Error('errors.unsupportedBaudRate');
+    if (!UPLOAD_BAUD_RATES.includes(config.baudRate)) throw new Error('errors.unsupportedBaudRate');
     // The ROM and compiled bootloader require these exact system addresses.
     // They are visible in the map, but cannot be relocated by a generic layout editor.
     const systems = config.partitions.filter((partition) => partition.type === 'system');
@@ -106,5 +108,6 @@ export const esp32S3Adapter: BoardAdapter = {
     if (config.partitions.filter((partition) => partition.type === 'app').length !== 1)
       throw new Error('errors.singleAppRequired');
     getFqbn(config);
+    validatePartitions(config.partitions, config.flashSize);
   },
 };

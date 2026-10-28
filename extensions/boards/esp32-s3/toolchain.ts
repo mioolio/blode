@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import type { ProjectConfig, ToolchainStatus } from '../shared/contracts';
-import { commandExists, runCommand, type CommandResult } from './process';
+import type { ProjectConfig, ToolchainStatus } from '../../../src/shared/contracts.js';
+import type { RuntimeHost, RuntimeCommandResult } from '../../runtime.js';
 
 const ESP32_INDEX = 'https://espressif.github.io/arduino-esp32/package_esp32_index.json';
 type Release = { tag_name: string; assets: { name: string; browser_download_url: string }[] };
@@ -13,6 +13,7 @@ export class Toolchains {
   private readonly bin: string;
   private readonly configFile: string;
   constructor(
+    private readonly runCommand: RuntimeHost['runCommand'],
     private readonly dataRoot: string,
     private readonly log: (message: string) => void,
     private readonly network: { fetcher?: typeof fetch; env?: NodeJS.ProcessEnv; signal?: AbortSignal } = {},
@@ -78,9 +79,9 @@ export class Toolchains {
     args: string[],
     timeout = 300_000,
     quiet = false,
-  ): Promise<CommandResult> {
+  ): Promise<RuntimeCommandResult> {
     await this.ensureConfig(config);
-    return runCommand(await this.cliPath(config), [...args, '--config-file', this.configFile], {
+    return this.runCommand(await this.cliPath(config), [...args, '--config-file', this.configFile], {
       timeout,
       onLine: quiet ? undefined : this.log,
       env: this.network.env,
@@ -93,9 +94,9 @@ export class Toolchains {
     const cli = await this.cliPath(config);
     const python = await this.pythonPath(config);
     const [cliVersion, pythonVersion, esptoolVersion] = await Promise.all([
-      commandExists(cli, ['version'], this.network),
-      commandExists(python, ['--version'], this.network),
-      commandExists(python, ['-m', 'esptool', 'version'], this.network),
+      this.commandExists(cli, ['version']),
+      this.commandExists(python, ['--version']),
+      this.commandExists(python, ['-m', 'esptool', 'version']),
     ]);
     let esp32Core = false;
     let coreVersion = '';
@@ -137,11 +138,24 @@ export class Toolchains {
     this.cached = null;
   }
 
+  private async commandExists(command: string, args: string[]): Promise<string | null> {
+    try {
+      const result = await this.runCommand(command, args, {
+        timeout: 12_000,
+        env: this.network.env,
+        signal: this.network.signal,
+      });
+      return result.code === 0 ? result.output.trim() : null;
+    } catch (error) {
+      if (this.network.signal?.aborted) throw error;
+      return null;
+    }
+  }
+
   /** Only official stable releases are managed. A lock records the exact resolved versions. */
   async install(config: ProjectConfig): Promise<ToolchainStatus> {
     if (config.toolchain.mode === 'custom') {
       const current = await this.status(config, true);
-      if (config.boardId === 'generic' || config.boardId === 'auto') return current;
       if (!current.arduinoCli) throw new Error('error.toolchainMissing');
       // A supplied CLI uses the same isolated package store and HTTPS board indexes.
       const update = await this.runCli(config, ['core', 'update-index'], 300_000);
@@ -193,7 +207,7 @@ export class Toolchains {
     )
       throw new Error('error.toolchainChecksum');
     await fs.writeFile(archive, bytes);
-    const extraction = await runCommand('tar', ['-xf', archive, '-C', this.bin], {
+    const extraction = await this.runCommand('tar', ['-xf', archive, '-C', this.bin], {
       timeout: 60_000,
       onLine: this.log,
       signal: this.network.signal,
@@ -207,18 +221,18 @@ export class Toolchains {
     const install = await this.runCli(config, ['core', 'install', 'esp32:esp32'], 1_200_000);
     if (install.code !== 0) throw new Error(install.output || 'error.toolchainCore');
     let python = await this.pythonPath(config);
-    const esptool = await commandExists(python, ['-m', 'esptool', 'version'], this.network);
+    const esptool = await this.commandExists(python, ['-m', 'esptool', 'version']);
     if (!esptool) {
       if (config.toolchain.python) throw new Error('error.esptoolMissing');
       const systemPython = config.toolchain.python || (process.platform === 'win32' ? 'python' : 'python3');
-      const venv = await runCommand(systemPython, ['-m', 'venv', path.join(this.root, 'python')], {
+      const venv = await this.runCommand(systemPython, ['-m', 'venv', path.join(this.root, 'python')], {
         timeout: 120_000,
         onLine: this.log,
         signal: this.network.signal,
       });
       if (venv.code !== 0) throw new Error(venv.output || 'error.pythonMissing');
       python = await this.pythonPath(config);
-      const pip = await runCommand(python, ['-m', 'pip', 'install', '--upgrade', 'esptool'], {
+      const pip = await this.runCommand(python, ['-m', 'pip', 'install', '--upgrade', 'esptool'], {
         timeout: 300_000,
         onLine: this.log,
         env: this.network.env,

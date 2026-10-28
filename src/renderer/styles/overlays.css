@@ -279,3 +279,51 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Preferences open as a page-level popup, not an editor tab. */
+.preferences-modal {
+  width: min(980px, calc(100vw - 40px));
+  max-height: 86vh;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.preferences-heading {
+  flex-shrink: 0;
+  padding: 18px 22px 8px;
+  margin-bottom: 0;
+}
+.preferences-heading h2 {
+  flex: 1;
+}
+.modal-close {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border-radius: 6px;
+  color: var(--text-dim);
+}
+.modal-close:hover {
+  color: var(--text-strong);
+  background: var(--surface-3);
+}
+.preferences-modal .settings-view {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 22px 20px;
+  overflow-y: auto;
+  background: transparent;
+}
+@media (max-width: 720px) {
+  .preferences-modal {
+    width: calc(100vw - 16px);
+    max-height: 94vh;
+  }
+  .preferences-heading {
+    padding: 14px 14px 6px;
+  }
+  .preferences-modal .settings-view {
+    padding: 4px 14px 16px;
+  }
+}
