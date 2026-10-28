@@ -4,7 +4,7 @@
 
 ## 启动
 
-需要 Node.js 24 或更高版本、npm，以及可运行 `venv` 的 Python 3。开发环境建议使用仓库锁文件安装依赖：
+需要 Node.js 24 或更高版本、npm，以及可运行 `venv` 的 。开发环境建议使用仓库锁文件安装依赖：
 
 ```powershell
 npm ci
