@@ -426,12 +426,18 @@ export function useStudio() {
       setTab('output');
       setProbeFailure(null);
       try {
-        // The core dispatches using persisted transport/serial settings. Probing
-        // never saves editor drafts, so recognition cannot discard pending text.
-        await window.blode.saveConfig(config);
-        setState((current) => (current ? { ...current, config } : current));
-        if (configDirty) setStale(true);
-        await window.blode.probe(isAuto || usesStlink ? undefined : config.port);
+        // Probing works before a project is open. Persist the transport choice
+        // only when there is a workspace; the core still updates its in-memory
+        // config so board/device recognition is available on the welcome page.
+        if (state?.workspaceOpen) {
+          await window.blode.saveConfig(config);
+          setState((current) => (current ? { ...current, config } : current));
+          if (configDirty) setStale(true);
+        }
+        await window.blode.probe(
+          isAuto || usesStlink ? undefined : config.port,
+          state?.workspaceOpen ? undefined : config,
+        );
         // The core resolves the device and owns its platform/capacity parsing.
         const next = await refresh();
         const detectedBoard = next.boards.find((item) => item.id === next.config.boardId);
@@ -488,23 +494,35 @@ export function useStudio() {
     perform('action.refresh', async () => {
       // Enumerate using the transport, tool directory and SWD speed shown in
       // the inspector, including a connection choice that is not yet applied.
-      if (config && configDirty) {
+      if (state?.workspaceOpen && config && configDirty) {
         await window.blode.saveConfig(config);
         setStale(true);
       }
+      const pending = state?.workspaceOpen ? undefined : config;
       const debugProbes = await window.blode.listDebugProbes();
       const next = await refresh();
-      setState({ ...next, debugProbes });
+      if (pending) {
+        setConfig(pending);
+        setState({ ...next, config: pending, debugProbes });
+      } else {
+        setState({ ...next, debugProbes });
+      }
     });
   const refreshAutoDevices = () =>
     perform('action.refresh', async () => {
-      if (config && configDirty) {
+      if (state?.workspaceOpen && config && configDirty) {
         await window.blode.saveConfig(config);
         setStale(true);
       }
+      const pending = state?.workspaceOpen ? undefined : config;
       const detection = await window.blode.scanDevices();
       const next = await refresh();
-      setState({ ...next, detection });
+      if (pending) {
+        setConfig(pending);
+        setState({ ...next, config: pending, detection });
+      } else {
+        setState({ ...next, detection });
+      }
     });
   const openProjectWith = (select: () => Promise<boolean>) =>
     perform('action.open', async () => {
@@ -527,7 +545,7 @@ export function useStudio() {
   const install = () =>
     perform('action.install', async () => {
       setTab('output');
-      if (config && configDirty) await window.blode.saveConfig(config);
+      if (state?.workspaceOpen && config && configDirty) await window.blode.saveConfig(config);
       await window.blode.installToolchain();
       await refresh();
       notify(t('toast.installed'));

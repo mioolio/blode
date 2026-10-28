@@ -3,6 +3,7 @@ import { Bot, ChevronRight, Columns2, FileCode, FolderOpen, LayoutGrid, Settings
 import type { Studio } from '../workspace/useStudio';
 import { FileIcon } from './FileIcon';
 import { CodeEditor } from '../editor/CodeEditor';
+import { setCompletionProject } from '../editor/completionProvider';
 import { PartitionLayout } from './PartitionLayout';
 import { ResourceLayout } from './ResourceLayout';
 import { Settings, type PreferencesSection } from './Settings';
@@ -96,6 +97,17 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     if (secondaryPath && !state?.files.some((file) => file.path === secondaryPath)) setSecondaryPath('');
   }, [secondaryPath, state?.files]);
 
+  useEffect(() => {
+    // Completion sees the same unsaved drafts as the editor, so a new #define is
+    // available immediately without waiting for a file save.
+    setCompletionProject(
+      (state?.files ?? []).map((file) => ({
+        path: file.path,
+        content: drafts[file.path] ?? file.content,
+      })),
+    );
+  }, [drafts, state?.files]);
+
   const toggleSplit = () => {
     if (secondaryPath) {
       setSecondaryPath('');
@@ -160,16 +172,16 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
               <FolderOpen size={30} strokeWidth={1.5} aria-hidden="true" />
             </span>
             <h2>{t('welcome.title')}</h2>
-            <p>{t('welcome.body')}</p>
-            <button className="primary" onClick={openProjectMarker} disabled={!!busy || !state}>
-              <FileCode size={14} strokeWidth={1.9} aria-hidden="true" />
-              {t('welcome.selectMarker')}
-            </button>
-            <button className="secondary" onClick={openProject} disabled={!!busy || !state}>
-              <FolderOpen size={14} strokeWidth={1.9} aria-hidden="true" />
-              {t('project.openFolder')}
-            </button>
-            <p className="subtle-note">{t('welcome.marker')}</p>
+            <div className="welcome-actions">
+              <button className="primary" onClick={openProjectMarker} disabled={!!busy || !state}>
+                <FileCode size={14} strokeWidth={1.9} aria-hidden="true" />
+                {t('welcome.selectFile')}
+              </button>
+              <button className="secondary" onClick={openProject} disabled={!!busy || !state}>
+                <FolderOpen size={14} strokeWidth={1.9} aria-hidden="true" />
+                {t('project.openFolder')}
+              </button>
+            </div>
           </div>
         ) : (
           <>

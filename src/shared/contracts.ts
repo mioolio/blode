@@ -196,7 +196,8 @@ export interface CoreApi {
   saveConfig(config: ProjectConfig): Promise<void>;
   build(): Promise<BuildResult>;
   flash(): Promise<void>;
-  probe(port?: string): Promise<string>;
+  /** Optional config allows explicit board/probe selection before a workspace is open. */
+  probe(port?: string, config?: ProjectConfig): Promise<string>;
   installToolchain(): Promise<ToolchainStatus>;
   serialOpen(port?: string, baudRate?: number): Promise<void>;
   serialClose(): Promise<void>;

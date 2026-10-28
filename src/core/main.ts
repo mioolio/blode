@@ -7,6 +7,7 @@ import { listBoards } from '../../extensions/registry';
 import { startPipeServer, type PipeServerHandle } from '../automation/server';
 import { EVENT_CHANNEL, IPC_CHANNEL, type LogEvent } from '../shared/contracts';
 import { loadAppConfig, installDebugControls } from './debug';
+import { parseConfig } from './config';
 import { PROJECT_MARKER, safeWorkspacePath } from './workspace';
 import { startWebServer, type WebServerHandle } from './web';
 import { exportProbeLog } from './log-export';
@@ -337,7 +338,10 @@ async function bootstrap(): Promise<void> {
     },
     build: { args: noArgs, run: () => core!.build() },
     flash: { args: noArgs, run: () => core!.flash() },
-    probe: { args: z.tuple([z.string().max(128).optional()]), run: (port) => core!.probe(port) },
+    probe: {
+      args: z.tuple([z.string().max(128).optional(), z.unknown().optional()]),
+      run: (port, config) => core!.probe(port, config === undefined ? undefined : parseConfig(config)),
+    },
     installToolchain: { args: noArgs, run: () => core!.installToolchain() },
     refreshDrivers: { args: noArgs, run: () => core!.driverStatuses(true) },
     installDriver: { args: z.tuple([z.literal('stlink')]), run: (id) => core!.installDriver(id) },

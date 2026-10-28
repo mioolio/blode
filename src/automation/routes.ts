@@ -19,7 +19,7 @@ export const routeSchemas = {
   'build.entry.set': z.object({ path: filePath }).strict(),
   'build.run': empty,
   'flash.run': z.object({ confirm: z.literal(true) }).strict(),
-  'device.probe': z.object({ port }).strict(),
+  'device.probe': z.object({ port, config: configSchema.optional() }).strict(),
   'toolchain.install': z.object({ confirm: z.literal(true) }).strict(),
   'serial.open': z.object({ port, baudRate: z.number().int().min(300).max(3_000_000).optional() }).strict(),
   'serial.close': empty,
@@ -108,8 +108,10 @@ export async function dispatch(
     case 'flash.run':
       await api.flash();
       return null;
-    case 'device.probe':
-      return api.probe(routeSchemas['device.probe'].parse(input ?? {}).port);
+    case 'device.probe': {
+      const { port, config } = routeSchemas['device.probe'].parse(input ?? {});
+      return api.probe(port, config);
+    }
     case 'toolchain.install':
       return api.installToolchain();
     case 'serial.open': {

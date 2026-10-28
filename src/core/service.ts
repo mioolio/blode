@@ -161,7 +161,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     return runtime;
   };
   const invalidateRuntimes = () => runtimes.forEach((runtime) => runtime.invalidate());
-  const selectedTransport = () => config.programmer?.transport ?? 'auto';
+  const selectedTransport = (value: ProjectConfig = config) => value.programmer?.transport ?? 'auto';
   const toolchainStatus = async (refresh = false): Promise<ToolchainStatus> => {
     const active =
       config.boardId !== 'auto'
@@ -211,15 +211,15 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       ),
     );
   };
-  const autoSelection = async (port?: string) => {
+  const autoSelection = async (port?: string, source: ProjectConfig = config) => {
     if (port) {
       const runtime = runtimes.find((item) => item.transport === 'serial');
       if (!runtime) throw new Error('error.noDetectionDevices');
       return { runtime, selection: { port } };
     }
-    const transport = selectedTransport();
-    const serialNumber = config.programmer?.serialNumber;
-    const explicit = transport === 'serial' ? config.port : transport === 'stlink' ? serialNumber : '';
+    const transport = selectedTransport(source);
+    const serialNumber = source.programmer?.serialNumber;
+    const explicit = transport === 'serial' ? source.port : transport === 'stlink' ? serialNumber : '';
     if (explicit) {
       const runtime = runtimes.find((item) => item.transport === transport);
       if (!runtime) throw new Error('error.noDetectionDevices');
@@ -507,16 +507,19 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         emit('status.flashSucceeded', 'success', 'status');
       });
     },
-    async probe(port) {
+    async probe(port, requestedConfig) {
       return withLock(async () => {
+        // A config override lets the welcome page test an explicitly selected
+        // board/probe before a project exists; normal calls keep the core config.
+        const source = requestedConfig ? parseConfig(requestedConfig) : config;
         const active =
-          config.boardId === 'auto'
-            ? await autoSelection(port)
+          source.boardId === 'auto'
+            ? await autoSelection(port, source)
             : {
-                runtime: runtimeFor(config.boardId),
-                selection: { port, serialNumber: config.programmer?.serialNumber },
+                runtime: runtimeFor(source.boardId),
+                selection: { port, serialNumber: source.programmer?.serialNumber },
               };
-        const result = await active.runtime.probe(config, active.selection);
+        const result = await active.runtime.probe(source, active.selection);
         if (result.config.boardId !== active.runtime.id) throw new Error('error.invalidPlatformRegistry');
         const next = parseConfig(result.config);
         if (projectRoot) await persistConfig(projectRoot, next);

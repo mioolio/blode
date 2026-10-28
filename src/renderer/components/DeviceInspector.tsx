@@ -57,7 +57,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
       </span>
       <select
         value={config?.port ?? ''}
-        disabled={!config || !workspaceOpen || !!busy}
+        disabled={!config || !!busy}
         onChange={(event) => config && setConfig({ ...config, port: event.target.value })}
       >
         <option value="">{t('device.portPlaceholder')}</option>
@@ -89,7 +89,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
           </span>
           <select
             value={config?.boardId ?? ''}
-            disabled={!config || !workspaceOpen || !!busy}
+            disabled={!config || !!busy}
             onChange={(event) => {
               const selected = state?.boards.find((item) => item.id === event.target.value);
               if (config && selected) {
@@ -135,18 +135,14 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 <Usb size={12} strokeWidth={1.8} aria-hidden="true" />
                 {t('device.detectDevice')}
               </span>
-              <button
-                className="text-button"
-                onClick={refreshAutoDevices}
-                disabled={!!busy || !workspaceOpen}
-              >
+              <button className="text-button" onClick={refreshAutoDevices} disabled={!!busy}>
                 <RefreshCw size={11} strokeWidth={1.9} aria-hidden="true" />
                 {t('action.refresh')}
               </button>
             </span>
             <select
               value={autoDeviceValue}
-              disabled={!config || !workspaceOpen || !!busy}
+              disabled={!config || !!busy}
               onChange={(event) => {
                 if (!config) return;
                 const selected = candidates.find((candidate) => candidate.id === event.target.value);
@@ -199,18 +195,14 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                   <Usb size={12} strokeWidth={1.8} aria-hidden="true" />
                   {t('device.debugProbe')}
                 </span>
-                <button
-                  className="text-button"
-                  onClick={refreshDebugProbes}
-                  disabled={!!busy || !workspaceOpen}
-                >
+                <button className="text-button" onClick={refreshDebugProbes} disabled={!!busy}>
                   <RefreshCw size={11} strokeWidth={1.9} aria-hidden="true" />
                   {t('action.refresh')}
                 </button>
               </span>
               <select
                 value={selectedProbe?.serialNumber ?? config?.programmer?.serialNumber ?? ''}
-                disabled={!config || !workspaceOpen || !!busy}
+                disabled={!config || !!busy}
                 onChange={(event) => {
                   if (!config) return;
                   setConfig({
@@ -261,7 +253,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 max={4000}
                 step={1}
                 value={config?.programmer?.frequencyKhz ?? 1800}
-                disabled={!config || !workspaceOpen || !!busy}
+                disabled={!config || !!busy}
                 onChange={(event) => {
                   if (!config) return;
                   setConfig({
@@ -278,7 +270,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
               />
             </label>
             {!state?.toolchain.stlink && (
-              <button className="secondary" onClick={install} disabled={!!busy || !workspaceOpen}>
+              <button className="secondary" onClick={install} disabled={!!busy}>
                 {t('action.install')}
               </button>
             )}
@@ -300,7 +292,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
             </span>
             <select
               value={config?.baudRate ?? board?.recommendedBaudRate ?? 460800}
-              disabled={!config || !workspaceOpen || !!busy}
+              disabled={!config || !!busy}
               onChange={(event) => config && setConfig({ ...config, baudRate: Number(event.target.value) })}
             >
               {(board?.baudRates ?? [115200, 230400, 460800, 921600]).map((value) => (
@@ -313,11 +305,11 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
           </label>
         )}
         <div className="device-actions">
-          <button className="secondary" onClick={probe} disabled={!!busy || !workspaceOpen || !canProbe}>
+          <button className="secondary" onClick={probe} disabled={!!busy || !canProbe}>
             <ScanSearch size={13} strokeWidth={1.8} aria-hidden="true" />
             {t('action.probe')}
           </button>
-          {configDirty && (
+          {configDirty && workspaceOpen && (
             <button className="secondary" onClick={saveConfig} disabled={!!busy}>
               {t('action.apply')}
             </button>

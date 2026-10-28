@@ -51,7 +51,7 @@ if (!scope.blode) {
     setBuildEntry: (path) => call('setBuildEntry', [path]) as Promise<void>,
     build: () => call('build', []) as ReturnType<DesktopApi['build']>,
     flash: () => call('flash', []) as Promise<void>,
-    probe: (port) => call('probe', [port]) as Promise<string>,
+    probe: (port, config) => call('probe', [port, config]) as Promise<string>,
     installToolchain: () => call('installToolchain', []) as ReturnType<DesktopApi['installToolchain']>,
     // Elevated, machine-wide driver setup stays a native desktop action.
     installDriver: async () => {

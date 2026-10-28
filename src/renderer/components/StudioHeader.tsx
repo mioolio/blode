@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { ChevronRight, Minus, Settings2, Square, X } from 'lucide-react';
+import { ChevronRight, Minus, Square, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { supportsLayout } from '../workspace/capabilities';
 
@@ -176,9 +176,7 @@ export function StudioHeader({ studio }: { studio: Studio }) {
     isWeb,
   } = studio;
   const [opened, setOpened] = useState<string | null>(null);
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const menuRoot = useRef<HTMLElement>(null);
-  const settingsRoot = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const workspaceOpen = !!state?.workspaceOpen;
   const unavailable = !!busy || !workspaceOpen;
@@ -196,9 +194,36 @@ export function StudioHeader({ studio }: { studio: Studio }) {
           run: () => window.dispatchEvent(new CustomEvent('blode:new-file')),
           disabled: unavailable,
         },
-        { label: 'welcome.selectMarker', run: openProjectMarker, disabled: !!busy },
+        { label: 'welcome.selectFile', run: openProjectMarker, disabled: !!busy },
         { label: 'project.openFolder', run: openProject, disabled: !!busy },
         { label: 'action.save', run: save, shortcut: 'shortcut.ctrlS', disabled: unavailable },
+        separator,
+        {
+          label: 'menu.preferences',
+          children: [
+            {
+              label: 'settings.general',
+              run: () =>
+                window.dispatchEvent(
+                  new CustomEvent('blode:preferences', { detail: { section: 'general' } }),
+                ),
+            },
+            {
+              label: 'settings.toolchain',
+              run: () =>
+                window.dispatchEvent(
+                  new CustomEvent('blode:preferences', { detail: { section: 'toolchain' } }),
+                ),
+            },
+            {
+              label: 'settings.drivers',
+              run: () =>
+                window.dispatchEvent(
+                  new CustomEvent('blode:preferences', { detail: { section: 'drivers' } }),
+                ),
+            },
+          ],
+        },
         separator,
         { label: 'menu.closeWindow', run: () => window.blode?.windowAction('close') },
       ],
@@ -301,40 +326,15 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         { label: 'console.problems', run: () => setTab('problems') },
       ],
     },
-    {
-      id: 'preferences',
-      label: 'menu.preferences',
-      items: [
-        {
-          label: 'settings.general',
-          run: () =>
-            window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section: 'general' } })),
-        },
-        {
-          label: 'settings.toolchain',
-          run: () =>
-            window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section: 'toolchain' } })),
-        },
-        {
-          label: 'settings.drivers',
-          run: () =>
-            window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section: 'drivers' } })),
-        },
-      ],
-    },
     { id: 'help', label: 'menu.help', items: [{ label: 'help.automation', run: () => setView('ai') }] },
   ];
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
       if (!menuRoot.current?.contains(event.target as Node)) setOpened(null);
-      if (!settingsRoot.current?.contains(event.target as Node)) setSettingsMenuOpen(false);
     };
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (!event.defaultPrevented && (event.key === 'Escape' || event.key === 'Tab')) {
-        setOpened(null);
-        setSettingsMenuOpen(false);
-      }
+      if (!event.defaultPrevented && (event.key === 'Escape' || event.key === 'Tab')) setOpened(null);
     };
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape);
@@ -416,35 +416,6 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         ))}
       </nav>
       <span className="topbar-spacer" aria-hidden="true" />
-      <div className="header-settings" ref={settingsRoot}>
-        <button
-          className={`header-settings-trigger ${settingsMenuOpen ? 'open' : ''}`}
-          aria-label={t('workspace.settings')}
-          title={t('workspace.settings')}
-          aria-haspopup="menu"
-          aria-expanded={settingsMenuOpen}
-          onClick={() => setSettingsMenuOpen((current) => !current)}
-        >
-          <Settings2 size={14} strokeWidth={1.9} aria-hidden="true" />
-        </button>
-        {settingsMenuOpen && (
-          <div className="settings-popover" role="menu" aria-label={t('workspace.settings')}>
-            <span className="settings-popover-label">{t('workspace.settings')}</span>
-            {(['general', 'toolchain', 'drivers'] as const).map((section) => (
-              <button
-                key={section}
-                role="menuitem"
-                onClick={() => {
-                  setSettingsMenuOpen(false);
-                  window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section } }));
-                }}
-              >
-                {t(`settings.${section}`)}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
       {!isWeb && (
         <div className="window-controls">
           <button

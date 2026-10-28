@@ -62,7 +62,7 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 | `config.set`        | `{ "config": <完整 ProjectConfig> }`                 | 验证并保存完整配置，返回 `null`                                                  |
 | `build.run`         | `{}`                                                 | `BuildResult`：success、Flash/RAM 用量、产物路径、timestamp、工具输出            |
 | `flash.run`         | `{ "confirm": true }`                                | 将已构建固件烧录到当前配置端口，返回 `null`                                      |
-| `device.probe`      | `{ "port": "COM3" }`，port 可省略                    | 芯片与 Flash 只读识别输出字符串；可能重启设备                                    |
+| `device.probe`      | `{ "port": "COM3", "config": {...} }`，均可省略      | 识别芯片与 Flash；config 可指定板卡/探针，未打开工程也可调用；可能重启设备       |
 | `toolchain.install` | `{ "confirm": true }`                                | 官方工具链安装结果 `ToolchainStatus`                                             |
 | `serial.open`       | `{ "port": "COM3", "baudRate": 115200 }`，两项可省略 | 打开串口，返回 `null`                                                            |
 | `serial.close`      | `{}`                                                 | 关闭监视器释放端口，返回 `null`                                                  |
@@ -187,7 +187,7 @@ macOS/Linux 请通过 `BLODE_CONNECTION_FILE` 指定上文对应路径。Python 
 ## 建议的 AI 工作顺序
 
 1. `state.get` 读取工程与配置，`ports.list` 列出端口。
-2. `device.probe` 核对真实芯片和 Flash，避免将串口转换器名称当作芯片型号。
+2. `device.probe` 核对真实芯片和 Flash，避免将串口转换器名称当作芯片型号；未打开工程时可通过可选 `config` 指定板卡与探针。
 3. 读取源文件，再通过 `file.write` 写入；`config.set` 更新完整配置。
 4. `build.run`，检查 `success`、工具输出、真实占用与分区大小。
 5. 用户已授权烧录时调用 `flash.run` 且 `confirm:true`。

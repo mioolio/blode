@@ -6,7 +6,7 @@
   "config.set": "Save the complete project configuration, including board, port, toolchain and Flash partitions. Custom toolchain paths must refer to executables trusted by the user.",
   "build.run": "Compile saved source files and return firmware artifacts, actual Flash/RAM usage and tool output.",
   "flash.run": "Flash built firmware to the selected device. This changes device storage. Set confirm=true only after the user authorizes flashing.",
-  "device.probe": "Automatically identify ESP32-S3 or STM32 when one device candidate is present. Select a target when several are connected. Save the identified platform without programming firmware.",
+  "device.probe": "Identify ESP32-S3 or STM32. This works before a project is opened; config may explicitly select the board, probe or port. It never programs firmware.",
   "toolchain.install": "Install the tools for the selected transport: the Espressif toolchain or ST-Link tools. Set confirm=true only after user authorization to download and install.",
   "serial.open": "Open the serial monitor with optional port and baudRate. Read output through events.poll.",
   "serial.close": "Close the serial monitor and release the port.",

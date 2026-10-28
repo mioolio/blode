@@ -10,13 +10,20 @@ import type { CoreApi, AppState, LogEvent } from '../src/shared/contracts';
 import { startPipeServer } from '../src/automation/server';
 import { PipeClient } from '../src/automation/client';
 import { RpcError, MAX_FRAME_BYTES, type RpcResponse } from '../src/automation/protocol';
-import { EventBuffer, routeSchemas } from '../src/automation/routes';
+import { dispatch, EventBuffer, routeSchemas } from '../src/automation/routes';
 import { createMcpServer } from '../src/automation/mcp';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
-function fakeApi(): { api: CoreApi; writes: string[]; flashes: () => number; builds: () => number } {
+function fakeApi(): {
+  api: CoreApi;
+  writes: string[];
+  probes: { port?: string; config?: unknown }[];
+  flashes: () => number;
+  builds: () => number;
+} {
   const writes: string[] = [];
+  const probes: { port?: string; config?: unknown }[] = [];
   let flashCount = 0;
   let buildCount = 0;
   const state: AppState = {
@@ -54,6 +61,7 @@ function fakeApi(): { api: CoreApi; writes: string[]; flashes: () => number; bui
   };
   return {
     writes,
+    probes,
     flashes: () => flashCount,
     builds: () => buildCount,
     api: {
@@ -89,7 +97,10 @@ function fakeApi(): { api: CoreApi; writes: string[]; flashes: () => number; bui
       flash: async () => {
         flashCount++;
       },
-      probe: async () => 'ESP32-S3',
+      probe: async (port, config) => {
+        probes.push({ port, config });
+        return 'ESP32-S3';
+      },
       installToolchain: async () => state.toolchain,
       serialOpen: async () => {},
       serialClose: async () => {},
@@ -119,6 +130,13 @@ async function rawRequest(endpoint: string, frames: string[]): Promise<RpcRespon
     });
   });
 }
+
+test('device.probe forwards an optional config before a workspace exists', async () => {
+  const fake = fakeApi();
+  const config = { ...(await fake.api.getState()).config, boardId: 'stm32' };
+  await dispatch(fake.api, new EventBuffer(), 'device.probe', { port: 'COM3', config });
+  assert.deepEqual(fake.probes, [{ port: 'COM3', config }]);
+});
 
 test('real named pipe validates auth, framing, route schemas, explicit flash confirmation and cleanup', async (t) => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'blode-pipe-test-'));

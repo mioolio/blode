@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { CoreApi, LogEvent } from '../shared/contracts';
+import type { CoreApi, LogEvent, ProjectConfig } from '../shared/contracts';
 
 const defaultPort = 47821;
 const mime: Record<string, string> = {
@@ -89,7 +89,10 @@ async function invoke(api: CoreApi, method: string, args: unknown[]): Promise<un
     case 'flash':
       return api.flash();
     case 'probe':
-      return api.probe(typeof args[0] === 'string' ? args[0] : undefined);
+      return api.probe(
+        typeof args[0] === 'string' ? args[0] : undefined,
+        args[1] && typeof args[1] === 'object' ? (args[1] as ProjectConfig) : undefined,
+      );
     case 'installToolchain':
       return api.installToolchain();
     case 'serialOpen':

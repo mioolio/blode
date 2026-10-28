@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor';
 import { listLanguageCompletions } from '../../../extensions/completions';
+import { parseCProjectCompletions, type CompletionFile } from '../../../extensions/completions/c';
 import type {
   CompletionEntry,
   CompletionKind,
@@ -19,7 +20,7 @@ const sortOrder: Record<CompletionKind, string> = {
   keyword: '6',
 };
 
-const hasSnippetSyntax = (value: string) => /\$\{\d+[:}]/.test(value);
+const hasSnippetSyntax = (value: string) => /\$\{\d+(?::[^}]*)?\}/.test(value);
 
 function completionKind(monaco: MonacoApi, kind: CompletionKind): Monaco.languages.CompletionItemKind {
   const kinds = monaco.languages.CompletionItemKind;
@@ -127,6 +128,85 @@ interface CompletionScope {
   __blodeCompletionDisposables?: Monaco.IDisposable[];
 }
 
+let projectFiles: readonly CompletionFile[] = [];
+let projectVersion = 0;
+const cCache = new Map<string, CompletionEntry[]>();
+
+/** The workspace publishes text files + drafts for recursive include parsing. */
+export function setCompletionProject(files: readonly CompletionFile[]): void {
+  projectFiles = files;
+  projectVersion += 1;
+  cCache.clear();
+}
+
+function cCompletions(activePath: string): CompletionEntry[] {
+  const key = `${projectVersion}:${activePath}`;
+  const cached = cCache.get(key);
+  if (cached) return cached;
+  const entries = parseCProjectCompletions(projectFiles, activePath);
+  cCache.set(key, entries);
+  return entries;
+}
+
+function activeProjectPath(uriPath: string): string {
+  const decoded = decodeURIComponent(uriPath).replaceAll('\\', '/');
+  const normalized = decoded.replace(/^\/+/, '');
+  const match = projectFiles.find(
+    (file) =>
+      normalized === file.path.replaceAll('\\', '/') ||
+      normalized.endsWith(`/${file.path.replaceAll('\\', '/')}`),
+  );
+  return match?.path ?? normalized.split('/').slice(-1)[0] ?? '';
+}
+
+function createCProvider(monaco: MonacoApi): Monaco.languages.CompletionItemProvider {
+  return {
+    triggerCharacters: ['.', '#', '>'],
+    provideCompletionItems(model, position) {
+      const word = model.getWordUntilPosition(position);
+      const range = new monaco.Range(
+        position.lineNumber,
+        word.startColumn,
+        position.lineNumber,
+        word.endColumn,
+      );
+      const linePrefix = model.getValueInRange({
+        startLineNumber: position.lineNumber,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column,
+      });
+      // Member access is handled by the static owner packs; project-global C
+      // symbols must not flood `object.` or `pointer->`.
+      if (/(?:\.|->)\s*\w*$/.test(linePrefix)) return { suggestions: [] };
+      const activePath = activeProjectPath(model.uri.path);
+      if (!activePath) return { suggestions: [] };
+      const entries = cCompletions(activePath);
+      return {
+        suggestions: entries.map((entry) => toSuggestion(monaco, entry, range)),
+      };
+    },
+  };
+}
+
+function createCDynamicHover(monaco: MonacoApi): Monaco.languages.HoverProvider {
+  return {
+    provideHover(model, position) {
+      const word = model.getWordAtPosition(position);
+      if (!word) return null;
+      const entries = cCompletions(activeProjectPath(model.uri.path));
+      const entry = entries.find((candidate) => candidate.name === word.word);
+      if (!entry) return null;
+      const contents: Monaco.IMarkdownString[] = [{ value: `\`\`\`c\n${entry.detail}\n\`\`\`` }];
+      if (entry.documentation) contents.push({ value: entry.documentation });
+      return {
+        range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+        contents,
+      };
+    },
+  };
+}
+
 /**
  * Converts every registered language pack into Monaco providers. Called once from
  * the editor module; a global disposal slot keeps Vite hot reload from stacking
@@ -149,6 +229,13 @@ export function registerCompletions(monaco: MonacoApi): void {
         createHoverProvider(monaco, contribution),
       ),
     );
+  }
+  // Project-aware C/C++ symbols are dynamic: the parser sees current drafts and
+  // recursively resolves quoted headers, so it is registered separately from
+  // the static data packs.
+  for (const language of ['cpp', 'c']) {
+    disposables.push(monaco.languages.registerCompletionItemProvider(language, createCProvider(monaco)));
+    disposables.push(monaco.languages.registerHoverProvider(language, createCDynamicHover(monaco)));
   }
   scope.__blodeCompletionDisposables = disposables;
 }

@@ -6,7 +6,7 @@
   "config.set": "保存完整工程配置；包括板卡、串口、工具链与 Flash 分区。自定义工具链路径必须来自用户信任的可执行文件。",
   "build.run": "编译已保存工程，返回实际固件、Flash 和 RAM 占用及工具输出。",
   "flash.run": "将已构建固件烧录至所选设备。会改写设备存储；仅在用户授权烧录后设置 confirm=true。",
-  "device.probe": "自动模式扫描并在唯一候选时识别 ESP32-S3 或 STM32；多个候选需要先选择。识别结果保存为实际平台，不烧录固件。",
+  "device.probe": "识别 ESP32-S3 或 STM32；可在打开工程前调用，config 可明确指定板卡、探针或串口。识别后不烧录固件。",
   "toolchain.install": "安装所选连接方式需要的工具：Espressif 工具链或 ST-Link 工具。仅在用户授权下载安装后设置 confirm=true。",
   "serial.open": "打开串口监视器，可指定 port 与 baudRate；事件通过 events.poll 读取。",
   "serial.close": "关闭串口监视器并释放端口。",
