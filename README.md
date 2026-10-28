@@ -1,6 +1,6 @@
 # Blode Studio
 
-面向单片机开发的模块化桌面工作台。采用 Electron、TypeScript、React 19 和本地打包的 Monaco 编辑器，以 Premiere Pro 风格组织项目、代码、设备检查器和底部控制台。界面默认中文，可切换英文；界面文字通过 JSON 语言资源引用。
+面向单片机开发的模块化桌面工作台。采用 Electron、TypeScript、React 19 和本地打包的 Monaco 编辑器，以 vs code 风格组织项目、代码、设备检查器和底部控制台。界面默认中文，可切换英文；界面文字通过 JSON 语言资源引用。
 
 ## 启动
 
