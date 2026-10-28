@@ -1,0 +1,19 @@
+{
+  "detected_on": "2026-10-26",
+  "serial_port": "COM3",
+  "usb_bridge": "CH340",
+  "chip": "ESP32-S3 (QFN56)",
+  "revision": "v0.2",
+  "flash_bytes": 16777216,
+  "flash_bus": "quad",
+  "psram_bytes": 8388608,
+  "psram_bus": "octal",
+  "flash_voltage": "3.3V",
+  "original_application": "led_strip / ESP-IDF v4.4-dev / 2021-08-17",
+  "camera": "OV5640 (detected sensor PID 0x5640)",
+  "camera_profile": "EYE (verified by JPEG capture)",
+  "verified_photo_resolution": "2592x1944",
+  "full_5mp_photo": "photos/full5mp-2592x1944.jpg",
+  "backup_file": "backup/original-flash-16MB.bin",
+  "backup_sha256": "cd0f30ac9491da499eaf2167f07b5accf23cf6779c506110431aa766f346273e"
+}

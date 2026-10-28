@@ -1,0 +1,12 @@
+{
+  "id": "esp32-s3",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "kind": "board",
+  "entry": "adapter.ts",
+  "name": "ESP32-S3",
+  "descriptionKey": "boards.esp32s3Description",
+  "vendor": "Espressif",
+  "documentation": "https://docs.espressif.com/projects/arduino-esp32/en/latest/",
+  "capabilities": ["compile", "flash", "probe", "serial", "partitions"]
+}

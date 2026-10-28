@@ -1,0 +1,16 @@
+{
+  "state.get": "Read the active project, source files, boards, ports, toolchain and latest build result.",
+  "ports.list": "List actual serial ports and their hardware identifiers.",
+  "project.readFile": "Read a source file in the active project. The path is relative to the project root.",
+  "file.write": "Create or overwrite a source file in the active project. Read existing content first and follow the user's instructions.",
+  "config.set": "Save the complete project configuration, including board, port, toolchain and Flash partitions. Custom toolchain paths must refer to executables trusted by the user.",
+  "build.run": "Compile saved source files and return firmware artifacts, actual Flash/RAM usage and tool output.",
+  "flash.run": "Flash built firmware to the selected device. This changes device storage. Set confirm=true only after the user authorizes flashing.",
+  "device.probe": "Identify the serial device's chip and Flash without writing storage. The device may reset.",
+  "toolchain.install": "Download the official toolchain and ESP32 core. Set confirm=true only after the user authorizes downloading and installing.",
+  "serial.open": "Open the serial monitor with optional port and baudRate. Read output through events.poll.",
+  "serial.close": "Close the serial monitor and release the port.",
+  "serial.write": "Send data text to the open serial port.",
+  "events.poll": "Read build, status and serial events. Pass the previous cursor as after. dropped=true indicates older events have expired.",
+  "bridge.failed": "Pipe connection failed. Ensure Blode Studio is running and check the connection file specified by BLODE_CONNECTION_FILE or --connection."
+}

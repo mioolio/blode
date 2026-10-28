@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "name": "ESP32-S3 camera console",
+  "boardId": "esp32-s3",
+  "port": "COM3",
+  "baudRate": 460800,
+  "flashSize": 16777216,
+  "partitions": [
+    {
+      "id": "bootloader",
+      "name": "bootloader",
+      "type": "system",
+      "offset": 0,
+      "size": 32768
+    },
+    {
+      "id": "partition-table",
+      "name": "partition_table",
+      "type": "system",
+      "offset": 32768,
+      "size": 4096
+    },
+    {
+      "id": "nvs",
+      "name": "nvs",
+      "type": "data",
+      "offset": 36864,
+      "size": 24576
+    },
+    {
+      "id": "phy",
+      "name": "phy_init",
+      "type": "data",
+      "offset": 61440,
+      "size": 4096
+    },
+    {
+      "id": "app",
+      "name": "factory",
+      "type": "app",
+      "offset": 65536,
+      "size": 3145728
+    },
+    {
+      "id": "filesystem",
+      "name": "spiffs",
+      "type": "data",
+      "offset": 3211264,
+      "size": 13565952
+    }
+  ],
+  "toolchain": {
+    "mode": "managed",
+    "arduinoCli": "",
+    "python": "",
+    "additionalUrls": [
+      "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+    ],
+    "fqbn": "esp32:esp32:esp32s3:PSRAM=opi"
+  },
+  "build": {
+    "sketch": "SerialCamera.ino",
+    "files": [
+      "SerialCamera.ino",
+      "README.md",
+      "SOURCES.md",
+      "device-info.json",
+      "capture.py",
+      "night_capture.py",
+      "launch_console.py",
+      "web_console.py",
+      "Take-Photo.ps1",
+      "Open-Camera-Console.cmd",
+      "web/index.html",
+      "web/syntax-check.js"
+    ]
+  }
+}

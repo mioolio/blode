@@ -1,0 +1,10 @@
+{
+  "id": "generic",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "kind": "board",
+  "entry": "adapter.ts",
+  "name": "Generic ESP / esptool",
+  "descriptionKey": "boards.genericDescription",
+  "capabilities": ["flash", "probe", "serial", "partitions"]
+}

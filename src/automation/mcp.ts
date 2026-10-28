@@ -1,0 +1,47 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { PipeClient } from './client';
+import { routeSchemas, type RouteName } from './routes';
+import { RpcError } from './protocol';
+import zh from './locales/zh-CN.json';
+import en from './locales/en-US.json';
+
+const readOnly = new Set<RouteName>(['state.get', 'ports.list', 'project.readFile', 'events.poll']);
+const destructive = new Set<RouteName>(['flash.run', 'file.write', 'config.set', 'serial.write']);
+
+/** MCP is only a transport adapter: it calls the same validated pipe routes as any AI. */
+export function createMcpServer(client = new PipeClient(), language = process.env.BLODE_LANG): McpServer {
+  const strings = language === 'en-US' ? en : zh;
+  const server = new McpServer({ name: 'blode-studio', version: '0.1.0' }, { maxToolInputElements: 4096 });
+  const register = (method: RouteName): void => {
+    server.registerTool(
+      `blode_${method.replaceAll('.', '_')}`,
+      {
+        description: strings[method],
+        inputSchema: routeSchemas[method],
+        annotations: {
+          readOnlyHint: readOnly.has(method),
+          destructiveHint: destructive.has(method),
+          idempotentHint: readOnly.has(method) || method === 'serial.close',
+          openWorldHint: method === 'toolchain.install',
+        },
+      },
+      async (params: Record<string, unknown>) => {
+        try {
+          const result = await client.request(method, params as Record<string, unknown>);
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          const detail =
+            error instanceof RpcError
+              ? { code: error.code, message: error.message, data: error.data }
+              : {
+                  message: strings['bridge.failed'],
+                  reason: error instanceof Error ? error.message : 'unknown',
+                };
+          return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(detail) }] };
+        }
+      },
+    );
+  };
+  for (const method of Object.keys(routeSchemas) as RouteName[]) register(method);
+  return server;
+}

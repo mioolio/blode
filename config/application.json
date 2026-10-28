@@ -1,0 +1,10 @@
+{
+  "debug": {
+    "enabled": true,
+    "openDevToolsOnStart": false
+  },
+  "web": {
+    "enabled": true,
+    "allowExternal": false
+  }
+}

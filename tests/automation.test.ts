@@ -1,0 +1,232 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import net from 'node:net';
+import type { CoreApi, AppState, LogEvent } from '../src/shared/contracts';
+import { startPipeServer } from '../src/automation/server';
+import { PipeClient } from '../src/automation/client';
+import { RpcError, MAX_FRAME_BYTES, type RpcResponse } from '../src/automation/protocol';
+import { EventBuffer } from '../src/automation/routes';
+import { createMcpServer } from '../src/automation/mcp';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+
+function fakeApi(): { api: CoreApi; writes: string[]; flashes: () => number } {
+  const writes: string[] = [];
+  let flashCount = 0;
+  const state: AppState = {
+    projectRoot: '/project',
+    workspaceOpen: true,
+    config: {
+      version: 1,
+      name: 'test',
+      boardId: 'esp32-s3',
+      port: 'COM3',
+      baudRate: 115200,
+      flashSize: 8 * 1024 * 1024,
+      partitions: [],
+      toolchain: {
+        mode: 'managed',
+        arduinoCli: '',
+        python: '',
+        additionalUrls: [],
+        fqbn: 'esp32:esp32:esp32s3',
+      },
+    },
+    files: [{ path: 'src/main.ino', content: 'void setup() {}', language: 'cpp' }],
+    inventory: { entries: [], totalBytes: 0, fileCount: 0, directoryCount: 0, truncated: false },
+    buildStale: false,
+    boards: [],
+    ports: [{ path: 'COM3' }],
+    lastBuild: null,
+    toolchain: { arduinoCli: false, esp32Core: false, python: true, esptool: true, versions: {} },
+    pipe: { endpoint: '', tokenFile: '' },
+    web: { endpoint: '', tokenFile: '', allowExternal: false },
+  };
+  return {
+    writes,
+    flashes: () => flashCount,
+    api: {
+      getState: async () => state,
+      listPorts: async () => state.ports,
+      saveFile: async (file) => {
+        writes.push(file);
+      },
+      createFile: async () => {},
+      createDirectory: async () => {},
+      renameEntry: async () => {},
+      deleteEntry: async () => {},
+      saveConfig: async () => {},
+      build: async () => ({
+        success: true,
+        flashUsed: 1024,
+        flashTotal: 8 * 1024 * 1024,
+        ramUsed: 128,
+        ramTotal: 512 * 1024,
+        artifacts: ['firmware.bin'],
+        timestamp: new Date().toISOString(),
+        output: 'ok',
+      }),
+      flash: async () => {
+        flashCount++;
+      },
+      probe: async () => 'ESP32-S3',
+      installToolchain: async () => state.toolchain,
+      serialOpen: async () => {},
+      serialClose: async () => {},
+      serialWrite: async () => {},
+    },
+  };
+}
+
+async function rawRequest(endpoint: string, frames: string[]): Promise<RpcResponse> {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(endpoint);
+    let buffer = '';
+    socket.setTimeout(5000);
+    socket.once('error', reject);
+    socket.once('timeout', () => {
+      socket.destroy();
+      reject(new Error('test.timeout'));
+    });
+    socket.once('connect', () => {
+      for (const frame of frames) socket.write(frame);
+    });
+    socket.on('data', (data) => {
+      buffer += data.toString();
+      if (!buffer.includes('\n')) return;
+      socket.destroy();
+      resolve(JSON.parse(buffer.split('\n')[0]) as RpcResponse);
+    });
+  });
+}
+
+test('real named pipe validates auth, framing, route schemas, explicit flash confirmation and cleanup', async (t) => {
+  const temporary = await mkdtemp(path.join(tmpdir(), 'blode-pipe-test-'));
+  const fake = fakeApi();
+  const server = await startPipeServer({ api: fake.api, dataRoot: temporary });
+  const client = new PipeClient(server.connectionFile);
+  const token = (await readFile(server.tokenFile, 'utf8')).trim();
+  const request = (method: string, params: Record<string, unknown> = {}, auth = token) =>
+    `${JSON.stringify({ jsonrpc: '2.0', id: 1, method, params, auth })}\n`;
+  try {
+    await t.test('actual socket round trip and fragmented UTF-8 frames', async () => {
+      assert.deepEqual(await client.request('ports.list'), [{ path: 'COM3' }]);
+      const frame = request('file.write', { path: 'src/中文.ino', content: '// 中文' });
+      const response = await rawRequest(server.endpoint, [frame.slice(0, 9), frame.slice(9)]);
+      assert.ok('result' in response);
+      assert.deepEqual(fake.writes, ['src/中文.ino']);
+    });
+    await t.test('wrong credentials cannot invoke a mutating route', async () => {
+      const response = await rawRequest(server.endpoint, [
+        request('flash.run', { confirm: true }, '0'.repeat(64)),
+      ]);
+      assert.ok('error' in response);
+      assert.equal(response.error.code, -32001);
+      assert.equal(fake.flashes(), 0);
+    });
+    await t.test('malformed JSON, unknown methods and invalid params are standard RPC errors', async () => {
+      const malformed = await rawRequest(server.endpoint, ['{broken}\n']);
+      assert.ok('error' in malformed);
+      assert.equal(malformed.error.code, -32700);
+      await assert.rejects(
+        client.request('constructor'),
+        (error: unknown) => error instanceof RpcError && error.code === -32601,
+      );
+      await assert.rejects(
+        client.request('file.write', { path: 'x.ino', content: '', extra: true }),
+        (error: unknown) => error instanceof RpcError && error.code === -32602,
+      );
+      await assert.rejects(
+        client.request('config.set', { config: { version: 1 } }),
+        (error: unknown) => error instanceof RpcError && error.code === -32602,
+      );
+    });
+    await t.test('flash and install require explicit true confirmation', async () => {
+      await assert.rejects(
+        client.request('flash.run'),
+        (error: unknown) => error instanceof RpcError && error.code === -32602,
+      );
+      await assert.rejects(
+        client.request('flash.run', { confirm: false }),
+        (error: unknown) => error instanceof RpcError && error.code === -32602,
+      );
+      await assert.rejects(
+        client.request('toolchain.install'),
+        (error: unknown) => error instanceof RpcError && error.code === -32602,
+      );
+      assert.equal(fake.flashes(), 0);
+      await client.request('flash.run', { confirm: true });
+      assert.equal(fake.flashes(), 1);
+    });
+    await t.test('read API rejects traversal and files absent from current project', async () => {
+      const file = await client.request('project.readFile', { path: 'src/main.ino' });
+      assert.deepEqual(file, { path: 'src/main.ino', content: 'void setup() {}', language: 'cpp' });
+      await assert.rejects(client.request('project.readFile', { path: '../token' }));
+      await assert.rejects(client.request('project.readFile', { path: 'C:\\Users\\token' }));
+      await assert.rejects(client.request('project.readFile', { path: '.secret' }));
+    });
+    await t.test('serial and build events are readable through a bounded cursor', async () => {
+      server.publish({ kind: 'serial', level: 'info', message: 'hello', time: '2026-01-01T00:00:00Z' });
+      const output = (await client.request('events.poll')) as {
+        cursor: number;
+        events: unknown[];
+        dropped: boolean;
+      };
+      assert.equal(output.cursor, 1);
+      assert.equal(output.events.length, 1);
+      const next = (await client.request('events.poll', { after: output.cursor })) as { events: unknown[] };
+      assert.deepEqual(next.events, []);
+    });
+    await t.test('oversized requests are rejected before writing to a pipe', async () => {
+      await assert.rejects(
+        client.request('file.write', { path: 'large.ino', content: 'x'.repeat(MAX_FRAME_BYTES) }),
+        (error: unknown) => error instanceof RpcError && error.code === -32005,
+      );
+    });
+    await t.test('a second instance cannot rotate the active credential', async () => {
+      await assert.rejects(startPipeServer({ api: fake.api, dataRoot: temporary }));
+      assert.equal((await readFile(server.tokenFile, 'utf8')).trim(), token);
+      assert.deepEqual(await client.request('ports.list'), [{ path: 'COM3' }]);
+    });
+    await t.test('MCP tool list and calls reach the same pipe implementation', async () => {
+      const mcp = createMcpServer(client, 'en-US');
+      const mcpClient = new Client({ name: 'test-client', version: '1.0.0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await mcp.connect(serverTransport);
+      await mcpClient.connect(clientTransport);
+      try {
+        const tools = await mcpClient.listTools();
+        assert.equal(tools.tools.length, 13);
+        assert.ok(tools.tools.find((tool) => tool.name === 'blode_flash_run')?.annotations?.destructiveHint);
+        const ports = await mcpClient.callTool({ name: 'blode_ports_list', arguments: {} });
+        assert.equal(ports.isError, undefined);
+        assert.ok(JSON.stringify(ports.content).includes('COM3'));
+        const flash = await mcpClient.callTool({ name: 'blode_flash_run', arguments: {} });
+        assert.equal(flash.isError, true);
+      } finally {
+        await mcpClient.close();
+        await mcp.close();
+      }
+    });
+  } finally {
+    await server.close();
+    await assert.rejects(access(server.tokenFile));
+    await assert.rejects(access(server.connectionFile));
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
+test('event ring bounds retained data and reports dropped history', () => {
+  const events = new EventBuffer();
+  const event: LogEvent = { kind: 'log', level: 'info', message: 'x'.repeat(9000), time: '' };
+  for (let index = 0; index < 300; index++) events.publish(event);
+  const output = events.poll(1);
+  assert.equal(output.cursor, 300);
+  assert.equal(output.events.length, 256);
+  assert.equal(output.dropped, true);
+  assert.equal(output.events[0].event.message.length, 8192);
+  assert.equal(events.poll(999).dropped, true);
+});
