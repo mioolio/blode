@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { AppState, BuildResult, CoreApi, LogEvent, ProjectConfig } from '../shared/contracts';
+import type { BoardAdapter } from '../../extensions/types';
 import { getBoardAdapter, listBoards } from '../../extensions/registry';
 import { buildFlashArgs, buildProbeArgs } from '../../extensions/programmers/esptool';
 import { parseConfig, type ProjectBuild } from './config';
@@ -43,7 +44,7 @@ export interface CoreService extends CoreApi {
 /** Hardware and filesystem services have one owner, independent of any window. */
 export async function createCore(options: CoreOptions): Promise<CoreService> {
   let projectRoot = '';
-  let config = getBoardAdapter('esp32-s3').createConfig();
+  let config = getBoardAdapter('auto').createConfig();
   let projectBuild: ProjectBuild = {};
   if (options.projectRoot) {
     await fs.mkdir(options.projectRoot, { recursive: true });
@@ -168,8 +169,28 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     if (result.code !== 0) throw new Error(result.output || 'error.probeFailed');
     return result.output;
   };
+  /** The longest chip pattern wins; an unrecognized chip is never guessed into a board. */
+  const detectAdapter = (output: string): BoardAdapter | null => {
+    const text = output.toLowerCase();
+    let best: { adapter: BoardAdapter; length: number } | null = null;
+    for (const definition of listBoards()) {
+      for (const pattern of definition.probePatterns ?? []) {
+        if (!pattern || !text.includes(pattern.toLowerCase())) continue;
+        if (pattern.length > (best?.length ?? 0))
+          best = { adapter: getBoardAdapter(definition.id), length: pattern.length };
+      }
+    }
+    return best?.adapter ?? null;
+  };
+  const detectedFlashSize = (output: string): number | null => {
+    const match = output.match(/(?:Detected flash size|Flash size)\s*:\s*([\d.]+)\s*MB/i);
+    const size = match ? Number(match[1]) * 1024 * 1024 : NaN;
+    return Number.isFinite(size) && size >= 1_048_576 ? Math.round(size) : null;
+  };
   const assertProbeCompatible = (output: string) => {
-    if (config.boardId === 'esp32-s3' && !/ESP32-S3/i.test(output)) throw new Error('error.chipMismatch');
+    const patterns = getBoardAdapter(config.boardId).definition.probePatterns ?? [];
+    if (patterns.length && !patterns.some((pattern) => output.toLowerCase().includes(pattern.toLowerCase())))
+      throw new Error('error.chipMismatch');
     const flashMatch = output.match(/(?:Detected flash size|Flash size)\s*:\s*(\d+)\s*MB/i);
     if (flashMatch && config.flashSize > Number(flashMatch[1]) * 1_048_576)
       throw new Error('error.deviceFlashTooSmall');
@@ -260,6 +281,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     async build() {
       return withLock(async () => {
         requireWorkspace();
+        if (config.boardId === 'auto') throw new Error('error.detectBoardFirst');
         const adapter = getBoardAdapter(config.boardId);
         adapter.validateConfig(config);
         emit('status.buildStarted', 'info', 'status');
@@ -382,6 +404,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     async flash() {
       return withLock(async () => {
         requireWorkspace();
+        if (config.boardId === 'auto') throw new Error('error.detectBoardFirst');
         if (!lastBuild?.success || !builtFingerprint || builtFingerprint !== (await currentFingerprint()))
           throw new Error('error.buildRequired');
         if (!(await artifactsMatch(projectRoot, artifactHashes))) throw new Error('error.artifactChanged');
@@ -432,7 +455,30 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       });
     },
     async probe(port) {
-      return withLock(async () => probeDevice(await requirePort(port)));
+      return withLock(async () => {
+        const output = await probeDevice(await requirePort(port));
+        // A manually selected board keeps its adapter; automatic mode promotes the chip.
+        if (config.boardId !== 'auto') return output;
+        const adapter = detectAdapter(output);
+        if (!adapter) throw new Error('error.boardNotDetected');
+        const flash = detectedFlashSize(output);
+        const base =
+          flash && adapter.createConfigForFlash
+            ? adapter.createConfigForFlash(flash)
+            : adapter.createConfig();
+        const next: ProjectConfig = {
+          ...base,
+          name: config.name,
+          port: config.port,
+          baudRate: adapter.definition.recommendedBaudRate ?? base.baudRate,
+          boardId: adapter.definition.id,
+        };
+        adapter.validateConfig(next);
+        if (projectRoot) await persistConfig(projectRoot, next);
+        config = next;
+        toolchains.invalidate();
+        return output;
+      });
     },
     async installToolchain() {
       return withLock(async () => toolchains.install(config));
@@ -458,7 +504,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         await ensureProjectMarker(resolved);
         const loaded = await loadProjectDescriptor(
           resolved,
-          getBoardAdapter('esp32-s3').createConfig(),
+          getBoardAdapter('auto').createConfig(),
         );
         const nextConfig = loaded.config;
         getBoardAdapter(nextConfig.boardId).validateConfig(nextConfig);

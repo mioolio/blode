@@ -1,8 +1,11 @@
 import {
+  Bug,
   CircleAlert,
   CircleCheck,
   Cpu,
+  Download,
   Flame,
+  ScanSearch,
   Trash2,
   Usb,
   X,
@@ -27,7 +30,16 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
     refresh,
     setTab,
     notify,
+    probeFailure,
+    downloadProbeLog,
+    sendProbeFeedback,
+    chooseBoardManually,
   } = studio;
+  // Tool output can be long; the protocol key is the readable summary and the log keeps details.
+  const probeDetail =
+    probeFailure && /^(?:error|errors)\./.test(probeFailure.message)
+      ? t(probeFailure.message)
+      : t('error.probeFailed');
   return (
     <>
       {toast && (
@@ -83,6 +95,33 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
               >
                 <Flame size={13} strokeWidth={1.9} aria-hidden="true" />
                 {t('dialog.confirmFlash')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {probeFailure && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-heading">
+              <span className="modal-icon warning">
+                <ScanSearch size={17} strokeWidth={1.9} aria-hidden="true" />
+              </span>
+              <h2>{t('dialog.probeFailedTitle')}</h2>
+            </div>
+            <p>{t('dialog.probeFailedBody')}</p>
+            <p className="subtle-note">{probeDetail}</p>
+            <div className="modal-actions">
+              <button className="secondary" onClick={sendProbeFeedback}>
+                <Bug size={13} strokeWidth={1.9} aria-hidden="true" />
+                {t('dialog.feedback')}
+              </button>
+              <button className="secondary" onClick={downloadProbeLog}>
+                <Download size={13} strokeWidth={1.9} aria-hidden="true" />
+                {t('dialog.downloadLog')}
+              </button>
+              <button className="primary" onClick={chooseBoardManually}>
+                {t('dialog.manualBoard')}
               </button>
             </div>
           </div>

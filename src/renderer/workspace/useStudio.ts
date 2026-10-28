@@ -40,6 +40,12 @@ interface StoredSession {
 
 const sessionKey = (root: string) => `blode.session:${root}`;
 
+/** Electron wraps IPC failures; keep the protocol key so the UI can translate it. */
+function messageOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+}
+
 /** Read the size reported by esptool; missing output leaves the configured value alone. */
 function detectedFlashSize(output: string): number | null {
   const match = output.match(/(?:Detected flash size|Flash size)\s*:\s*([\d.]+)\s*MB/i);
@@ -100,6 +106,7 @@ export function useStudio() {
   const [serialInput, setSerialInput] = useState('');
   const [serialBaud, setSerialBaud] = useState(115200);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [probeFailure, setProbeFailure] = useState<{ message: string } | null>(null);
   const [syncDrafts, setSyncDrafts] = useState(() => localStorage.getItem('blode.sync') !== 'off');
   const isWeb = window.__blodeWeb === true;
   const [confirmFlash, setConfirmFlash] = useState(false);
@@ -312,10 +319,7 @@ export function useStudio() {
       await operation();
       return true;
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-          : String(error);
+      const message = messageOf(error);
       notify(t(message), true);
       setLogs((current) => [
         ...current.slice(-999),
@@ -415,15 +419,69 @@ export function useStudio() {
     perform('action.probe', async () => {
       if (!config?.port) throw new Error('toast.noPort');
       setTab('output');
-      const output = await window.blode.probe(config.port);
-      // The physical chip is the source of truth; only measured values update the config.
-      const detected = detectedFlashSize(output);
-      if (detected && detected !== config.flashSize) {
-        setConfig({ ...config, flashSize: detected });
-        setStale(true);
-        notify(`${t('toast.flashDetected')} ${bytes(detected)}`);
+      const boardBefore = config.boardId;
+      try {
+        const output = await window.blode.probe(config.port);
+        if (boardBefore !== 'auto') {
+          // A manually selected board keeps its layout; only the measured capacity changes.
+          const detected = detectedFlashSize(output);
+          if (detected && detected !== config.flashSize) {
+            const updated = { ...config, flashSize: detected };
+            await window.blode.saveConfig(updated);
+            setConfig(updated);
+            setStale(true);
+            notify(`${t('toast.flashDetected')} ${bytes(detected)}`);
+          }
+          return;
+        }
+        // The core promotes the detected chip to a registered adapter and persists its layout.
+        const next = await refresh();
+        const detectedBoard = next.boards.find((item) => item.id === next.config.boardId);
+        if (detectedBoard && next.config.boardId !== 'auto') {
+          setStale(true);
+          notify(`${t('toast.boardDetected')}${detectedBoard.name}`);
+        }
+      } catch (error) {
+        // A dialog keeps the failure visible so the transcript can be exported.
+        setProbeFailure({ message: messageOf(error) });
       }
     });
+  /** The probe transcript is what a developer needs when detection fails. */
+  const probeLog = () =>
+    [
+      'Blode Studio probe log',
+      `time: ${new Date().toISOString()}`,
+      `locale: ${locale}`,
+      `board: ${config?.boardId ?? ''}`,
+      `port: ${config?.port ?? ''}`,
+      '',
+      ...logs.map((event) => `${event.time} [${event.level}] ${event.message}`),
+    ].join('\n');
+  const downloadProbeLog = () => {
+    const url = URL.createObjectURL(new Blob([probeLog()], { type: 'text/plain;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `blode-probe-${new Date().toISOString().replace(/[:.]/g, '-')}.log`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify(t('toast.logDownloaded'));
+  };
+  const sendProbeFeedback = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        `${probeLog()}\n\nhttps://github.com/mioolio/blode/issues/new`,
+      );
+      notify(t('toast.reportCopied'));
+    } catch (error) {
+      notify(messageOf(error), true);
+    }
+  };
+  const chooseBoardManually = () => {
+    setProbeFailure(null);
+    notify(t('toast.selectBoardManually'));
+  };
   const refreshPorts = () =>
     perform('action.refresh', async () => {
       const ports = await window.blode.listPorts();
@@ -581,6 +639,11 @@ export function useStudio() {
     setSerialBaud,
     deleteTarget,
     setDeleteTarget,
+    probeFailure,
+    setProbeFailure,
+    downloadProbeLog,
+    sendProbeFeedback,
+    chooseBoardManually,
     syncDrafts,
     setSyncDrafts,
     isWeb,

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { getBoardAdapter } from '../../extensions/registry';
 import type { ProjectConfig } from '../shared/contracts';
 import { validatePartitions } from './partitions';
 
@@ -43,10 +44,12 @@ export const configSchema = z
 export function parseConfig(value: unknown): ProjectConfig {
   const result = configSchema.safeParse(value);
   if (!result.success) throw new Error('error.invalidConfig');
-  if (result.data.boardId !== 'generic' && !result.data.toolchain.fqbn)
-    throw new Error('error.invalidConfig');
+  // Board definitions are only trusted when they live in the registered boards folder.
+  getBoardAdapter(result.data.boardId);
+  const compilerOptional = result.data.boardId === 'generic' || result.data.boardId === 'auto';
+  if (!compilerOptional && !result.data.toolchain.fqbn) throw new Error('error.invalidConfig');
   validatePartitions(result.data.partitions, result.data.flashSize, {
-    reserveEspSystem: result.data.boardId !== 'generic',
+    reserveEspSystem: !compilerOptional,
   });
   return result.data;
 }

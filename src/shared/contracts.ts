@@ -60,6 +60,8 @@ export interface BoardDefinition {
   /** Upload speeds the adapter is known to work with. */
   baudRates?: number[];
   recommendedBaudRate?: number;
+  /** Case-insensitive chip names reported by the probe; empty means never auto-selected. */
+  probePatterns?: string[];
   ramSize: number;
   defaultConfig: Partial<ProjectConfig>;
   capabilities: string[];

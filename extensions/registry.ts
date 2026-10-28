@@ -1,10 +1,12 @@
+import { autoAdapter } from './boards/auto/adapter.js';
 import { esp32S3Adapter } from './boards/esp32-s3/adapter.js';
 import { genericAdapter } from './boards/generic/adapter.js';
 import type { BoardAdapter } from './types.js';
 
 // Explicit registration keeps untrusted workspace manifests from executing in the main process.
+// Every chip model lives under extensions/boards/<id>; an unregistered id is rejected.
 const adapters = new Map<string, BoardAdapter>(
-  [esp32S3Adapter, genericAdapter].map((adapter) => [adapter.definition.id, adapter]),
+  [autoAdapter, esp32S3Adapter, genericAdapter].map((adapter) => [adapter.definition.id, adapter]),
 );
 
 export function getBoardAdapter(id: string): BoardAdapter {

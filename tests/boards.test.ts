@@ -1,8 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { getBoardAdapter, listBoards } from '../extensions/registry.js';
 import { createDefaultPartitions } from '../extensions/boards/esp32-s3/partitions.js';
 import { buildFlashArgs, buildProbeArgs } from '../extensions/programmers/esptool.js';
+import { parseConfig } from '../src/core/config.js';
 
 describe('board adapters', () => {
   it('returns fresh configuration, never sharing edited partition objects', () => {
@@ -67,6 +70,32 @@ describe('board adapters', () => {
     const filesystem = config.partitions.find(partition => partition.id === 'filesystem')!;
     filesystem.offset -= 0x10000;
     filesystem.size += 0x10000;
+    assert.doesNotThrow(() => adapter.validateConfig(config));
+  });
+});
+
+describe('board catalogue', () => {
+  it('keeps every chip definition inside extensions/boards with its manifest', () => {
+    for (const board of listBoards()) {
+      const manifest = path.join(process.cwd(), 'extensions', 'boards', board.id, 'manifest.json');
+      assert.ok(existsSync(manifest), `${board.id} needs extensions/boards/${board.id}/manifest.json`);
+      assert.equal(JSON.parse(readFileSync(manifest, 'utf8')).id, board.id);
+    }
+  });
+  it('starts in automatic detection and rejects an unregistered chip', () => {
+    const automatic = getBoardAdapter('auto');
+    assert.equal(automatic.createConfig().boardId, 'auto');
+    assert.doesNotThrow(() => parseConfig(automatic.createConfig()));
+    assert.throws(
+      () => parseConfig({ ...automatic.createConfig(), boardId: 'stm32' }),
+      /errors.unknownBoard/,
+    );
+  });
+  it('rebuilds the layout for the physically detected Flash capacity', () => {
+    const adapter = getBoardAdapter('esp32-s3');
+    const config = adapter.createConfigForFlash!(16 * 1024 * 1024);
+    assert.equal(config.flashSize, 16 * 1024 * 1024);
+    assert.equal(config.partitions.at(-1)!.offset + config.partitions.at(-1)!.size, 16 * 1024 * 1024);
     assert.doesNotThrow(() => adapter.validateConfig(config));
   });
 });

@@ -4,6 +4,8 @@ import type { BoardDefinition, ProjectConfig } from '../src/shared/contracts.js'
 export interface BoardAdapter {
   readonly definition: BoardDefinition;
   createConfig(): ProjectConfig;
+  /** Match a physically detected Flash capacity with a valid layout; optional for fixed-layout boards. */
+  createConfigForFlash?(flashSize: number): ProjectConfig;
   getFqbn(config: ProjectConfig): string;
   validateConfig(config: ProjectConfig): void;
 }

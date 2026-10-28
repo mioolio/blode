@@ -66,6 +66,9 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
               </option>
             ))}
           </select>
+          {config?.boardId === 'auto' && (
+            <span className="subtle-note">{t('device.autoHint')}</span>
+          )}
         </label>
         <label>
           <span className="field-label label-with-action">

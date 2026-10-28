@@ -24,13 +24,14 @@ function createConfig(): ProjectConfig {
 export const genericAdapter: BoardAdapter = {
   definition: {
     id: 'generic',
-    name: 'Generic ESP / esptool',
+    name: '通用烧录器',
     family: 'Generic',
     descriptionKey: 'boards.genericDescription',
     flashSizes: [1, 2, 4, 8, 16].map((size) => size * MiB),
     customFlashSize: true,
     baudRates: UPLOAD_BAUD_RATES,
     recommendedBaudRate: 115200,
+    probePatterns: [],
     ramSize: 0,
     defaultConfig: createConfig(),
     capabilities: ['flash', 'probe', 'serial', 'partitions'],

@@ -141,7 +141,7 @@ export class Toolchains {
   async install(config: ProjectConfig): Promise<ToolchainStatus> {
     if (config.toolchain.mode === 'custom') {
       const current = await this.status(config, true);
-      if (config.boardId === 'generic') return current;
+      if (config.boardId === 'generic' || config.boardId === 'auto') return current;
       if (!current.arduinoCli) throw new Error('error.toolchainMissing');
       // A supplied CLI uses the same isolated package store and HTTPS board indexes.
       const update = await this.runCli(config, ['core', 'update-index'], 300_000);

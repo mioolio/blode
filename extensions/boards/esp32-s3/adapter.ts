@@ -31,6 +31,16 @@ function createConfig(): ProjectConfig {
   };
 }
 
+/** A detected capacity regenerates the layout instead of stretching the default one. */
+function createConfigForFlash(flashSize: number): ProjectConfig {
+  const config = createConfig();
+  if (!Number.isInteger(flashSize / MiB) || flashSize < 4 * MiB || flashSize > MAX_FLASH_SIZE)
+    return config;
+  config.flashSize = flashSize;
+  config.partitions = createDefaultPartitions(flashSize);
+  return config;
+}
+
 /** Preserve compiler options while keeping FlashSize in sync with the layout. */
 function getFqbn(config: ProjectConfig): string {
   const base = config.toolchain.fqbn || 'esp32:esp32:esp32s3';
@@ -62,11 +72,13 @@ export const esp32S3Adapter: BoardAdapter = {
     customFlashSize: true,
     baudRates: UPLOAD_BAUD_RATES,
     recommendedBaudRate: 460800,
+    probePatterns: ['ESP32-S3'],
     ramSize: 327680,
     defaultConfig: createConfig(),
     capabilities: ['compile', 'flash', 'probe', 'serial', 'partitions'],
   },
   createConfig,
+  createConfigForFlash,
   getFqbn,
   validateConfig(config) {
     if (config.boardId !== 'esp32-s3') throw new Error('errors.boardMismatch');

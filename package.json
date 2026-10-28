@@ -63,6 +63,11 @@
       {
         "from": "docs",
         "to": "docs"
+      },
+      {
+        "from": "extensions/boards",
+        "to": "boards",
+        "filter": ["*/manifest.json"]
       }
     ],
     "asarUnpack": [

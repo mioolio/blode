@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { createCore, type CoreService } from './service';
+import { listBoards } from '../../extensions/registry';
 import { startPipeServer, type PipeServerHandle } from '../automation/server';
 import { EVENT_CHANNEL, IPC_CHANNEL, type LogEvent } from '../shared/contracts';
 import { loadAppConfig, installDebugControls } from './debug';
@@ -26,8 +27,25 @@ app.on('second-instance', () => {
   window?.focus();
 });
 
+/** Chip definitions live only in extensions/boards; a missing folder refuses to load. */
+async function verifyBoardFolder(root: string): Promise<void> {
+  const info = await fs.stat(root).catch(() => null);
+  if (!info?.isDirectory()) throw new Error('errors.boardsMissing');
+  for (const board of listBoards()) {
+    await fs.access(path.join(root, board.id, 'manifest.json')).catch(() => {
+      throw new Error(`errors.boardManifestMissing: ${board.id}`);
+    });
+  }
+}
+
 async function bootstrap(): Promise<void> {
   const applicationConfig = await loadAppConfig(path.join(app.getAppPath(), 'config', 'application.json'));
+  // Board adapters are code, but every chip model must declare itself in this folder.
+  await verifyBoardFolder(
+    app.isPackaged
+      ? path.join(process.resourcesPath, 'boards')
+      : path.join(app.getAppPath(), 'extensions', 'boards'),
+  );
   const dataRoot = process.env.BLODE_DATA_ROOT || app.getPath('userData');
   // No workspace is opened on startup; the welcome screen asks for a project area.
   const projectRoot = process.env.BLODE_PROJECT_ROOT || '';
