@@ -38,12 +38,14 @@ Blode Studio 是一个面向单片机的模块化桌面工作台。它不只负�
 | -------------- | ----------------------------------------- |
 | 开发板         | 常见 STM32F103C8T6 “Blue Pill” 最小系统板 |
 | 调试器         | ST-Link V2，`V2J27S6`                     |
-| ST-Link 序列号 | `75010001230046504E413836`                |
+| ST-Link 序列号 | `7501000123••••••`（公开文档已截断）      |
 | 芯片 ID        | `0x410`（STM32F1xx_MD）                   |
 | SRAM           | 20 KiB                                    |
 | Flash 自述容量 | **128 KiB (131072 bytes)**                |
 | 目标电压       | 3227 mV                                   |
 | 日期           | 2026-10-29（Asia/Shanghai）               |
+
+> `st-info` 只报告 `STM32F1xx_MD` / `0x410` 这一中容量系列，不能从 ID 单独区分具体型号；C8T6 是这块板卡的标称型号。容量结论只针对本次被测单元。
 
 `st-info` 的实际输出：
 
@@ -72,7 +74,7 @@ Found 1 stlink programmers
   "partitions": [{ "id": "firmware", "name": "firmware", "type": "app", "offset": 0, "size": 131072 }],
   "programmer": {
     "transport": "stlink",
-    "serialNumber": "75010001230046504E413836",
+    "serialNumber": "7501000123••••••",
     "frequencyKhz": 1800,
     "targetChipId": "0x410"
   },
