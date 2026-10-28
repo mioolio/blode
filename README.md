@@ -26,7 +26,7 @@
 
 ## 快速开始
 
-需要 Node.js 24 或更高版本、npm；当前 Arduino 工具链还需要可运行 `venv` 的 Python 3。
+需要 Node.js 24 或更高版本和 npm。应用本体不依赖 Python；只有当前 ESP32 工具链和示例中的外部拍照脚本可能调用本机 Python，且不会打包进应用。
 
 ```powershell
 npm ci
