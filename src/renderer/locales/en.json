@@ -263,6 +263,7 @@
   "menu.goto": "Go",
   "menu.run": "Run",
   "menu.terminal": "Terminal",
+  "menu.preferences": "Preferences",
   "menu.closeWindow": "Close window",
   "edit.undo": "Undo",
   "edit.redo": "Redo",

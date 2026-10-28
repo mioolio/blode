@@ -301,6 +301,27 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         { label: 'console.problems', run: () => setTab('problems') },
       ],
     },
+    {
+      id: 'preferences',
+      label: 'menu.preferences',
+      items: [
+        {
+          label: 'settings.general',
+          run: () =>
+            window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section: 'general' } })),
+        },
+        {
+          label: 'settings.toolchain',
+          run: () =>
+            window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section: 'toolchain' } })),
+        },
+        {
+          label: 'settings.drivers',
+          run: () =>
+            window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section: 'drivers' } })),
+        },
+      ],
+    },
     { id: 'help', label: 'menu.help', items: [{ label: 'help.automation', run: () => setView('ai') }] },
   ];
 

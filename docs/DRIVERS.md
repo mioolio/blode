@@ -1,6 +1,6 @@
 # Windows 调试器驱动
 
-Blode Studio 内置 STMicroelectronics 的 STSW-LINK009 驱动包，用于 ST-Link/V2 及更新型号的调试与烧录器。驱动属于操作系统能力，不属于某块板卡；安装入口在顶栏齿轮的“驱动”菜单，不需要先打开工程。
+Blode Studio 内置 STMicroelectronics 的 STSW-LINK009 驱动包，用于 ST-Link/V2 及更新型号的调试与烧录器。驱动属于操作系统能力，不属于某块板卡；安装入口在顶部“首选项”菜单的“驱动”项，不需要先打开工程。
 
 > 当前应用还没有 STM32 烧录适配器。本页只说明驱动检测与安装；STM32/OpenOCD 的烧录流程需要另做适配。
 
@@ -16,7 +16,7 @@ Blode Studio 内置 STMicroelectronics 的 STSW-LINK009 驱动包，用于 ST-Li
 
 ## 使用流程
 
-1. 打开顶栏齿轮 → “驱动”，查看 ST-Link 的状态。
+1. 打开顶部“首选项” → “驱动”，查看 ST-Link 的状态。
 2. 点击“安装 ST-Link 驱动”或“重新安装驱动”。
 3. Windows 弹出 UAC 提示时选择“是”。安装过程使用系统自带的 `pnputil.exe`，为驱动包中的三个签名 INF 逐个执行 `/add-driver ... /install`，随后 `/scan-devices`。
 4. 安装完成后重新插拔 ST-Link，再点“刷新”确认状态变为“已就绪”。

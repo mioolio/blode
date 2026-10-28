@@ -263,6 +263,7 @@
   "menu.goto": "转到",
   "menu.run": "运行",
   "menu.terminal": "终端",
+  "menu.preferences": "首选项",
   "menu.closeWindow": "关闭窗口",
   "edit.undo": "撤销",
   "edit.redo": "重做",
