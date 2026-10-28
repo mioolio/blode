@@ -32,6 +32,8 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
     setTab,
     notify,
     probeFailure,
+    recentMissing,
+    setRecentMissing,
     downloadProbeLog,
     sendProbeFeedback,
     chooseBoardManually,
@@ -66,6 +68,25 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
           <button className="toast-close" aria-label={t('action.close')} onClick={() => setToast(null)}>
             <X size={13} strokeWidth={2} aria-hidden="true" />
           </button>
+        </div>
+      )}
+      {recentMissing && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-heading">
+              <span className="modal-icon warning">
+                <CircleAlert size={17} strokeWidth={1.9} aria-hidden="true" />
+              </span>
+              <h2>{t('dialog.recentMissingTitle')}</h2>
+            </div>
+            <p>{t('dialog.recentMissingBody')}</p>
+            <p className="subtle-note">{recentMissing.path}</p>
+            <div className="modal-actions">
+              <button className="primary" onClick={() => setRecentMissing(null)}>
+                {t('action.close')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {confirmFlash && (

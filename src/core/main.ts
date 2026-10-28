@@ -5,7 +5,13 @@ import { z } from 'zod';
 import { createCore, type CoreService } from './service';
 import { listBoards } from '../../extensions/registry';
 import { startPipeServer, type PipeServerHandle } from '../automation/server';
-import { EVENT_CHANNEL, IPC_CHANNEL, type LogEvent } from '../shared/contracts';
+import {
+  EVENT_CHANNEL,
+  IPC_CHANNEL,
+  type LogEvent,
+  type RecentProject,
+  type ReopenProjectResult,
+} from '../shared/contracts';
 import { loadAppConfig, installDebugControls } from './debug';
 import { parseConfig } from './config';
 import { PROJECT_MARKER, safeWorkspacePath } from './workspace';
@@ -122,6 +128,34 @@ async function bootstrap(): Promise<void> {
   logBoot('board folder verified');
   const dataRoot = process.env.BLODE_DATA_ROOT || app.getPath('userData');
   logBoot(`dataRoot=${dataRoot}`);
+  const recentProjectFile = path.join(dataRoot, 'recent-project.json');
+  const readRecentProject = async (): Promise<RecentProject | null> => {
+    let stored = '';
+    try {
+      const parsed = JSON.parse(await fs.readFile(recentProjectFile, 'utf8')) as { path?: unknown };
+      if (typeof parsed.path === 'string' && parsed.path) stored = path.resolve(parsed.path);
+    } catch {
+      return null;
+    }
+    if (!stored) return null;
+    const directory = await fs.stat(stored).catch(() => null);
+    const marker = directory?.isDirectory()
+      ? await fs.stat(path.join(stored, PROJECT_MARKER)).catch(() => null)
+      : null;
+    return {
+      path: stored,
+      name: path.basename(stored),
+      available: !!directory?.isDirectory() && !!marker?.isFile(),
+    };
+  };
+  const rememberProject = async (root: string): Promise<void> => {
+    await fs
+      .mkdir(dataRoot, { recursive: true })
+      .then(() => fs.writeFile(recentProjectFile, JSON.stringify({ path: root }), 'utf8'))
+      .catch(() => {
+        /* Recent-project history is optional. */
+      });
+  };
   // No workspace is opened on startup; the welcome screen asks for a project area.
   const projectRoot = process.env.BLODE_PROJECT_ROOT || '';
   const emit = (event: LogEvent) => {
@@ -163,6 +197,7 @@ async function bootstrap(): Promise<void> {
   const state = core.getState.bind(core);
   core.getState = async () => ({
     ...(await state()),
+    recentProject: await readRecentProject(),
     pipe: { endpoint: pipe?.endpoint ?? '', tokenFile: pipe?.tokenFile ?? '' },
     web: {
       endpoint: web?.endpoint ?? '',
@@ -358,7 +393,9 @@ async function bootstrap(): Promise<void> {
           properties: ['openDirectory', 'createDirectory'],
         });
         if (result.canceled || !result.filePaths[0]) return false;
-        await core!.setProjectRoot(result.filePaths[0]);
+        const root = await fs.realpath(result.filePaths[0]);
+        await core!.setProjectRoot(root);
+        await rememberProject(root);
         return true;
       },
     },
@@ -374,8 +411,20 @@ async function bootstrap(): Promise<void> {
         const marker = result.filePaths[0];
         if (path.basename(marker).toLowerCase() !== PROJECT_MARKER)
           throw new Error('error.invalidProjectMarker');
-        await core!.setProjectRoot(path.dirname(marker));
+        const root = await fs.realpath(path.dirname(marker));
+        await core!.setProjectRoot(root);
+        await rememberProject(root);
         return true;
+      },
+    },
+    reopenProject: {
+      args: noArgs,
+      run: async (): Promise<ReopenProjectResult> => {
+        const recent = await readRecentProject();
+        if (!recent) return { status: 'none' };
+        if (!recent.available) return { status: 'missing', recent };
+        await core!.setProjectRoot(recent.path);
+        return { status: 'opened', recent: (await readRecentProject()) ?? recent };
       },
     },
     windowAction: {

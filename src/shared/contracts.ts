@@ -157,10 +157,22 @@ export interface DriverStatus {
   /** The bundled installer archive exists and can be used for (re)installation. */
   available: boolean;
 }
+export interface RecentProject {
+  path: string;
+  name: string;
+  /** False when the folder or its `be` marker disappeared. */
+  available: boolean;
+}
+export interface ReopenProjectResult {
+  status: 'opened' | 'missing' | 'none';
+  recent?: RecentProject;
+}
 export interface AppState {
   /** Empty until the user opens a project area (a folder containing the `be` marker). */
   projectRoot: string;
   workspaceOpen: boolean;
+  /** Last workspace chosen on this machine; absent in browser-only sessions. */
+  recentProject?: RecentProject | null;
   config: ProjectConfig;
   build: ProjectBuildInputs;
   files: ProjectFile[];
@@ -212,6 +224,8 @@ export interface DesktopApi extends CoreApi {
   selectProject(): Promise<boolean>;
   /** Native file picker for a `be` marker; opens the folder that contains it. */
   selectProjectMarker(): Promise<boolean>;
+  /** Reopen the most recently selected workspace without another file dialog. */
+  reopenProject(): Promise<ReopenProjectResult>;
   revealEntry(path: string): Promise<void>;
   /** Desktop publishes unsaved buffers; browser clients receive them over SSE. */
   publishDrafts(drafts: Record<string, string>): void;

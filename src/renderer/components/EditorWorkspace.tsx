@@ -16,6 +16,16 @@ const tools = [
   { id: 'ai' as const, icon: Bot, label: 'workspace.ai' },
 ];
 
+function greetingKey(now = new Date()): string {
+  const hour = now.getHours();
+  if (hour < 5) return 'welcome.greetingNight';
+  if (hour < 11) return 'welcome.greetingMorning';
+  if (hour < 13) return 'welcome.greetingNoon';
+  if (hour < 18) return 'welcome.greetingAfternoon';
+  if (hour < 23) return 'welcome.greetingEvening';
+  return 'welcome.greetingNight';
+}
+
 /** EditorWorkspace renders the tabbed editor and its tool views. */
 export function EditorWorkspace({ studio }: { studio: Studio }) {
   const {
@@ -30,8 +40,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     openFile,
     closeTab,
     setView,
-    openProject,
-    openProjectMarker,
+    reopenProject,
     drafts,
     setDrafts,
     source,
@@ -171,17 +180,17 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
             <span className="welcome-icon">
               <FolderOpen size={30} strokeWidth={1.5} aria-hidden="true" />
             </span>
-            <h2>{t('welcome.title')}</h2>
-            <div className="welcome-actions">
-              <button className="primary" onClick={openProjectMarker} disabled={!!busy || !state}>
-                <FileCode size={14} strokeWidth={1.9} aria-hidden="true" />
-                {t('welcome.selectFile')}
+            <h2>{t(greetingKey())}</h2>
+            <p className="welcome-prompt">{t('welcome.prompt')}</p>
+            {state?.recentProject && (
+              <button
+                className="welcome-recent"
+                onClick={() => void reopenProject()}
+                title={state.recentProject.path}
+              >
+                {t('welcome.continue')} <strong>{state.recentProject.name}</strong>
               </button>
-              <button className="secondary" onClick={openProject} disabled={!!busy || !state}>
-                <FolderOpen size={14} strokeWidth={1.9} aria-hidden="true" />
-                {t('project.openFolder')}
-              </button>
-            </div>
+            )}
           </div>
         ) : (
           <>

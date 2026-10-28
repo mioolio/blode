@@ -33,6 +33,7 @@ const bridge: DesktopApi = {
   serialWrite: (data) => call('serialWrite', data),
   selectProject: () => call('selectProject'),
   selectProjectMarker: () => call('selectProjectMarker'),
+  reopenProject: () => call('reopenProject'),
   revealEntry: (path) => call('revealEntry', path),
   publishDrafts: (drafts) => {
     void call('publishDrafts', drafts).catch(() => {});

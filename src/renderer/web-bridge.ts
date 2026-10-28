@@ -64,6 +64,7 @@ if (!scope.blode) {
     // Native project picker and shell reveal remain desktop-only actions.
     selectProject: async () => false,
     selectProjectMarker: async () => false,
+    reopenProject: async () => ({ status: 'none' }),
     revealEntry: async () => {},
     publishDrafts: () => {},
     onDrafts: (callback) => {

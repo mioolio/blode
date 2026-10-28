@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppState, DriverId, LogEvent, ProjectConfig } from '../../shared/contracts';
+import type { AppState, DriverId, LogEvent, ProjectConfig, RecentProject } from '../../shared/contracts';
 import { useI18n } from '../i18n';
 import { parseWorkspaceRoute, workspaceRouteHash, type WorkspaceRoute } from './routes';
 import { validatesExistingFirmware } from './buildMode';
@@ -91,6 +91,7 @@ export function useStudio() {
   const [serialBaud, setSerialBaud] = useState(115200);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [probeFailure, setProbeFailure] = useState<{ message: string } | null>(null);
+  const [recentMissing, setRecentMissing] = useState<RecentProject | null>(null);
   const [syncDrafts, setSyncDrafts] = useState(() => localStorage.getItem('blode.sync') !== 'off');
   const isWeb = window.__blodeWeb === true;
   const [confirmFlash, setConfirmFlash] = useState(false);
@@ -524,24 +525,40 @@ export function useStudio() {
         setState({ ...next, detection });
       }
     });
+  const restoreOpenedProject = async () => {
+    restoredFolder.current = '';
+    openFilesRef.current = [];
+    activePathRef.current = '';
+    setOpenFiles([]);
+    setOpenTools([]);
+    setActivePath('');
+    setView('code');
+    await refresh();
+    setStale(false);
+    setSerialConnected(false);
+  };
   const openProjectWith = (select: () => Promise<boolean>) =>
     perform('action.open', async () => {
-      if (dirty || configDirty) throw new Error('project.openWarning');
-      if (await select()) {
-        restoredFolder.current = '';
-        openFilesRef.current = [];
-        activePathRef.current = '';
-        setOpenFiles([]);
-        setOpenTools([]);
-        setActivePath('');
-        setView('code');
-        await refresh();
-        setStale(false);
-        setSerialConnected(false);
-      }
+      if (state?.workspaceOpen && (dirty || configDirty)) throw new Error('project.openWarning');
+      if (await select()) await restoreOpenedProject();
     });
   const openProject = () => openProjectWith(() => window.blode.selectProject());
   const openProjectMarker = () => openProjectWith(() => window.blode.selectProjectMarker());
+  const reopenProject = () =>
+    perform('action.open', async () => {
+      if (state?.workspaceOpen && (dirty || configDirty)) throw new Error('project.openWarning');
+      const result = await window.blode.reopenProject();
+      if (result.status === 'missing') {
+        setRecentMissing(result.recent ?? null);
+        return;
+      }
+      if (result.status === 'none') {
+        notify(t('error.noRecentProject'), true);
+        return;
+      }
+      setRecentMissing(null);
+      await restoreOpenedProject();
+    });
   const install = () =>
     perform('action.install', async () => {
       setTab('output');
@@ -690,6 +707,8 @@ export function useStudio() {
     setDeleteTarget,
     probeFailure,
     setProbeFailure,
+    recentMissing,
+    setRecentMissing,
     downloadProbeLog,
     sendProbeFeedback,
     chooseBoardManually,
@@ -733,6 +752,7 @@ export function useStudio() {
     refreshAutoDevices,
     openProject,
     openProjectMarker,
+    reopenProject,
     install,
     installDriver,
     refreshDrivers,

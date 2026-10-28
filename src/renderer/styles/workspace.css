@@ -603,14 +603,22 @@
   color: var(--accent);
 }
 
-.welcome-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 8px;
+.welcome-prompt {
+  margin-top: 2px;
 }
-.welcome-actions .primary,
-.welcome-actions .secondary {
-  padding: 7px 16px;
+.welcome-recent {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+}
+.welcome-recent:hover {
+  background: var(--accent-soft);
+}
+.welcome-recent strong {
+  font-size: 12px;
 }
