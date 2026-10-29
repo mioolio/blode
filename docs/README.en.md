@@ -118,8 +118,8 @@ JSON structure/version errors produce file and line diagnostics. Source rules ca
 
 | Embedded platform | Build path                                                        | Hardware operations                            |
 | ----------------- | ----------------------------------------------------------------- | ---------------------------------------------- |
-| ESP32-S3          | Arduino CLI + Arduino-ESP32                                       | esptool UART flashing and serial communication |
-| STM32F1           | GNU Arm GCC or licensed Arm Compiler 6; supported project imports | ST-Link/SWD flashing and ST-Link/GDB debugging |
+| Esp32_S3_CAM      | Arduino CLI + Arduino-ESP32                                       | esptool UART flashing and serial communication |
+| STM32F103C8T6     | GNU Arm GCC or licensed Arm Compiler 6; supported project imports | ST-Link/SWD flashing and ST-Link/GDB debugging |
 | Automatic         | Infer a supported project platform or select it manually          | Identify a connected target                    |
 
 Windows x64 is the current desktop distribution and main development environment. Linux x64/ARM64 Node paths and selected GNU/Arduino downloads are implemented, but **Linux installation, compilation, USB access and desktop packaging have not been verified on real Linux machines**. macOS custom tool paths also remain unverified. See the [support matrix](PLATFORM-SUPPORT.md) and [hardware records](HARDWARE-VALIDATION.md).
