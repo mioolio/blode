@@ -10,6 +10,7 @@ import { Settings, type PreferencesSection } from './Settings';
 import { AiWorkspace } from './AiWorkspace';
 import { supportsLayout, supportsPartitionEditing } from '../workspace/capabilities';
 import { resizeAppRegion, resizeFixedLayout } from '../workspace/layout';
+import { WelcomeHome } from './WelcomeHome';
 
 const tools = [
   { id: 'layout' as const, icon: LayoutGrid, label: 'workspace.layout' },
@@ -37,10 +38,15 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     activePath,
     openFiles,
     openTools,
+    previewPath,
+    pinFile,
+    showHome,
+    closeProjectPending,
+    setCloseProjectPending,
+    closeProject,
     openFile,
     closeTab,
     setView,
-    reopenProject,
     drafts,
     setDrafts,
     source,
@@ -76,6 +82,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const splitRegion = useRef<HTMLDivElement>(null);
+  const tabStrip = useRef<HTMLDivElement>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesTarget, setPreferencesTarget] = useState<{
     section: PreferencesSection;
@@ -85,13 +92,22 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   useEffect(() => {
     const openPreferences = (event: Event) => {
       const section = (event as CustomEvent<{ section?: unknown }>).detail?.section;
-      if (section !== 'general' && section !== 'toolchain' && section !== 'drivers') return;
-      setPreferencesTarget((current) => ({ section, revision: (current?.revision ?? 0) + 1 }));
+      const target = section === 'toolchain' || section === 'drivers' ? section : 'general';
+      setPreferencesTarget((current) => ({ section: target, revision: (current?.revision ?? 0) + 1 }));
       setPreferencesOpen(true);
     };
     window.addEventListener('blode:preferences', openPreferences);
     return () => window.removeEventListener('blode:preferences', openPreferences);
   }, []);
+  useEffect(() => {
+    const active = tabStrip.current?.querySelector<HTMLElement>('.editor-tab.active');
+    if (!active || !tabStrip.current) return;
+    const left = active.offsetLeft;
+    const right = left + active.offsetWidth;
+    const strip = tabStrip.current;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
+  }, [activePath, view, openFiles, openTools, showHome]);
 
   useEffect(() => {
     if (!preferencesOpen) return;
@@ -160,6 +176,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
         value={drafts[path] ?? file.content}
         onCursor={primary ? (position) => setCursor(position) : undefined}
         onChange={(value) => {
+          if (value !== file.content) pinFile(path);
           setDrafts((current) => {
             const next = { ...current };
             if (value === file.content) delete next[path];
@@ -175,31 +192,34 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   return (
     <>
       <div className="editor-region">
-        {!state?.workspaceOpen && view !== 'ai' ? (
-          <div className="welcome-view">
-            <span className="welcome-icon">
-              <FolderOpen size={30} strokeWidth={1.5} aria-hidden="true" />
-            </span>
-            <h2>{t(greetingKey())}</h2>
-            <p className="welcome-prompt">{t('welcome.prompt')}</p>
-            {state?.recentProject && (
-              <button
-                className="welcome-recent"
-                onClick={() => void reopenProject()}
-                title={state.recentProject.path}
-              >
-                {t('welcome.continue')} <strong>{state.recentProject.name}</strong>
-              </button>
-            )}
-          </div>
+        {(showHome || !state?.workspaceOpen) && view !== 'ai' ? (
+          <WelcomeHome studio={studio} />
         ) : (
           <>
-            <div className="editor-tabs">
+            <div
+              className="editor-tabs"
+              ref={tabStrip}
+              onWheel={(event) => {
+                const strip = event.currentTarget;
+                if (strip.scrollWidth <= strip.clientWidth) return;
+                if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+                  strip.scrollLeft += event.deltaY;
+                }
+              }}
+            >
               {fileTabs.map((file) => {
                 const active = view === 'code' && activePath === file.path;
                 return (
-                  <div className={`editor-tab ${active ? 'active' : ''}`} key={file.path}>
-                    <button className="tab-main" onClick={() => openFile(file.path)} title={file.path}>
+                  <div
+                    className={`editor-tab ${active ? 'active' : ''} ${previewPath === file.path ? 'preview-tab' : ''}`}
+                    key={file.path}
+                  >
+                    <button
+                      className="tab-main"
+                      onClick={() => openFile(file.path)}
+                      onDoubleClick={() => pinFile(file.path)}
+                      title={`${file.path}${previewPath === file.path ? ` · ${t('editor.previewHint')}` : ''}`}
+                    >
                       <FileIcon name={file.path} size={14} />
                       <span className="tab-name">{file.path.split('/').pop()}</span>
                       {drafts[file.path] !== undefined && (
@@ -425,6 +445,8 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
               config={config}
               status={state.toolchain}
               drivers={state.drivers}
+              installation={studio.installation}
+              installPending={busy === 'action.install' || busy === 'action.installDriver'}
               workspaceOpen={!!state.workspaceOpen}
               onChange={setConfig}
               onSave={saveConfig}
@@ -434,6 +456,27 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
               busy={!!busy}
               isWeb={isWeb}
             />
+          </div>
+        </div>
+      )}
+      {closeProjectPending && (
+        <div className="modal-backdrop">
+          <div
+            className="modal close-project-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('project.close')}
+          >
+            <h2>{t('project.close')}</h2>
+            <p>{t(studio.dirty || studio.configDirty ? 'project.saveClosePrompt' : 'project.closePrompt')}</p>
+            <div className="modal-actions">
+              <button onClick={() => setCloseProjectPending(false)} disabled={!!busy}>
+                {t('action.cancel')}
+              </button>
+              <button className="primary" disabled={!!busy} onClick={() => void closeProject(true)}>
+                {t('project.saveClose')}
+              </button>
+            </div>
           </div>
         </div>
       )}

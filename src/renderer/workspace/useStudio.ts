@@ -1,12 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppState, DriverId, LogEvent, ProjectConfig, RecentProject } from '../../shared/contracts';
+import type {
+  AppState,
+  DriverId,
+  LogEvent,
+  ProjectConfig,
+  RecentProject,
+  SerialOptions,
+  InstallationState,
+} from '../../shared/contracts';
 import { useI18n } from '../i18n';
 import { parseWorkspaceRoute, workspaceRouteHash, type WorkspaceRoute } from './routes';
 import { validatesExistingFirmware } from './buildMode';
+import { previewFile, pinFileTab, persistentFiles } from './tabs';
+import { diagnosticLevel } from './diagnostics';
 
 type View = 'code' | 'layout' | 'ai';
 type ToolTab = 'layout' | 'ai';
-type ConsoleTab = 'output' | 'serial' | 'problems';
+type ConsoleTab = 'output' | 'serial' | 'problems' | 'warnings';
 
 const toolTabViews: Record<ToolTab, View> = { layout: 'layout', ai: 'ai' };
 
@@ -31,6 +41,25 @@ interface StoredSession {
 }
 
 const sessionKey = (root: string) => `blode.session:${root}`;
+function retainDraftConfig(pending: ProjectConfig, next: AppState): ProjectConfig {
+  const port =
+    pending.port &&
+    !next.ports.some((item) => item.path === pending.port) &&
+    !(next.connections?.serial.open && next.connections.serial.port === pending.port)
+      ? ''
+      : pending.port;
+  const missingProbe =
+    next.connections?.probes.state === 'ready' &&
+    pending.programmer?.serialNumber &&
+    !next.debugProbes.some(
+      (item) => item.serialNumber.toLowerCase() === pending.programmer!.serialNumber.toLowerCase(),
+    );
+  return {
+    ...pending,
+    port,
+    ...(missingProbe ? { programmer: { ...pending.programmer!, serialNumber: '' } } : {}),
+  };
+}
 
 /** Electron wraps IPC failures; keep the protocol key so the UI can translate it. */
 function messageOf(error: unknown): string {
@@ -45,11 +74,12 @@ function readSession(root: string): StoredSession | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<Record<string, unknown>>;
     return {
-      openFiles: Array.isArray(parsed.openFiles)
-        ? parsed.openFiles.filter((value): value is string => typeof value === 'string')
-        : [],
+      openFiles:
+        parsed.version === 2 && Array.isArray(parsed.openFiles)
+          ? parsed.openFiles.filter((value): value is string => typeof value === 'string')
+          : [],
       openTools: Array.isArray(parsed.openTools) ? parsed.openTools.filter(isToolTab) : [],
-      activePath: typeof parsed.activePath === 'string' ? parsed.activePath : '',
+      activePath: parsed.version === 2 && typeof parsed.activePath === 'string' ? parsed.activePath : '',
     };
   } catch {
     return null;
@@ -69,6 +99,10 @@ export function useStudio() {
     initial.kind === 'editor' && initial.file ? [initial.file] : [],
   );
   const [openTools, setOpenTools] = useState<ToolTab[]>(() => initialToolTabs(initial));
+  const [previewPath, setPreviewPath] = useState(initial.kind === 'editor' ? (initial.file ?? '') : '');
+  const previewPathRef = useRef(previewPath);
+  const [showHome, setShowHome] = useState(false);
+  const [closeProjectPending, setCloseProjectPending] = useState(false);
   const [view, setView] = useState<View>(viewFromRoute(initial));
   const openFilesRef = useRef(openFiles);
   useEffect(() => {
@@ -83,12 +117,19 @@ export function useStudio() {
     viewRef.current = view;
   }, [view]);
   const [logs, setLogs] = useState<LogEvent[]>([]);
+  const [installation, setInstallation] = useState<InstallationState>();
   const [busy, setBusy] = useState('');
-  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
+  const [toast, setToast] = useState<{ message: string; error?: boolean; warning?: boolean } | null>(null);
   const [tab, setTab] = useState<ConsoleTab>('output');
   const [serialConnected, setSerialConnected] = useState(false);
   const [serialInput, setSerialInput] = useState('');
   const [serialBaud, setSerialBaud] = useState(115200);
+  const [serialOptions, setSerialOptions] = useState<SerialOptions>({
+    dataBits: 8,
+    parity: 'none',
+    stopBits: 1,
+    flowControl: 'none',
+  });
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [probeFailure, setProbeFailure] = useState<{ message: string } | null>(null);
   const [recentMissing, setRecentMissing] = useState<RecentProject | null>(null);
@@ -97,6 +138,18 @@ export function useStudio() {
   const [confirmFlash, setConfirmFlash] = useState(false);
   const [stale, setStale] = useState(false);
   const [widths, setWidths] = useState({ left: 224, right: 284, bottom: 207 });
+  const [devicePanelVisible, setDevicePanelVisible] = useState(() => {
+    try {
+      return localStorage.getItem('blode.devicePanel') !== 'hidden';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('blode.devicePanel', devicePanelVisible ? 'visible' : 'hidden');
+    } catch {}
+  }, [devicePanelVisible]);
   const logEnd = useRef<HTMLDivElement>(null);
   const restoredFolder = useRef('');
   const dirty = Object.keys(drafts).length > 0;
@@ -114,19 +167,40 @@ export function useStudio() {
   const usesStlink = isStm32 || config?.programmer?.transport === 'stlink';
   const hasBuildEntry = !!(state?.build?.entry ?? state?.build?.sketch);
   const validatesFirmware = validatesExistingFirmware(board, state?.build);
+  useEffect(() => {
+    const connected = state?.connections?.serial;
+    if (!connected?.open) return;
+    setSerialBaud(connected.baudRate);
+    if (connected.options) setSerialOptions(connected.options);
+  }, [state?.connections?.serial]);
 
-  const notify = useCallback((message: string, error = false) => setToast({ message, error }), []);
+  const notify = useCallback(
+    (message: string, error = false, warning = false) => setToast({ message, error, warning }),
+    [],
+  );
   const refresh = useCallback(async () => {
     const next = await window.blode.getState();
     setState(next);
+    setInstallation(next.installation);
+    setSerialConnected(!!next.connections?.serial.open);
     setConfig(next.config);
     setStale(next.buildStale ?? false);
     const exists = (path: string) => next.files.some((file) => file.path === path);
     if (restoredFolder.current !== next.projectRoot) {
       restoredFolder.current = next.projectRoot;
+      let restoredDraftPaths: string[] = [];
       try {
         const saved: unknown = JSON.parse(localStorage.getItem(`blode.drafts:${next.projectRoot}`) ?? '{}');
         const editable = new Map(next.files.map((file) => [file.path, file.content]));
+        restoredDraftPaths =
+          saved && typeof saved === 'object'
+            ? Object.entries(saved)
+                .filter(
+                  ([path, value]) =>
+                    editable.has(path) && typeof value === 'string' && value !== editable.get(path),
+                )
+                .map(([path]) => path)
+            : [];
         setDrafts(
           saved && typeof saved === 'object'
             ? Object.fromEntries(
@@ -159,11 +233,22 @@ export function useStudio() {
         nextOpen = current && exists(current) ? [current] : next.files[0] ? [next.files[0].path] : [];
         nextActive = nextOpen[0] ?? '';
       }
+      nextOpen = [...new Set([...nextOpen, ...restoredDraftPaths])];
+      if (!nextActive) nextActive = nextOpen[0] ?? '';
       const restoredTools = session ? session.openTools : [];
       const activeTool = viewRef.current === 'code' ? null : (viewRef.current as ToolTab);
       const nextTools =
         activeTool && !restoredTools.includes(activeTool) ? [...restoredTools, activeTool] : restoredTools;
       openFilesRef.current = nextOpen;
+      const proposedPreview =
+        nextOpen.includes(current) && !session?.openFiles.includes(current)
+          ? current
+          : !session
+            ? nextActive
+            : '';
+      const nextPreview = restoredDraftPaths.includes(proposedPreview) ? '' : proposedPreview;
+      previewPathRef.current = nextPreview;
+      setPreviewPath(nextPreview);
       activePathRef.current = nextActive;
       setOpenFiles(nextOpen);
       setActivePath(nextActive);
@@ -188,14 +273,32 @@ export function useStudio() {
     }
   }, [drafts, state?.projectRoot]);
   useEffect(() => {
+    const preview = previewPathRef.current;
+    if (
+      preview &&
+      drafts[preview] !== undefined &&
+      drafts[preview] !== state?.files.find((file) => file.path === preview)?.content
+    )
+      pinFile(preview);
+  }, [drafts, state?.files]);
+  useEffect(() => {
     const root = state?.projectRoot;
     if (!root || restoredFolder.current !== root) return;
     try {
-      localStorage.setItem(sessionKey(root), JSON.stringify({ openFiles, openTools, activePath }));
+      const retained = persistentFiles({ files: openFiles, preview: previewPath });
+      localStorage.setItem(
+        sessionKey(root),
+        JSON.stringify({
+          version: 2,
+          openFiles: retained,
+          openTools,
+          activePath: retained.includes(activePath) ? activePath : '',
+        }),
+      );
     } catch {
       /* Tab state is optional. */
     }
-  }, [state?.projectRoot, openFiles, openTools, activePath]);
+  }, [state?.projectRoot, openFiles, openTools, activePath, previewPath]);
   useEffect(() => {
     try {
       localStorage.setItem('blode.sync', syncDrafts ? 'on' : 'off');
@@ -230,7 +333,7 @@ export function useStudio() {
         ? { kind: 'layout' }
         : view === 'ai'
           ? { kind: 'automation' }
-          : { kind: 'editor', ...(activePath ? { file: activePath } : {}) };
+          : { kind: 'editor', ...(activePath && activePath !== previewPath ? { file: activePath } : {}) };
     const hash = workspaceRouteHash(route);
     if (window.location.hash !== hash) {
       try {
@@ -239,7 +342,7 @@ export function useStudio() {
         /* A restricted host may reject history updates; navigation still works. */
       }
     }
-  }, [view, activePath]);
+  }, [view, activePath, previewPath]);
   useEffect(() => {
     if (!window.blode) {
       notify(t('toast.desktop'), true);
@@ -247,7 +350,20 @@ export function useStudio() {
     }
     void refresh().catch((error) => notify(String(error), true));
     return window.blode.onEvent((event) => {
-      setLogs((current) => [...current.slice(-999), event]);
+      if (event.installation) {
+        setInstallation((current) => ({
+          ...event.installation!,
+          logs: event.progressOnly
+            ? current?.id === event.installation!.id
+              ? current.logs
+              : []
+            : [...(current?.id === event.installation!.id ? current.logs.slice(-299) : []), event],
+        }));
+      }
+      if (event.progressOnly) return;
+      const classified =
+        event.level === 'error' ? { ...event, level: diagnosticLevel(event.message) } : event;
+      setLogs((current) => [...current.slice(-999), classified]);
       if (event.message === 'status.serialDisconnected') setSerialConnected(false);
       if (event.message === 'status.serialConnected') setSerialConnected(true);
     });
@@ -275,6 +391,12 @@ export function useStudio() {
           'status.buildFailed',
           'status.projectOpened',
           'status.workspaceChanged',
+          'status.deviceSelectionCleared',
+          'status.devicesChanged',
+          'status.serialConnected',
+          'status.serialDisconnected',
+          'status.debuggerDisconnected',
+          'status.projectClosed',
         ].includes(event.message)
       )
         return;
@@ -284,7 +406,8 @@ export function useStudio() {
           .getState()
           .then((next) => {
             setState(next);
-            if (!configDirty) setConfig(next.config);
+            setSerialConnected(!!next.connections?.serial.open);
+            setConfig((current) => (configDirty && current ? retainDraftConfig(current, next) : next.config));
             setStale(next.buildStale ?? false);
             if (['status.fileSaved', 'status.configSaved', 'status.buildEntrySet'].includes(event.message))
               setStale(true);
@@ -306,16 +429,14 @@ export function useStudio() {
       return true;
     } catch (error) {
       const message = messageOf(error);
-      notify(t(message), true);
+      const level = diagnosticLevel(message);
+      notify(t(message), level === 'error', level === 'warning');
       setLogs((current) =>
-        current.at(-1)?.level === 'error' && current.at(-1)?.message === message
+        current.at(-1)?.level === level && current.at(-1)?.message === message
           ? current
-          : [
-              ...current.slice(-999),
-              { kind: 'log', level: 'error', message, time: new Date().toISOString() },
-            ],
+          : [...current.slice(-999), { kind: 'log', level, message, time: new Date().toISOString() }],
       );
-      setTab('output');
+      setTab(level === 'warning' ? 'warnings' : 'output');
       return false;
     } finally {
       setBusy('');
@@ -331,6 +452,7 @@ export function useStudio() {
   };
   const save = () =>
     perform('action.save', async () => {
+      if (activePath && state?.workspaceOpen) pinFile(activePath);
       await saveFiles();
       if (config && configDirty) {
         await window.blode.saveConfig(config);
@@ -413,15 +535,15 @@ export function useStudio() {
     });
   const flash = () => {
     if (!board?.capabilities.includes('flash')) {
-      notify(t('error.detectBoardFirst'), true);
+      reportWarning('error.detectBoardFirst');
       return;
     }
     if (usesStlink ? !config?.programmer?.serialNumber : !config?.port) {
-      notify(t(usesStlink ? 'error.selectDebugProbe' : 'toast.noPort'), true);
+      reportWarning(usesStlink ? 'error.selectDebugProbe' : 'toast.noPort');
       return;
     }
     if (!state?.lastBuild?.success || state.buildStale || stale || dirty || configDirty) {
-      notify(t('toast.noBuild'), true);
+      reportWarning('toast.noBuild');
       return;
     }
     setConfirmFlash(true);
@@ -497,6 +619,11 @@ export function useStudio() {
     perform('action.refresh', async () => {
       const ports = await window.blode.listPorts();
       setState((current) => (current ? { ...current, ports } : current));
+      setConfig((current) =>
+        current?.port && !ports.some((port) => port.path === current.port) && !serialConnected
+          ? { ...current, port: '' }
+          : current,
+      );
     });
   const refreshDebugProbes = () =>
     perform('action.refresh', async () => {
@@ -510,8 +637,9 @@ export function useStudio() {
       const debugProbes = await window.blode.listDebugProbes();
       const next = await refresh();
       if (pending) {
-        setConfig(pending);
-        setState({ ...next, config: pending, debugProbes });
+        const retained = retainDraftConfig(pending, { ...next, debugProbes });
+        setConfig(retained);
+        setState({ ...next, config: retained, debugProbes });
       } else {
         setState({ ...next, debugProbes });
       }
@@ -526,8 +654,9 @@ export function useStudio() {
       const detection = await window.blode.scanDevices();
       const next = await refresh();
       if (pending) {
-        setConfig(pending);
-        setState({ ...next, config: pending, detection });
+        const retained = retainDraftConfig(pending, { ...next, detection });
+        setConfig(retained);
+        setState({ ...next, config: retained, detection });
       } else {
         setState({ ...next, detection });
       }
@@ -538,11 +667,13 @@ export function useStudio() {
     activePathRef.current = '';
     setOpenFiles([]);
     setOpenTools([]);
+    previewPathRef.current = '';
+    setPreviewPath('');
+    setShowHome(false);
     setActivePath('');
     setView('code');
     await refresh();
     setStale(false);
-    setSerialConnected(false);
   };
   const openProjectWith = (select: () => Promise<boolean>) =>
     perform('action.open', async () => {
@@ -565,6 +696,45 @@ export function useStudio() {
       }
       setRecentMissing(null);
       await restoreOpenedProject();
+    });
+  const openRecentProject = (path: string) =>
+    perform('action.open', async () => {
+      if (state?.workspaceOpen && (dirty || configDirty)) throw new Error('project.openWarning');
+      const result = await window.blode.openRecentProject(path);
+      if (result.status === 'missing') {
+        setRecentMissing(result.recent ?? null);
+        return;
+      }
+      if (result.status === 'opened') await restoreOpenedProject();
+    });
+  const removeRecentProject = (path: string) =>
+    perform('welcome.removeRecent', async () => {
+      const pending = configDirty ? config : null;
+      await window.blode.removeRecentProject(path);
+      await refresh();
+      if (pending) setConfig(pending);
+    });
+  const goHome = () => {
+    setShowHome(true);
+    setView('code');
+    const pending = configDirty ? config : null;
+    void refresh()
+      .then(() => {
+        if (pending) setConfig(pending);
+      })
+      .catch((error) => notify(String(error), true));
+  };
+  const returnToProject = () => setShowHome(false);
+  const closeProject = (saveChanges: boolean) =>
+    perform('project.close', async () => {
+      if (saveChanges) {
+        await saveFiles();
+        if (config && configDirty) await window.blode.saveConfig(config);
+      }
+      await window.blode.closeProject();
+      setCloseProjectPending(false);
+      await restoreOpenedProject();
+      setShowHome(true);
     });
   const install = () =>
     perform('action.install', async () => {
@@ -594,7 +764,7 @@ export function useStudio() {
         notify(t('toast.disconnected'));
       } else {
         if (!config?.port) throw new Error('toast.noPort');
-        await window.blode.serialOpen(config.port, serialBaud);
+        await window.blode.serialOpen(config.port, serialBaud, serialOptions);
         setSerialConnected(true);
         notify(t('toast.connected'));
       }
@@ -607,18 +777,38 @@ export function useStudio() {
       notify(String(error), true);
     }
   };
+  const reportWarning = (message: string) => {
+    notify(t(message), false, true);
+    setLogs((current) => [
+      ...current.slice(-999),
+      { kind: 'log', level: 'warning', message, time: new Date().toISOString() },
+    ]);
+    setTab('warnings');
+  };
+  const pinFile = (path: string) => {
+    const next = pinFileTab({ files: openFilesRef.current, preview: previewPathRef.current }, path);
+    openFilesRef.current = next.files;
+    previewPathRef.current = next.preview;
+    setOpenFiles(next.files);
+    setPreviewPath(next.preview);
+  };
   const openFile = (path: string) => {
-    setOpenFiles((current) => {
-      const next = current.includes(path) ? current : [...current, path];
-      openFilesRef.current = next;
-      return next;
-    });
+    const next = previewFile({ files: openFilesRef.current, preview: previewPathRef.current }, path);
+    openFilesRef.current = next.files;
+    previewPathRef.current = next.preview;
+    setOpenFiles(next.files);
+    setPreviewPath(next.preview);
+    setShowHome(false);
     activePathRef.current = path;
     setActivePath(path);
     setView('code');
   };
   const closeTab = (kind: 'file' | 'tool', id: string) => {
     if (kind === 'file') {
+      if (previewPathRef.current === id) {
+        previewPathRef.current = '';
+        setPreviewPath('');
+      }
       const index = openFiles.indexOf(id);
       const next = openFiles.filter((path) => path !== id);
       openFilesRef.current = next;
@@ -694,11 +884,25 @@ export function useStudio() {
     setActivePath,
     openFiles,
     openTools,
+    previewPath,
+    pinFile,
+    showHome,
+    goHome,
+    returnToProject,
+    closeProjectPending,
+    setCloseProjectPending,
+    closeProject,
+    openRecentProject,
+    removeRecentProject,
     openFile,
     closeTab,
     view,
-    setView,
+    setView: (next: View) => {
+      setShowHome(false);
+      setView(next);
+    },
     logs,
+    installation,
     setLogs,
     busy,
     toast,
@@ -710,6 +914,8 @@ export function useStudio() {
     setSerialInput,
     serialBaud,
     setSerialBaud,
+    serialOptions,
+    setSerialOptions,
     deleteTarget,
     setDeleteTarget,
     probeFailure,
@@ -727,6 +933,8 @@ export function useStudio() {
     stale,
     setStale,
     widths,
+    devicePanelVisible,
+    setDevicePanelVisible,
     logEnd,
     dirty,
     configDirty,

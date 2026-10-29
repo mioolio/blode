@@ -7,6 +7,7 @@ import type {
   ProjectFile,
   ToolchainStatus,
   ProjectBuildInputs,
+  InstallationProgress,
 } from '../src/shared/contracts.js';
 
 /** Stable host capabilities provided to statically registered, trusted platform packages. */
@@ -31,6 +32,7 @@ export interface RuntimeHost {
   signal: AbortSignal;
   runCommand(command: string, args: string[], options?: RuntimeRunOptions): Promise<RuntimeCommandResult>;
   emit(message: string, level?: LogEvent['level'], kind?: LogEvent['kind']): void;
+  installationProgress?(progress: InstallationProgress): void;
   projectRoot(): string;
   readProjectFiles(): Promise<ProjectFile[]>;
   resolveWorkspacePath(relative: string, options?: { internal?: boolean }): Promise<string>;
@@ -43,6 +45,13 @@ export interface PlatformProbeResult {
   output: string;
   config: ProjectConfig;
   debugProbes?: DebugProbeInfo[];
+}
+/** Native-only immutable selection materialized by the host, never a renderer file path. */
+export interface RuntimeFirmwareImage {
+  path: string;
+  address: number;
+  size: number;
+  sha256: string;
 }
 export interface PlatformRuntime {
   readonly id: string;
@@ -61,6 +70,7 @@ export interface PlatformRuntime {
   ): Promise<PlatformProbeResult>;
   build(config: ProjectConfig, build: ProjectBuildInputs): Promise<BuildResult>;
   flash(config: ProjectConfig, build: BuildResult): Promise<void>;
+  flashPrepared?(config: ProjectConfig, image: RuntimeFirmwareImage): Promise<void>;
   invalidate(): void;
 }
 export type CreatePlatformRuntimes = (host: RuntimeHost) => PlatformRuntime[];

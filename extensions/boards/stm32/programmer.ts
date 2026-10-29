@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import type { DebugProbeInfo } from '../../../src/shared/contracts.js';
+import type { DebugProbeInfo, InstallationProgress } from '../../../src/shared/contracts.js';
 import type { RuntimeHost, RuntimeCommandResult } from '../../runtime.js';
 import {
   buildStlinkFlashArgs,
@@ -23,6 +23,7 @@ interface StlinkOptions {
   fetcher?: typeof fetch;
   signal?: AbortSignal;
   onLine?: (line: string) => void;
+  onProgress?: (progress: InstallationProgress) => void;
   runner: RuntimeHost['runCommand'];
 }
 
@@ -156,6 +157,7 @@ export class StlinkProgrammer {
   async install(): Promise<void> {
     if (process.platform !== 'win32' || process.arch !== 'x64')
       throw new Error('errors.stlinkInstallUnsupported');
+    this.options.onProgress?.({ tool: 'stlink-tools', phase: 'starting' });
     this.options.onLine?.('status.stlinkResolving');
     const release = (await (await this.fetch(STLINK_WINDOWS_RELEASE.metadataUrl, 30_000)).json()) as {
       tag_name?: string;
@@ -180,15 +182,42 @@ export class StlinkProgrammer {
     )
       throw new Error('errors.stlinkArchiveSize');
     this.options.onLine?.('status.stlinkDownloading');
+    this.options.onProgress?.({
+      tool: 'stlink-tools',
+      phase: 'downloading',
+      receivedBytes: 0,
+      totalBytes: asset.size,
+    });
     const response = await this.fetch(asset.browser_download_url, 180_000);
     if (!response.body) throw new Error('errors.stlinkChecksum');
+    const headerSize = Number(response.headers.get('content-length'));
+    const totalBytes =
+      asset.size ??
+      (Number.isSafeInteger(headerSize) && headerSize > 0 && headerSize <= MAX_ARCHIVE_BYTES
+        ? headerSize
+        : undefined);
+    const progress = (receivedBytes: number) =>
+      this.options.onProgress?.({
+        tool: 'stlink-tools',
+        phase: 'downloading',
+        receivedBytes,
+        totalBytes,
+      });
+    progress(0);
     const chunks: Buffer[] = [];
     let size = 0;
+    let lastProgress = Date.now();
     for await (const chunk of response.body) {
       size += chunk.byteLength;
       if (size > MAX_ARCHIVE_BYTES) throw new Error('errors.stlinkArchiveSize');
       chunks.push(Buffer.from(chunk));
+      if (Date.now() - lastProgress >= 500) {
+        progress(size);
+        lastProgress = Date.now();
+      }
     }
+    progress(size);
+    this.options.onProgress?.({ tool: 'stlink-tools', phase: 'verifying' });
     const bytes = Buffer.concat(chunks);
     if (
       createHash('sha256').update(bytes).digest('hex') !== checksum ||
@@ -202,6 +231,7 @@ export class StlinkProgrammer {
       const extractionRoot = path.join(stage, 'extracted');
       await fs.writeFile(archive, bytes);
       await fs.mkdir(extractionRoot);
+      this.options.onProgress?.({ tool: 'stlink-tools', phase: 'extracting' });
       const listing = await this.run('tar', ['-tf', archive], 30_000, true);
       if (
         listing.code !== 0 ||
@@ -219,6 +249,7 @@ export class StlinkProgrammer {
           ? path.dirname(binaryDirectory)
           : binaryDirectory;
       // Preserve share/stlink/chips and dependent DLLs, not just the two executables.
+      this.options.onProgress?.({ tool: 'stlink-tools', phase: 'installing' });
       await fs.cp(source, this.root, { recursive: true });
       const installedDirectory =
         path.basename(binaryDirectory).toLowerCase() === 'bin' ? path.join(this.root, 'bin') : this.root;
@@ -252,6 +283,7 @@ export class StlinkProgrammer {
         ) + '\n',
       );
       this.options.onLine?.('status.stlinkInstalled');
+      this.options.onProgress?.({ tool: 'stlink-tools', phase: 'completed' });
     } finally {
       // stage is created directly under this.root by mkdtemp, never supplied by a project.
       await fs.rm(stage, { recursive: true, force: true });

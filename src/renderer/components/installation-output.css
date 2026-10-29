@@ -1,0 +1,133 @@
+.installation-output {
+  min-width: 0;
+}
+.installation-heading,
+.installation-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.installation-output .installation-heading h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 12px;
+}
+.installation-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+  min-height: 20px;
+  line-height: 1.5;
+}
+.installation-status > svg {
+  flex-shrink: 0;
+}
+.installation-running .installation-status {
+  color: var(--accent);
+}
+.installation-completed .installation-status {
+  color: var(--green);
+}
+.installation-failed .installation-status {
+  color: var(--red);
+}
+.installation-detail {
+  margin-top: 14px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.installation-detail strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.installation-detail > span {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.installation-progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 4px;
+  margin-top: 10px;
+  background: var(--surface-4);
+}
+.installation-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+.installation-progress.indeterminate > span {
+  width: 28%;
+  animation: installation-wait 1.4s ease-in-out infinite alternate;
+}
+@keyframes installation-wait {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(258%);
+  }
+}
+.installation-log {
+  max-height: 220px;
+  min-height: 62px;
+  overflow: auto;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--editor-bg);
+  font:
+    11px/1.7 Consolas,
+    'Cascadia Code',
+    monospace;
+  color: var(--log-text);
+  user-select: text;
+  scrollbar-gutter: stable;
+}
+.installation-log-line {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr);
+  gap: 10px;
+}
+.installation-log-line time {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.installation-log-line > span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.installation-log-line.level-error {
+  color: var(--red);
+}
+.installation-log-line.level-warning {
+  color: var(--amber);
+}
+.installation-log-line.level-success {
+  color: var(--green);
+}
+.installation-empty,
+.installation-log-empty {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.installation-empty {
+  margin: 10px 0 0;
+  line-height: 1.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .installation-progress.indeterminate > span {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}

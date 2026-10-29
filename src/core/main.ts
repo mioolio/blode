@@ -18,6 +18,9 @@ import { PROJECT_MARKER, safeWorkspacePath } from './workspace';
 import { startWebServer, type WebServerHandle } from './web';
 import { exportProbeLog } from './log-export';
 import { MAX_PROBE_LOG_BYTES } from '../shared/probe-log';
+import { RecentProjects } from './recent-projects';
+import { FirmwareStore, prepareBuildExport } from './firmware';
+import { HardwareDebugger } from './hardware-debugger';
 
 app.setName('Blode Studio');
 // Keep drafts in Local Storage, but avoid persistent GPU/Dawn cache handles.
@@ -75,6 +78,8 @@ let core: CoreService | null = null;
 let pipe: PipeServerHandle | null = null;
 let web: WebServerHandle | null = null;
 let closing = false;
+let debuggerWindow: BrowserWindow | null = null;
+let hardwareDebugger: HardwareDebugger | null = null;
 const developmentUrl = process.env.ELECTRON_RENDERER_URL;
 const ownLock = app.requestSingleInstanceLock();
 logBoot(`singleInstanceLock=${ownLock} userData=${app.getPath('userData')}`);
@@ -129,6 +134,8 @@ async function bootstrap(): Promise<void> {
   const dataRoot = process.env.BLODE_DATA_ROOT || app.getPath('userData');
   logBoot(`dataRoot=${dataRoot}`);
   const recentProjectFile = path.join(dataRoot, 'recent-project.json');
+  const recentHistory = new RecentProjects(recentProjectFile);
+  const firmwareStore = new FirmwareStore(dataRoot);
   const readRecentProject = async (): Promise<RecentProject | null> => {
     let stored = '';
     try {
@@ -160,6 +167,8 @@ async function bootstrap(): Promise<void> {
   const projectRoot = process.env.BLODE_PROJECT_ROOT || '';
   const emit = (event: LogEvent) => {
     if (window && !window.isDestroyed()) window.webContents.send(EVENT_CHANNEL, event);
+    if (debuggerWindow && !debuggerWindow.isDestroyed())
+      debuggerWindow.webContents.send(EVENT_CHANNEL, event);
     pipe?.publish(event);
     web?.publish(event);
   };
@@ -177,15 +186,24 @@ async function bootstrap(): Promise<void> {
       toolchainEnv.HTTP_PROXY ??= address;
     }
   }
+  // The full package ships a tools folder beside the app, so compilation works
+  // without extra downloads. The lite package has none and installs into the
+  // user data folder; an explicitly configured path always wins.
+  const bundledTools = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), 'tools');
+  const bundledToolsReady = await fs
+    .stat(bundledTools)
+    .then((entry) => entry.isDirectory())
+    .catch(() => false);
+  logBoot(`bundledTools=${bundledToolsReady} ${bundledTools}`);
   core = await createCore({
     projectRoot,
     dataRoot,
     onEvent: emit,
+    refreshDevices: true,
+    hardwareBusy: () => !!hardwareDebugger?.active,
     toolchainEnv,
     fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
-    // A repository-local tools folder keeps local builds independent of AppData.
-    toolchainRoot:
-      process.env.BLODE_TOOLCHAIN_ROOT || (app.isPackaged ? undefined : path.join(app.getAppPath(), 'tools')),
+    toolchainRoot: process.env.BLODE_TOOLCHAIN_ROOT || (bundledToolsReady ? bundledTools : undefined),
     // Vendor driver archives are read-only extras; extraction happens under userData.
     driverRoot:
       process.env.BLODE_DRIVER_ROOT ||
@@ -197,7 +215,8 @@ async function bootstrap(): Promise<void> {
   const state = core.getState.bind(core);
   core.getState = async () => ({
     ...(await state()),
-    recentProject: await readRecentProject(),
+    recentProject: (await recentHistory.list())[0] ?? null,
+    recentProjects: await recentHistory.list(),
     pipe: { endpoint: pipe?.endpoint ?? '', tokenFile: pipe?.tokenFile ?? '' },
     web: {
       endpoint: web?.endpoint ?? '',
@@ -205,6 +224,53 @@ async function bootstrap(): Promise<void> {
       allowExternal: web?.allowExternal ?? false,
     },
   });
+  hardwareDebugger = new HardwareDebugger(
+    process.env.BLODE_TOOLCHAIN_ROOT ||
+      (bundledToolsReady ? bundledTools : path.join(dataRoot, 'toolchains')),
+    path.join(dataRoot, 'debugger'),
+    (message) => emit({ kind: 'status', level: 'info', message, time: new Date().toISOString() }),
+  );
+  await hardwareDebugger.restore();
+  if (projectRoot) await recentHistory.remember(projectRoot).catch(() => {});
+  const openDebugger = async () => {
+    if (debuggerWindow && !debuggerWindow.isDestroyed()) {
+      debuggerWindow.show();
+      debuggerWindow.focus();
+      return;
+    }
+    debuggerWindow = new BrowserWindow({
+      title: 'Blode Studio · 硬件仿真',
+      frame: false,
+      width: 1280,
+      height: 850,
+      minWidth: 900,
+      minHeight: 650,
+      backgroundColor: windowBackground(),
+      show: false,
+      webPreferences: {
+        additionalArguments: ['--blode-frameless'],
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webSecurity: true,
+      },
+    });
+    const secondary = debuggerWindow;
+    secondary.removeMenu();
+    secondary.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    secondary.webContents.on('will-navigate', (e) => e.preventDefault());
+    secondary.once('ready-to-show', () => secondary.show());
+    secondary.once('closed', () => {
+      debuggerWindow = null;
+      void hardwareDebugger?.disconnect();
+    });
+    if (developmentUrl) await secondary.loadURL(developmentUrl + '/#/hardware-debugger');
+    else
+      await secondary.loadFile(path.join(__dirname, 'renderer', 'index.html'), {
+        hash: '/hardware-debugger',
+      });
+  };
   pipe = await startPipeServer({ api: core, dataRoot, onEvent: emit });
   logBoot(`pipe ready ${pipe.endpoint}`);
   if (applicationConfig.web.enabled) {
@@ -242,6 +308,14 @@ async function bootstrap(): Promise<void> {
     },
   });
   window.removeMenu();
+  if (process.platform === 'win32') {
+    // Windows broadcasts topology changes to top-level windows. No polling of USB/SWD is needed.
+    window.hookWindowMessage(0x0219, (wParam) => {
+      if (closing || wParam.length < 4) return;
+      const change = wParam.readUInt32LE(0);
+      if (change === 0x0007 || change === 0x8000 || change === 0x8004) core?.notifyDevicesChanged();
+    });
+  }
   let interfaceCheck: ReturnType<typeof setInterval> | undefined;
   window.webContents.on('did-finish-load', () => {
     clearInterval(interfaceCheck);
@@ -306,6 +380,127 @@ async function bootstrap(): Promise<void> {
 
   const noArgs = z.tuple([]);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    listRecentProjects: { args: noArgs, run: () => recentHistory.list() },
+    openRecentProject: {
+      args: z.tuple([z.string().min(1).max(4096)]),
+      run: async (root) => {
+        const recent = (await recentHistory.list()).find((item) => item.path === root);
+        if (!recent) return { status: 'none' };
+        if (!recent.available) return { status: 'missing', recent };
+        await core!.setProjectRoot(recent.path);
+        await recentHistory.remember(recent.path);
+        return { status: 'opened', recent };
+      },
+    },
+    removeRecentProject: {
+      args: z.tuple([z.string().min(1).max(4096)]),
+      run: (root) => recentHistory.remove(root),
+    },
+    closeProject: { args: noArgs, run: () => core!.closeProject() },
+    firmwareChoose: {
+      args: noArgs,
+      run: async () => {
+        const result = await dialog.showOpenDialog(window!, {
+          title: '选择预备固件 / Choose firmware',
+          properties: ['openFile'],
+          filters: [
+            { name: 'Firmware', extensions: ['bin', 'hex', 'ihex', 'srec', 's19', 's28', 's37', 'mot'] },
+          ],
+        });
+        return result.canceled || !result.filePaths[0] ? null : firmwareStore.choose(result.filePaths[0]);
+      },
+    },
+    firmwareExport: {
+      args: z.tuple([z.enum(['bin', 'hex', 'srec', 'elf'])]),
+      run: async (format) => {
+        const state = await core!.getState();
+        const prepared = await prepareBuildExport(state.projectRoot, state, format);
+        const result = await dialog.showSaveDialog(window!, {
+          title: '导出烧录固件 / Export firmware',
+          defaultPath: prepared.defaultName,
+          filters: [{ name: format.toUpperCase(), extensions: [prepared.filterExtension] }],
+        });
+        if (result.canceled || !result.filePath) return { status: 'cancelled' };
+        await fs.writeFile(result.filePath, prepared.data);
+        if (prepared.manifest) {
+          const sidecar = result.filePath + '.' + Date.now() + '.json';
+          await fs.writeFile(sidecar, prepared.manifest, { flag: 'wx' });
+        }
+        return { status: 'saved', path: result.filePath };
+      },
+    },
+    firmwareFlash: {
+      args: z.tuple([
+        z
+          .object({
+            id: z.string().min(1).max(128),
+            config: z.unknown(),
+            address: z.number().int().nonnegative().max(0xffffffff).optional(),
+            confirm: z.literal(true),
+          })
+          .strict(),
+      ]),
+      run: async (request) => {
+        const config = parseConfig(request.config);
+        await firmwareStore.withImage(request.id, config.boardId, request.address, (image) =>
+          core!.flashPrepared(config, image),
+        );
+      },
+    },
+    openDebugger: { args: noArgs, run: openDebugger },
+    debuggerState: { args: noArgs, run: () => hardwareDebugger!.state() },
+    debuggerStorage: { args: noArgs, run: () => hardwareDebugger!.storage() },
+    debuggerSymbols: {
+      args: noArgs,
+      run: async () => {
+        const result = await dialog.showOpenDialog(debuggerWindow ?? window!, {
+          title: '选择调试符号 / ELF symbols',
+          properties: ['openFile'],
+          filters: [{ name: 'ARM ELF', extensions: ['elf', 'axf'] }],
+        });
+        return result.canceled || !result.filePaths[0]
+          ? null
+          : hardwareDebugger!.symbolsFile(result.filePaths[0]);
+      },
+    },
+    debuggerConnect: {
+      args: z.tuple([z.unknown()]),
+      run: async (config) => {
+        await core!.runHardwareAction(() => hardwareDebugger!.connect(parseConfig(config)));
+      },
+    },
+    debuggerAction: {
+      args: z.tuple([z.enum(['continue', 'pause', 'step', 'next', 'finish', 'disconnect'])]),
+      run: (action) => hardwareDebugger!.action(action),
+    },
+    debuggerBreakpoint: {
+      args: z.tuple([z.string().max(1024), z.string().regex(/^\d+$/).optional()]),
+      run: (location, id) => hardwareDebugger!.breakpoint(location, id),
+    },
+    debuggerMemory: {
+      args: z.tuple([z.number().int().nonnegative().max(0xffffffff), z.number().int().min(1).max(4096)]),
+      run: (address, length) => hardwareDebugger!.memory(address, length),
+    },
+    debuggerInstallTools: {
+      args: noArgs,
+      run: () =>
+        core!.runInstallation('GNU Arm GCC / GDB', ({ progress, log, fetcher, signal }) =>
+          hardwareDebugger!.install(progress, log, { fetcher, signal }),
+        ),
+    },
+    debuggerChooseGdb: {
+      args: noArgs,
+      run: async () => {
+        const result = await dialog.showOpenDialog(debuggerWindow ?? window!, {
+          title: '选择 arm-none-eabi-gdb',
+          properties: ['openFile'],
+          filters: [{ name: 'GDB', extensions: process.platform === 'win32' ? ['exe'] : ['*'] }],
+        });
+        if (result.canceled || !result.filePaths[0]) return false;
+        await hardwareDebugger!.selectGdb(result.filePaths[0]);
+        return true;
+      },
+    },
     exportProbeLog: {
       args: z.tuple([z.string().max(MAX_PROBE_LOG_BYTES)]),
       run: async (content) =>
@@ -381,11 +576,26 @@ async function bootstrap(): Promise<void> {
     refreshDrivers: { args: noArgs, run: () => core!.driverStatuses(true) },
     installDriver: { args: z.tuple([z.literal('stlink')]), run: (id) => core!.installDriver(id) },
     serialOpen: {
-      args: z.tuple([z.string().max(128).optional(), z.number().int().min(1200).max(3_000_000).optional()]),
-      run: (port, baud) => core!.serialOpen(port, baud),
+      args: z.tuple([
+        z.string().max(128).optional(),
+        z.number().int().min(110).max(4_000_000).optional(),
+        z
+          .object({
+            dataBits: z.union([z.literal(5), z.literal(6), z.literal(7), z.literal(8)]).optional(),
+            parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).optional(),
+            stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
+            flowControl: z.enum(['none', 'rtscts', 'xonxoff']).optional(),
+          })
+          .strict()
+          .optional(),
+      ]),
+      run: (port, baud, options) => core!.serialOpen(port, baud, options),
     },
     serialClose: { args: noArgs, run: () => core!.serialClose() },
-    serialWrite: { args: z.tuple([z.string().max(8192)]), run: (data) => core!.serialWrite(data) },
+    serialWrite: {
+      args: z.tuple([z.string().max(65536), z.enum(['utf8', 'hex']).optional()]),
+      run: (data, encoding) => core!.serialWrite(data, encoding),
+    },
     selectProject: {
       args: noArgs,
       run: async () => {
@@ -395,7 +605,7 @@ async function bootstrap(): Promise<void> {
         if (result.canceled || !result.filePaths[0]) return false;
         const root = await fs.realpath(result.filePaths[0]);
         await core!.setProjectRoot(root);
-        await rememberProject(root);
+        await recentHistory.remember(root);
         return true;
       },
     },
@@ -413,18 +623,19 @@ async function bootstrap(): Promise<void> {
           throw new Error('error.invalidProjectMarker');
         const root = await fs.realpath(path.dirname(marker));
         await core!.setProjectRoot(root);
-        await rememberProject(root);
+        await recentHistory.remember(root);
         return true;
       },
     },
     reopenProject: {
       args: noArgs,
       run: async (): Promise<ReopenProjectResult> => {
-        const recent = await readRecentProject();
+        const recent = (await recentHistory.list())[0] ?? null;
         if (!recent) return { status: 'none' };
         if (!recent.available) return { status: 'missing', recent };
         await core!.setProjectRoot(recent.path);
-        return { status: 'opened', recent: (await readRecentProject()) ?? recent };
+        await recentHistory.remember(recent.path);
+        return { status: 'opened', recent };
       },
     },
     windowAction: {
@@ -440,17 +651,38 @@ async function bootstrap(): Promise<void> {
     },
   };
   ipcMain.handle(IPC_CHANNEL, (event, method: unknown, args: unknown) => {
-    if (event.sender !== window?.webContents || event.senderFrame !== window?.webContents.mainFrame)
+    const secondary = event.sender === debuggerWindow?.webContents;
+    if ((event.sender !== window?.webContents && !secondary) || event.senderFrame !== event.sender.mainFrame)
+      throw new Error('error.unauthorized');
+    if (
+      secondary &&
+      method !== 'getState' &&
+      method !== 'listDebugProbes' &&
+      method !== 'windowAction' &&
+      !(typeof method === 'string' && method.startsWith('debugger'))
+    )
       throw new Error('error.unauthorized');
     if (typeof method !== 'string' || !Object.hasOwn(routes, method)) throw new Error('error.unknownMethod');
     const route = routes[method];
     const parsed = route.args.safeParse(args);
     if (!parsed.success) throw new Error('error.invalidArguments');
+    if (secondary && method === 'windowAction') {
+      const target = debuggerWindow;
+      const [action] = parsed.data as ['minimize' | 'maximize' | 'close'];
+      if (action === 'minimize') target?.minimize();
+      if (action === 'maximize' && target) {
+        if (target.isMaximized()) target.unmaximize();
+        else target.maximize();
+      }
+      if (action === 'close') target?.close();
+      return;
+    }
     return route.run(...(parsed.data as unknown[]));
   });
   window.once('ready-to-show', () => {
     window?.show();
   });
+  window.once('closed', () => debuggerWindow?.close());
   if (developmentUrl) {
     const url = new URL(developmentUrl);
     if (url.origin !== 'http://127.0.0.1:5173') throw new Error('error.invalidDevServer');
@@ -482,7 +714,12 @@ app.on('before-quit', (event) => {
     app.exit(0);
   }, 5000);
   deadline.unref();
-  void Promise.allSettled([pipe?.close(), web?.close(), core?.shutdown()]).then(() => {
+  void Promise.allSettled([
+    pipe?.close(),
+    web?.close(),
+    core?.shutdown(),
+    hardwareDebugger?.disconnect(),
+  ]).then(() => {
     clearTimeout(deadline);
     app.quit();
   });

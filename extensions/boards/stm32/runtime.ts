@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { ProjectBuildInputs, ProjectConfig, ToolchainStatus } from '../../../src/shared/contracts.js';
 import type { PlatformRuntime, RuntimeHost } from '../../runtime.js';
 import { stm32Adapter } from './adapter.js';
@@ -7,12 +8,21 @@ import { appRegionSize } from './layout.js';
 import { StlinkProgrammer } from './programmer.js';
 import { isStm32FlashSize, STM32_FLASH_BASE } from './protocol.js';
 import { Stm32Compiler } from './compiler.js';
+import { GnuArmToolchain } from './gnu.js';
 
 export type Stm32Programmer = Pick<StlinkProgrammer, 'status' | 'listProbes' | 'probe' | 'flash' | 'install'>;
 
 /** USB/SWD and precompiled binary programming are owned by the STM32 package. */
 export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32Programmer): PlatformRuntime {
   const compiler = new Stm32Compiler(host);
+  const gnu = new GnuArmToolchain({
+    root: path.join(host.toolchainRoot ?? path.join(host.dataRoot, 'toolchains'), 'armgcc'),
+    fetcher: host.fetcher,
+    signal: host.signal,
+    onLine: (line) => host.emit(line),
+    onProgress: (progress) => host.installationProgress?.(progress),
+    runner: host.runCommand,
+  });
   const sourceBuild = (build: ProjectBuildInputs): ProjectBuildInputs => ({
     ...build,
     entry: build.entry ?? build.sketch,
@@ -24,6 +34,7 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
       fetcher: host.fetcher,
       signal: host.signal,
       onLine: (line) => host.emit(line),
+      onProgress: (progress) => host.installationProgress?.(progress),
       runner: host.runCommand,
     });
   const status = async (config: ProjectConfig): Promise<ToolchainStatus> => {
@@ -37,10 +48,11 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
       python: false,
       esptool: false,
       stlink: current.installed,
-      armCompiler: compilation.installed,
+      armCompiler: compilation.installed && !compilation.gnu,
+      gnuArm: compilation.installed && compilation.gnu,
       versions: {
         stlink: current.version,
-        ...(compilation.version ? { armCompiler: compilation.version } : {}),
+        ...(compilation.version ? { [compilation.gnu ? 'gnuArm' : 'armCompiler']: compilation.version } : {}),
       },
     };
   };
@@ -66,8 +78,12 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
     status,
     async install(config) {
       if (!config.toolchain.stlinkDirectory) await programmer.install();
+      // Arm Compiler 6 cannot be redistributed; install the managed GNU
+      // toolchain only when no compiler is already available.
+      if (!(await compiler.status(config)).installed) await gnu.install();
       const current = await status(config);
       if (!current.stlink) throw new Error('errors.stlinkMissing');
+      if (!current.armCompiler && !current.gnuArm) throw new Error('errors.stm32CompilerMissing');
       return current;
     },
     async discover(config) {
@@ -178,6 +194,54 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
         file: await host.resolveWorkspacePath(binary, { internal: binary.startsWith('.blode/') }),
         address: STM32_FLASH_BASE,
         flashSize: config.flashSize,
+        directory: config.toolchain.stlinkDirectory,
+      });
+    },
+    async flashPrepared(config, image) {
+      stm32Adapter.validateConfig(config);
+      const selected = config.programmer;
+      if (!selected?.serialNumber) throw new Error('error.selectDebugProbe');
+      const stat = await fs.lstat(image.path);
+      const bytes = await fs.readFile(image.path);
+      if (
+        !stat.isFile() ||
+        stat.isSymbolicLink() ||
+        bytes.length !== image.size ||
+        createHash('sha256').update(bytes).digest('hex') !== image.sha256
+      )
+        throw new Error('firmware.fileChanged');
+      if (
+        !Number.isSafeInteger(image.address) ||
+        image.address < STM32_FLASH_BASE ||
+        image.address % 4 ||
+        !image.size
+      )
+        throw new Error('errors.invalidFlashOffset');
+      const target = await programmer.probe(
+        selected.serialNumber,
+        selected.frequencyKhz,
+        config.toolchain.stlinkDirectory,
+      );
+      if (
+        selected.targetChipId &&
+        selected.targetChipId.toLowerCase() !== target.device.chipId?.toLowerCase()
+      )
+        throw new Error('error.chipMismatch');
+      const capacity = target.device.flashSize;
+      if (
+        !capacity ||
+        image.address - STM32_FLASH_BASE + Math.ceil(image.size / 4) * 4 > capacity ||
+        (config.flashSizeOverride &&
+          image.address - STM32_FLASH_BASE + Math.ceil(image.size / 4) * 4 > config.flashSize)
+      )
+        throw new Error('errors.firmwareOutOfBounds');
+      await host.closeSerial();
+      await programmer.flash({
+        serialNumber: target.device.serialNumber,
+        frequencyKhz: selected.frequencyKhz,
+        file: image.path,
+        address: image.address,
+        flashSize: capacity,
         directory: config.toolchain.stlinkDirectory,
       });
     },

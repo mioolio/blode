@@ -15,7 +15,9 @@
     "test": "tsx --test tests/*.test.ts",
     "prestart": "node scripts/windows-runtime.mjs",
     "start": "electron .",
-    "package": "npm run build && electron-builder --win portable",
+    "package": "npm run package:lite",
+    "package:lite": "npm run build && electron-builder -c electron-builder.config.cjs",
+    "package:full": "npm run build && electron-builder -c electron-builder.config.cjs",
     "mcp": "tsx scripts/mcp-bridge.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -42,39 +44,5 @@
     "tsx": "^4.21.0",
     "typescript": "7.0.2",
     "vite": "8.3.5"
-  },
-  "build": {
-    "appId": "studio.blode.desktop",
-    "productName": "Blode Studio",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "docs",
-        "to": "docs"
-      },
-      {
-        "from": "extensions/boards",
-        "to": "boards",
-        "filter": [
-          "*/manifest.json"
-        ]
-      },
-      {
-        "from": "tools/STSW-LINK",
-        "to": "drivers/STSW-LINK"
-      }
-    ],
-    "asarUnpack": [
-      "**/*.node"
-    ],
-    "win": {
-      "target": "portable"
-    }
   }
 }

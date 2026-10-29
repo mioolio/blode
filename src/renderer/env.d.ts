@@ -4,6 +4,7 @@ declare global {
     blode: DesktopApi;
     /** Set by the browser bridge; absent in the Electron renderer. */
     __blodeWeb?: boolean;
+    __blodeFrameless?: boolean;
   }
 }
 export {};

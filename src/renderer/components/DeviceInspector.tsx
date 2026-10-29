@@ -1,4 +1,4 @@
-import { CircuitBoard, Cpu, Gauge, RefreshCw, ScanSearch, Usb } from 'lucide-react';
+import { CircuitBoard, Cpu, Gauge, RefreshCw, ScanSearch, Usb, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { MemoryUsage } from './MemoryUsage';
 
@@ -31,6 +31,11 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
   const selectedProbe = debugProbes.find(
     (probe) => probe.serialNumber.toLowerCase() === config?.programmer?.serialNumber.toLowerCase(),
   );
+  const probeState = state?.connections?.probes.state ?? (debugProbes.length ? 'ready' : 'unknown');
+  const probeUncertain = probeState !== 'ready';
+  const selectedPort = state?.ports.find((port) => port.path === config?.port);
+  const openSerial = state?.connections?.serial;
+  const hasPort = !!selectedPort || !!(openSerial?.open && openSerial.port === config?.port);
   const candidates = state?.detection?.candidates ?? [];
   const automaticChoice = isAuto && (!config?.programmer || config.programmer.transport === 'auto');
   const selectedCandidate = candidates.find((candidate) =>
@@ -41,8 +46,10 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
         candidate.transport === 'serial' &&
         candidate.port === config.port,
   );
-  const autoDeviceValue = automaticChoice ? '' : (selectedCandidate?.id ?? 'selected-unavailable');
-  const canProbe = isAuto || (usesStlink ? !!config?.programmer?.serialNumber : !!config?.port);
+  const autoDeviceValue = automaticChoice ? '' : (selectedCandidate?.id ?? '');
+  const canProbe =
+    isAuto ||
+    (usesStlink ? !!selectedProbe || (probeUncertain && !!config?.programmer?.serialNumber) : hasPort);
   const portField = (
     <label>
       <span className="field-label label-with-action">
@@ -56,11 +63,16 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
         </button>
       </span>
       <select
-        value={config?.port ?? ''}
+        value={hasPort ? (config?.port ?? '') : ''}
         disabled={!config || !!busy}
         onChange={(event) => config && setConfig({ ...config, port: event.target.value })}
       >
         <option value="">{t('device.portPlaceholder')}</option>
+        {openSerial?.open && !selectedPort && openSerial.port === config?.port && (
+          <option value={openSerial.port}>
+            {openSerial.port} · {t('status.serialConnected')}
+          </option>
+        )}
         {state?.ports.map((port) => (
           <option key={port.path} value={port.path}>
             {port.path}
@@ -77,9 +89,14 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
           <CircuitBoard size={14} strokeWidth={1.8} aria-hidden="true" />
           {t('device.title')}
         </span>
-        <span
-          className={`status-dot ${(isAuto ? selectedCandidate : usesStlink ? selectedProbe : config?.port) ? '' : 'inactive'}`}
-        />
+        <button
+          className="text-button"
+          title={t('view.hideDevicePanel')}
+          aria-label={t('view.hideDevicePanel')}
+          onClick={() => studio.setDevicePanelVisible(false)}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
       </div>
       <section className="inspector-section device-config">
         <label>
@@ -161,13 +178,6 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
               }}
             >
               <option value="">{t('device.autoSelection')}</option>
-              {!automaticChoice && !selectedCandidate && (
-                <option value="selected-unavailable">
-                  {usesStlink ? `ST-Link ${config?.programmer?.serialNumber ?? ''}` : config?.port}
-                  {' · '}
-                  {t('device.debugProbeUnavailable')}
-                </option>
-              )}
               {candidates.map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
                   {candidate.name}
@@ -202,7 +212,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 </button>
               </span>
               <select
-                value={selectedProbe?.serialNumber ?? config?.programmer?.serialNumber ?? ''}
+                value={selectedProbe?.serialNumber ?? ''}
                 disabled={!config || !!busy}
                 onChange={(event) => {
                   if (!config) return;
@@ -218,11 +228,6 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 }}
               >
                 <option value="">{t('device.debugProbePlaceholder')}</option>
-                {config?.programmer?.serialNumber && !selectedProbe && (
-                  <option value={config.programmer.serialNumber}>
-                    {config.programmer.serialNumber} · {t('device.debugProbeUnavailable')}
-                  </option>
-                )}
                 {debugProbes.map((probe) => (
                   <option key={probe.serialNumber} value={probe.serialNumber}>
                     {probe.name}
@@ -231,6 +236,14 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
               </select>
               {!state?.toolchain.stlink ? (
                 <span className="subtle-note">{t('device.stlinkToolsMissing')}</span>
+              ) : probeUncertain ? (
+                <span className="subtle-note">
+                  {t(
+                    probeState === 'unavailable'
+                      ? 'device.connectionCheckUnavailable'
+                      : 'device.connectionChecking',
+                  )}
+                </span>
               ) : !debugProbes.length ? (
                 <span className="subtle-note">{t('device.debugProbeMissing')}</span>
               ) : (

@@ -1,5 +1,5 @@
-/** Migrate only CMSIS 1.30's four legacy GCC naked helpers to AAPCS basic asm for AC6. */
-export function migrateLegacyCmsis(source: string): string | null {
+/** Migrate only CMSIS 1.30's four legacy GCC naked helpers to basic asm. */
+export function migrateLegacyCmsis(source: string, assembler = '__ASM'): string | null {
   if (!/@version\s+V1\.30/.test(source)) return null;
   const start = source.indexOf('#elif (defined (__GNUC__))');
   const end = source.indexOf('#elif (defined (__TASKING__))', start);
@@ -14,7 +14,7 @@ export function migrateLegacyCmsis(source: string): string | null {
       branch = branch.replace(re, (original) => {
         if (!original.includes('BX  lr') || !original.includes('__ASM volatile')) return original;
         replaced++;
-        return `${original.slice(0, original.indexOf('{'))}{ __ASM volatile ("${op === 'get' ? 'MRS r0, ' + register.toLowerCase() : 'MSR ' + register.toLowerCase() + ', r0'}\\n\\tBX lr"); }`;
+        return `${original.slice(0, original.indexOf('{'))}{ ${assembler} volatile ("${op === 'get' ? 'MRS r0, ' + register.toLowerCase() : 'MSR ' + register.toLowerCase() + ', r0'}\\n\\tBX lr"); }`;
       });
     }
   return replaced === 4 ? source.slice(0, start) + branch + source.slice(end) : null;

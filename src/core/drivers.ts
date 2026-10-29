@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { DriverId, DriverState, DriverStatus } from '../shared/contracts';
+import type { DriverId, DriverState, DriverStatus, InstallationProgress } from '../shared/contracts';
 import { getDriverDefinition, listDriverDefinitions } from '../../extensions/drivers/index';
 import type { DriverDefinition } from '../../extensions/drivers/types';
 import { runCommand } from './process';
@@ -12,6 +12,7 @@ export interface DriverOptions {
   dataRoot: string;
   log: (message: string, level?: 'info' | 'error') => void;
   signal?: AbortSignal;
+  onProgress?: (progress: InstallationProgress) => void;
 }
 
 export interface DriverDevice {
@@ -38,16 +39,32 @@ export function parseDriverVersion(text: string): string {
  */
 export class Drivers {
   private cache: DriverStatus[] | null = null;
-  private checkedAt = 0;
+  private pending: Promise<DriverStatus[]> | null = null;
+  private revision = 0;
 
   constructor(private readonly options: DriverOptions) {}
 
+  invalidate(): void {
+    this.cache = null;
+    this.revision += 1;
+  }
+
   async statuses(refresh = false): Promise<DriverStatus[]> {
-    if (!refresh && this.cache && Date.now() - this.checkedAt < 5_000) return structuredClone(this.cache);
-    const values = await Promise.all(listDriverDefinitions().map((definition) => this.statusFor(definition)));
-    this.cache = values;
-    this.checkedAt = Date.now();
-    return structuredClone(values);
+    if (refresh) this.invalidate();
+    if (this.cache) return structuredClone(this.cache);
+    if (this.pending) {
+      await this.pending;
+      return this.statuses();
+    }
+    const revision = this.revision;
+    this.pending = Promise.all(listDriverDefinitions().map((definition) => this.statusFor(definition)));
+    try {
+      const values = await this.pending;
+      if (revision === this.revision) this.cache = values;
+      return structuredClone(values);
+    } finally {
+      this.pending = null;
+    }
   }
 
   async install(id: DriverId): Promise<DriverStatus[]> {
@@ -60,6 +77,7 @@ export class Drivers {
     await fs.rm(work, { recursive: true, force: true });
     await fs.mkdir(work, { recursive: true });
     this.options.log('status.driverExtracting');
+    this.options.onProgress?.({ tool: 'ST-Link driver', phase: 'extracting' });
     let extraction: Awaited<ReturnType<typeof runCommand>>;
     try {
       extraction = await runCommand('tar', ['-xf', archive, '-C', work], {
@@ -83,6 +101,7 @@ export class Drivers {
     const elevated = buildElevatedScript(work, resultFile, definition.infFiles);
     const launcher = buildLauncher(elevated, elevationFile);
     this.options.log('status.driverInstalling');
+    this.options.onProgress?.({ tool: 'ST-Link driver', phase: 'installing' });
     const run = await runCommand(
       'powershell.exe',
       [
@@ -112,7 +131,7 @@ export class Drivers {
     for (const line of result.output.split(/\r?\n/))
       if (line.trim()) this.options.log(line, result.ok ? 'info' : 'error');
     if (!result.ok) throw new Error('error.driverInstallFailed');
-    this.cache = null;
+    this.invalidate();
     this.options.log('status.driverInstalled');
     return this.statuses(true);
   }

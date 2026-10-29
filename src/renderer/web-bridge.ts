@@ -23,6 +23,51 @@ if (!scope.blode) {
   };
 
   const bridge: DesktopApi = {
+    listRecentProjects: async () => [],
+    openRecentProject: async () => ({ status: 'none' }),
+    removeRecentProject: async () => {},
+    closeProject: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    firmwareExport: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    firmwareChoose: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    firmwareFlash: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    openDebugger: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerState: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerSymbols: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerConnect: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerAction: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerBreakpoint: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerMemory: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerInstallTools: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerChooseGdb: async () => {
+      throw new Error('error.desktopOnly');
+    },
+    debuggerStorage: async () => {
+      throw new Error('error.desktopOnly');
+    },
     exportProbeLog: async (content) => {
       validateProbeLog(content);
       const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
@@ -58,9 +103,9 @@ if (!scope.blode) {
       throw new Error('error.driverDesktopOnly');
     },
     refreshDrivers: async () => (await (call('getState', []) as Promise<AppState>)).drivers,
-    serialOpen: (port, baudRate) => call('serialOpen', [port, baudRate]) as Promise<void>,
+    serialOpen: (port, baudRate, options) => call('serialOpen', [port, baudRate, options]) as Promise<void>,
     serialClose: () => call('serialClose', []) as Promise<void>,
-    serialWrite: (data) => call('serialWrite', [data]) as Promise<void>,
+    serialWrite: (data, encoding) => call('serialWrite', [data, encoding]) as Promise<void>,
     // Native project picker and shell reveal remain desktop-only actions.
     selectProject: async () => false,
     selectProjectMarker: async () => false,

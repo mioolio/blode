@@ -21,9 +21,25 @@ export const routeSchemas = {
   'flash.run': z.object({ confirm: z.literal(true) }).strict(),
   'device.probe': z.object({ port, config: configSchema.optional() }).strict(),
   'toolchain.install': z.object({ confirm: z.literal(true) }).strict(),
-  'serial.open': z.object({ port, baudRate: z.number().int().min(300).max(3_000_000).optional() }).strict(),
+  'serial.open': z
+    .object({
+      port,
+      baudRate: z.number().int().min(110).max(4_000_000).optional(),
+      options: z
+        .object({
+          dataBits: z.union([z.literal(5), z.literal(6), z.literal(7), z.literal(8)]).optional(),
+          parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).optional(),
+          stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
+          flowControl: z.enum(['none', 'rtscts', 'xonxoff']).optional(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
   'serial.close': empty,
-  'serial.write': z.object({ data: z.string().max(65_536) }).strict(),
+  'serial.write': z
+    .object({ data: z.string().max(65_536), encoding: z.enum(['utf8', 'hex']).optional() })
+    .strict(),
   'events.poll': z.object({ after: z.number().int().nonnegative().optional() }).strict(),
 } as const;
 export type RouteName = keyof typeof routeSchemas;
@@ -116,14 +132,17 @@ export async function dispatch(
       return api.installToolchain();
     case 'serial.open': {
       const params = routeSchemas['serial.open'].parse(input ?? {});
-      await api.serialOpen(params.port, params.baudRate);
+      await api.serialOpen(params.port, params.baudRate, params.options);
       return null;
     }
     case 'serial.close':
       await api.serialClose();
       return null;
     case 'serial.write':
-      await api.serialWrite(routeSchemas['serial.write'].parse(input).data);
+      {
+        const request = routeSchemas['serial.write'].parse(input);
+        await api.serialWrite(request.data, request.encoding);
+      }
       return null;
     case 'events.poll':
       return events.poll(routeSchemas['events.poll'].parse(input ?? {}).after);

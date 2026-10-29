@@ -1,8 +1,15 @@
 import { CircleCheck, CircleX, Download, RefreshCw, Save, Usb } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import type { DriverId, DriverStatus, ProjectConfig, ToolchainStatus } from '../../shared/contracts';
+import type {
+  DriverId,
+  DriverStatus,
+  InstallationState,
+  ProjectConfig,
+  ToolchainStatus,
+} from '../../shared/contracts';
 import { useI18n, type Locale } from '../i18n';
+import { InstallationOutput } from './InstallationOutput';
 
 export type PreferencesSection = 'general' | 'toolchain' | 'drivers';
 
@@ -11,6 +18,8 @@ interface Props {
   config: ProjectConfig;
   status: ToolchainStatus;
   drivers: DriverStatus[];
+  installation?: InstallationState;
+  installPending?: boolean;
   workspaceOpen: boolean;
   onChange: (value: ProjectConfig) => void;
   onSave: () => void;
@@ -33,6 +42,8 @@ export function Settings({
   config,
   status,
   drivers,
+  installation,
+  installPending,
   workspaceOpen,
   onChange,
   onSave,
@@ -44,23 +55,28 @@ export function Settings({
 }: Props) {
   const { t, locale, setLocale } = useI18n();
   const container = useRef<HTMLDivElement>(null);
+  const installationPanel = useRef<HTMLDivElement>(null);
   const isAutomatic = config.boardId === 'auto';
   const usesStlink = config.boardId === 'stm32' || config.programmer?.transport === 'stlink';
   const stlinkTool = { id: 'stlink' as const, name: 'stlink-tools', versionKey: 'stlink' };
   const armCompilerTool = { id: 'armCompiler' as const, name: 'Arm Compiler 6', versionKey: 'armCompiler' };
+  const gnuTool = { id: 'gnuArm' as const, name: 'GNU Arm GCC', versionKey: 'gnuArm' };
   const shownTools = isAutomatic
-    ? [...tools, stlinkTool, armCompilerTool]
+    ? [...tools, stlinkTool, armCompilerTool, gnuTool]
     : usesStlink
-      ? [stlinkTool, armCompilerTool]
+      ? [stlinkTool, armCompilerTool, gnuTool]
       : tools;
   useEffect(() => {
     if (!target) return;
     const section = container.current?.querySelector<HTMLElement>(
       `[data-preferences-section="${target.section}"]`,
     );
-    section?.scrollIntoView({ block: 'start' });
-    section?.focus({ preventScroll: true });
+    if (target.section !== 'general') section?.scrollIntoView({ block: 'start', behavior: 'instant' });
   }, [target]);
+  useEffect(() => {
+    if (installPending || installation?.status === 'running')
+      installationPanel.current?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  }, [installation?.id, installPending]);
   const [urlsText, setUrlsText] = useState(config.toolchain.additionalUrls.join('\n'));
   const urlsCanonical = config.toolchain.additionalUrls.join('\n');
   useEffect(() => {
@@ -135,6 +151,9 @@ export function Settings({
             {t('action.apply')}
           </button>
         )}
+      </div>
+      <div ref={installationPanel}>
+        <InstallationOutput installation={installation} pending={installPending} />
       </div>
       <section className="settings-card" data-preferences-section="general" tabIndex={-1}>
         <h3>{t('settings.general')}</h3>
@@ -224,11 +243,15 @@ export function Settings({
               </label>
             </>
           )}
-          <button className="secondary" onClick={onInstall}>
-            <Download size={13} strokeWidth={1.9} aria-hidden="true" />
-            {t('action.install')}
-          </button>
         </fieldset>
+        <button
+          className="secondary"
+          onClick={onInstall}
+          disabled={busy || isWeb || installation?.status === 'running'}
+        >
+          <Download size={13} strokeWidth={1.9} aria-hidden="true" />
+          {t('action.install')}
+        </button>
       </section>
       <section className="settings-card" data-preferences-section="drivers" tabIndex={-1}>
         <div className="settings-card-head">
@@ -242,7 +265,8 @@ export function Settings({
         {drivers.map((driver) => {
           const ok =
             driver.state === 'ready' || driver.state === 'installed' || driver.state === 'unsupported';
-          const canInstall = driver.supported && driver.available && !busy && !isWeb;
+          const canInstall =
+            driver.supported && driver.available && !busy && !isWeb && installation?.status !== 'running';
           return (
             <div className={`driver-item ${ok ? 'driver-ok' : 'driver-attention'}`} key={driver.id}>
               <div className="driver-line">

@@ -291,8 +291,10 @@
 }
 .preferences-heading {
   flex-shrink: 0;
-  padding: 18px 22px 8px;
+  padding: 16px 22px;
   margin-bottom: 0;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
 }
 .preferences-heading h2 {
   flex: 1;
@@ -311,9 +313,29 @@
 .preferences-modal .settings-view {
   flex: 1;
   min-height: 0;
-  padding: 6px 22px 20px;
+  padding: 16px 22px 20px;
   overflow-y: auto;
   background: transparent;
+  scrollbar-gutter: stable;
+}
+.preferences-modal .form-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.preferences-modal .settings-card:last-child {
+  margin-bottom: 0;
+}
+.preferences-modal .settings-card-head h3 {
+  margin: 0;
+}
+.preferences-modal :is(input, select) {
+  min-height: 32px;
+}
+.preferences-modal :is(.form-two > label, .toolchain-item > span) {
+  min-width: 0;
+}
+.preferences-modal .toolchain-item {
+  grid-template-columns: 16px minmax(0, 1fr) minmax(100px, 40%);
 }
 @media (max-width: 720px) {
   .preferences-modal {
@@ -321,9 +343,13 @@
     max-height: 94vh;
   }
   .preferences-heading {
-    padding: 14px 14px 6px;
+    padding: 14px;
   }
   .preferences-modal .settings-view {
-    padding: 4px 14px 16px;
+    padding: 14px 14px 16px;
+  }
+  .preferences-modal .form-two {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 }

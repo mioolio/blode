@@ -2,7 +2,13 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { BuildResult, ProjectBuildInputs, ProjectConfig } from '../../../src/shared/contracts.js';
 import type { RuntimeHost } from '../../runtime.js';
-import { createF1Scatter, createF1Startup, F1_MEDIUM_DENSITY } from './templates.js';
+import {
+  createF1GnuLinkerScript,
+  createF1GnuStartup,
+  createF1Scatter,
+  createF1Startup,
+  F1_MEDIUM_DENSITY,
+} from './templates.js';
 import { appRegionSize } from './layout.js';
 import { STM32_FLASH_BASE } from './protocol.js';
 import { parseKeilProject, type KeilInputs } from './keil.js';
@@ -63,12 +69,79 @@ export class Stm32Compiler {
     return null;
   }
 
-  async status(config: ProjectConfig): Promise<{ installed: boolean; version: string }> {
+  /** GNU Arm Embedded lives beside the managed AC6 tools and is found through PATH as well. */
+  private async gnuDirectory(config: ProjectConfig): Promise<string | null> {
+    const supplied = config.toolchain.armCompilerDirectory?.trim();
+    if (supplied && /[\r\n\0]/.test(supplied)) throw new Error('errors.stm32CompilerMissing');
+    const root = path.join(this.host.toolchainRoot ?? path.join(this.host.dataRoot, 'toolchains'), 'armgcc');
+    const suffix = process.platform === 'win32' ? '.exe' : '';
+    const searchPath =
+      this.host.env?.PATH ?? this.host.env?.Path ?? process.env.PATH ?? process.env.Path ?? '';
+    const pathDirectories = supplied
+      ? []
+      : searchPath
+          .split(path.delimiter)
+          .map((item) => item.trim().replace(/^"(.*)"$/, '$1'))
+          .filter((item) => item && path.isAbsolute(item));
+    const suppliedDirectories = supplied
+      ? [path.resolve(supplied), path.join(path.resolve(supplied), 'bin')]
+      : [];
+    for (const directory of new Set([
+      ...suppliedDirectories,
+      path.join(root, 'bin'),
+      root,
+      ...pathDirectories,
+    ])) {
+      const found = await Promise.all(
+        ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'].map(async (name) => {
+          const stat = await fs.lstat(path.join(directory, name + suffix)).catch(() => null);
+          return !!stat?.isFile() && !stat.isSymbolicLink();
+        }),
+      );
+      if (found.every(Boolean)) return directory;
+    }
+    return null;
+  }
+
+  private async resolveToolchain(
+    config: ProjectConfig,
+  ): Promise<{ kind: 'ac6' | 'gnu'; directory: string } | null> {
+    // An installed Arm Compiler keeps Keil projects on their native toolchain.
+    const ac6 = await this.directory(config);
+    if (ac6) return { kind: 'ac6', directory: ac6 };
+    const gnu = await this.gnuDirectory(config);
+    if (gnu) return { kind: 'gnu', directory: gnu };
+    return null;
+  }
+
+  async status(config: ProjectConfig): Promise<{ installed: boolean; version: string; gnu: boolean }> {
     const directory = await this.directory(config);
-    if (!directory) return { installed: false, version: '' };
+    if (directory) {
+      try {
+        const result = await this.host.runCommand(
+          path.join(directory, this.executable('armclang')),
+          ['--version'],
+          {
+            timeout: 10_000,
+            signal: this.host.signal,
+            env: this.host.env,
+          },
+        );
+        return {
+          installed: result.code === 0,
+          version: /Arm Compiler for Embedded\s+([\d.]+)/i.exec(result.output)?.[1] ?? result.output.trim(),
+          gnu: false,
+        };
+      } catch (error) {
+        if (this.host.signal.aborted) throw error;
+        return { installed: false, version: '', gnu: false };
+      }
+    }
+    const gnuDirectory = await this.gnuDirectory(config);
+    if (!gnuDirectory) return { installed: false, version: '', gnu: false };
     try {
       const result = await this.host.runCommand(
-        path.join(directory, this.executable('armclang')),
+        path.join(gnuDirectory, this.executable('arm-none-eabi-gcc')),
         ['--version'],
         {
           timeout: 10_000,
@@ -78,11 +151,12 @@ export class Stm32Compiler {
       );
       return {
         installed: result.code === 0,
-        version: /Arm Compiler for Embedded\s+([\d.]+)/i.exec(result.output)?.[1] ?? result.output.trim(),
+        version: /(\d+\.\d+\.\d+)/.exec(result.output)?.[1] ?? result.output.trim(),
+        gnu: true,
       };
     } catch (error) {
       if (this.host.signal.aborted) throw error;
-      return { installed: false, version: '' };
+      return { installed: false, version: '', gnu: false };
     }
   }
 
@@ -186,13 +260,32 @@ export class Stm32Compiler {
       ? Number.parseInt(config.programmer.targetChipId, 16)
       : F1_MEDIUM_DENSITY.chipId;
     if (chipId !== F1_MEDIUM_DENSITY.chipId) throw new Error('error.stm32CompilerProfileRequired');
-    const directory = await this.directory(config);
-    if (!directory) throw new Error('error.armCompilerMissing');
+    const tool = await this.resolveToolchain(config);
+    if (!tool) throw new Error('errors.stm32CompilerMissing');
     const inputs = await this.inputs(build);
     if (inputs.keil)
       this.host.emit(
         `Keil target: ${inputs.keil.name}; device: ${inputs.keil.device}; source files: ${inputs.sources.length}`,
       );
+    if (tool.kind === 'gnu') return this.buildGnu(config, inputs, tool.directory);
+    try {
+      return await this.buildAc6(config, inputs, tool.directory);
+    } catch (error) {
+      // A native startup needs armasm. When only that piece is missing and a
+      // GNU compiler exists, the generated F1 startup can take over.
+      if (!(error instanceof Error) || error.message !== 'error.armCompilerMissing') throw error;
+      const gnu = await this.gnuDirectory(config);
+      if (!gnu) throw error;
+      this.host.emit('status.stm32UsingGnuStartup', 'warning');
+      return this.buildGnu(config, inputs, gnu);
+    }
+  }
+
+  private async buildAc6(
+    config: ProjectConfig,
+    inputs: CompilationInputs,
+    directory: string,
+  ): Promise<BuildResult> {
     if (inputs.scatter.length > 1) throw new Error('error.stm32ScatterAmbiguous');
     const appSize = appRegionSize(config);
     const outputDirectory = await this.host.resetDirectory('.blode/build');
@@ -225,6 +318,7 @@ export class Stm32Compiler {
       '-mthumb',
       '-mfloat-abi=soft',
       '-Os',
+      '-g',
       '-ffunction-sections',
       '-fdata-sections',
       '-ffreestanding',
@@ -363,6 +457,152 @@ export class Stm32Compiler {
       artifacts: ['.blode/build/firmware.bin'],
       timestamp: new Date().toISOString(),
       output: `${output.join('\n')}\nFlash application usage: ${flashUsed} / ${appSize} bytes\nSRAM usage: ${usage.ramUsed} / ${F1_MEDIUM_DENSITY.ramSize} bytes\nSRAM allocation includes ${stackReserve} bytes reserved for the descending stack.${warnings.length ? `\n${warnings.join('\n')}` : ''}`,
+    };
+  }
+
+  /**
+   * GNU Arm build: generated startup and linker script keep the partition
+   * boundary authoritative. Project ARM-syntax startup/scatter files are
+   * ignored because GNU as and ld cannot consume them.
+   */
+  private async buildGnu(
+    config: ProjectConfig,
+    inputs: CompilationInputs,
+    directory: string,
+  ): Promise<BuildResult> {
+    const appSize = appRegionSize(config);
+    const outputDirectory = await this.host.resetDirectory('.blode/build');
+    const objectDirectory = path.join(outputDirectory, 'objects');
+    await fs.mkdir(objectDirectory);
+    const gcc = path.join(directory, this.executable('arm-none-eabi-gcc'));
+    const objcopy = path.join(directory, this.executable('arm-none-eabi-objcopy'));
+    const output: string[] = [];
+    const run = async (command: string, args: string[], timeout = 60_000) => {
+      const result = await this.host.runCommand(command, args, {
+        timeout,
+        signal: this.host.signal,
+        env: this.host.env,
+        cwd: this.host.projectRoot(),
+        onLine: (line) => this.host.emit(line),
+      });
+      output.push(result.output);
+      if (result.code !== 0) throw new Error(result.output || 'error.stm32CompileFailed');
+      return result;
+    };
+    const includes = [
+      ...new Set([
+        this.host.projectRoot(),
+        ...(inputs.keil?.includes.map((file) => path.join(this.host.projectRoot(), file)) ?? []),
+        ...inputs.headers.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),
+        ...inputs.sources.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),
+      ]),
+    ];
+    const flags = [
+      '-mcpu=cortex-m3',
+      '-mthumb',
+      '-mfloat-abi=soft',
+      '-Os',
+      '-g',
+      '-ffunction-sections',
+      '-fdata-sections',
+      '-ffreestanding',
+      '-fno-builtin',
+      '-fno-common',
+      '-DSTM32F10X_MD',
+      ...(inputs.keil?.defines.map((value) => `-D${value}`) ?? []),
+      ...includes.flatMap((include) => ['-I', include]),
+    ];
+    const objects: string[] = [];
+    let firmwareTag = false;
+    const compile = async (source: string, cxx = false) => {
+      const object = path.join(objectDirectory, `${objects.length}.o`);
+      await run(gcc, [
+        ...flags,
+        ...(cxx ? ['-std=gnu++17', '-fno-exceptions', '-fno-rtti'] : ['-std=gnu11']),
+        '-c',
+        source,
+        '-o',
+        object,
+      ]);
+      objects.push(object);
+    };
+    for (const source of inputs.sources) {
+      const full = await this.host.resolveWorkspacePath(source);
+      const text = await fs.readFile(full, 'utf8');
+      firmwareTag ||= text.includes('.fwtag');
+      let compilePath = full;
+      const migrated =
+        path.basename(source).toLowerCase() === 'core_cm3.c' ? migrateLegacyCmsis(text, '__asm__') : null;
+      if (migrated) {
+        compilePath = path.join(outputDirectory, 'core_cm3_gnu.c');
+        await fs.writeFile(compilePath, migrated);
+        this.host.emit('status.cmsisGnuCompatibility', 'warning');
+      }
+      this.host.emit(`Compiling ${source}`);
+      await compile(compilePath, /\.(?:cpp|cc|cxx)$/i.test(source));
+    }
+    const projectStartups: { file: string; native: boolean }[] = [];
+    for (const source of inputs.assembly) {
+      const full = await this.host.resolveWorkspacePath(source);
+      const text = await fs.readFile(full, 'utf8');
+      if (/startup|\bReset_Handler\b/i.test(source + '\n' + text)) {
+        projectStartups.push({
+          file: full,
+          native: /\bAREA\s+RESET\b/i.test(text) && /\bEXPORT\s+Reset_Handler\b/i.test(text),
+        });
+      } else {
+        const object = path.join(objectDirectory, `${objects.length}.o`);
+        await run(gcc, [...flags, '-c', full, '-o', object]);
+        objects.push(object);
+      }
+    }
+    if (projectStartups.length || inputs.scatter.length || inputs.all.some((file) => file.endsWith('.ld')))
+      this.host.emit('status.stm32UsingGnuStartup', 'warning');
+    const startup = path.join(outputDirectory, 'startup_f1_md.c');
+    const linker = path.join(outputDirectory, 'stm32_f1_md.ld');
+    await fs.writeFile(startup, createF1GnuStartup());
+    await fs.writeFile(linker, createF1GnuLinkerScript(config.flashSize, firmwareTag));
+    await compile(startup);
+    const elf = path.join(outputDirectory, 'firmware.elf');
+    const binary = path.join(outputDirectory, 'firmware.bin');
+    await run(gcc, [
+      ...flags,
+      '-T',
+      linker,
+      '-Wl,--gc-sections',
+      `-Wl,-Map=${path.join(outputDirectory, 'firmware.map')}`,
+      '-Wl,--print-memory-usage',
+      '-specs=nosys.specs',
+      '-specs=nano.specs',
+      ...objects,
+      '-o',
+      elf,
+    ]);
+    const usage = inspectStm32Elf(await fs.readFile(elf), config.flashSize, F1_MEDIUM_DENSITY.ramSize);
+    await run(objcopy, ['-O', 'binary', elf, binary]);
+    const bytes = await fs.readFile(binary);
+    validateStm32Binary(bytes, config.flashSize, F1_MEDIUM_DENSITY.ramSize);
+    const flashUsed = Math.max(bytes.length, usage.flashUsed);
+    const overlapped = config.partitions.filter(
+      (partition) => partition.type !== 'app' && partition.offset < flashUsed,
+    );
+    const warnings = [
+      ...(flashUsed > appSize
+        ? [`WARNING: firmware exceeds the application region (${flashUsed} > ${appSize} bytes).`]
+        : []),
+      ...(overlapped.length
+        ? [`WARNING: firmware overlaps reserved regions: ${overlapped.map((item) => item.name).join(', ')}.`]
+        : []),
+    ];
+    return {
+      success: true,
+      flashUsed,
+      ramUsed: usage.ramUsed,
+      flashTotal: appSize,
+      ramTotal: F1_MEDIUM_DENSITY.ramSize,
+      artifacts: ['.blode/build/firmware.bin'],
+      timestamp: new Date().toISOString(),
+      output: `${output.join('\n')}\nCompiler: GNU Arm GCC (arm-none-eabi)\nFlash application usage: ${flashUsed} / ${appSize} bytes\nSRAM usage: ${usage.ramUsed} / ${F1_MEDIUM_DENSITY.ramSize} bytes\nSRAM allocation includes ${F1_MEDIUM_DENSITY.stackSize} bytes reserved for the descending stack.${warnings.length ? `\n${warnings.join('\n')}` : ''}`,
     };
   }
 }

@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { BuildResult, ProjectConfig } from '../../../src/shared/contracts.js';
 import type { PlatformRuntime, RuntimeHost } from '../../runtime.js';
 import { esp32S3Adapter } from './adapter.js';
@@ -23,15 +24,15 @@ export function createEsp32S3Runtime(host: RuntimeHost): PlatformRuntime {
       fetcher: host.fetcher,
       env: host.env,
       signal: host.signal,
+      onProgress: (progress) => host.installationProgress?.(progress),
     },
     host.toolchainRoot,
   );
   const readProbe = async (config: ProjectConfig, port: string) => {
     await host.closeSerial();
-    const result = await host.runCommand(await toolchains.pythonPath(config), buildProbeArgs(port), {
+    const result = await toolchains.runEsptool(config, buildProbeArgs(port), {
       timeout: 45_000,
       onLine: (line) => host.emit(line),
-      signal: host.signal,
     });
     if (result.code !== 0) throw new Error(result.output || 'error.probeFailed');
     const text = result.stdout ?? result.output;
@@ -223,10 +224,39 @@ export function createEsp32S3Runtime(host: RuntimeHost): PlatformRuntime {
           return { path: fullPath, offset: segment.offset, size: (await fs.stat(fullPath)).size };
         }),
       );
-      const result = await host.runCommand(
-        await toolchains.pythonPath(config),
+      const result = await toolchains.runEsptool(
+        config,
         buildFlashArgs(port, config.baudRate, segments, 'esp32s3', config.flashSize),
-        { timeout: 180_000, onLine: (line) => host.emit(line), signal: host.signal },
+        { timeout: 180_000, onLine: (line) => host.emit(line) },
+      );
+      if (result.code !== 0) throw new Error(result.output || 'error.flashFailed');
+    },
+    async flashPrepared(config, image) {
+      esp32S3Adapter.validateConfig(config);
+      const stat = await fs.lstat(image.path);
+      const bytes = await fs.readFile(image.path);
+      if (
+        !stat.isFile() ||
+        stat.isSymbolicLink() ||
+        bytes.length !== image.size ||
+        createHash('sha256').update(bytes).digest('hex') !== image.sha256
+      )
+        throw new Error('firmware.fileChanged');
+      if (!Number.isSafeInteger(image.address) || image.address < 0 || image.address % 0x1000 || !image.size)
+        throw new Error('errors.invalidFlashOffset');
+      const port = await host.requirePort(config.port);
+      const target = await readProbe(config, port);
+      if (image.address + image.size > target.flashSize) throw new Error('errors.firmwareOutOfBounds');
+      const result = await toolchains.runEsptool(
+        config,
+        buildFlashArgs(
+          port,
+          config.baudRate,
+          [{ path: image.path, offset: image.address, size: image.size }],
+          'esp32s3',
+          target.flashSize,
+        ),
+        { timeout: 180_000, onLine: (line) => host.emit(line) },
       );
       if (result.code !== 0) throw new Error(result.output || 'error.flashFailed');
     },

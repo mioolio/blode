@@ -197,32 +197,12 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         { label: 'welcome.selectFile', run: openProjectMarker, disabled: !!busy },
         { label: 'project.openFolder', run: openProject, disabled: !!busy },
         { label: 'action.save', run: save, shortcut: 'shortcut.ctrlS', disabled: unavailable },
+        { label: 'welcome.home', run: studio.goHome, disabled: !!busy },
+        { label: 'project.saveClose', run: () => studio.setCloseProjectPending(true), disabled: unavailable },
         separator,
         {
           label: 'menu.preferences',
-          children: [
-            {
-              label: 'settings.general',
-              run: () =>
-                window.dispatchEvent(
-                  new CustomEvent('blode:preferences', { detail: { section: 'general' } }),
-                ),
-            },
-            {
-              label: 'settings.toolchain',
-              run: () =>
-                window.dispatchEvent(
-                  new CustomEvent('blode:preferences', { detail: { section: 'toolchain' } }),
-                ),
-            },
-            {
-              label: 'settings.drivers',
-              run: () =>
-                window.dispatchEvent(
-                  new CustomEvent('blode:preferences', { detail: { section: 'drivers' } }),
-                ),
-            },
-          ],
+          run: () => window.dispatchEvent(new CustomEvent('blode:preferences')),
         },
         separator,
         { label: 'menu.closeWindow', run: () => window.blode?.windowAction('close') },
@@ -282,6 +262,15 @@ export function StudioHeader({ studio }: { studio: Studio }) {
           disabled: !workspaceOpen || !supportsLayout(studio.board),
         },
         { label: 'workspace.ai', run: () => setView('ai') },
+        {
+          label: 'workspace.hardwareSimulation',
+          run: () => void studio.perform('workspace.hardwareSimulation', () => window.blode.openDebugger()),
+          disabled: isWeb,
+        },
+        {
+          label: studio.devicePanelVisible ? 'view.hideDevicePanel' : 'view.showDevicePanel',
+          run: () => studio.setDevicePanelVisible(!studio.devicePanelVisible),
+        },
       ],
     },
     {
@@ -300,6 +289,19 @@ export function StudioHeader({ studio }: { studio: Studio }) {
       id: 'run',
       label: 'menu.run',
       items: [
+        {
+          label: 'firmware.export',
+          run: () =>
+            window.dispatchEvent(new CustomEvent('blode:firmware-tools', { detail: { mode: 'export' } })),
+          disabled: !!busy,
+        },
+        {
+          label: 'firmware.flashStandalone',
+          run: () =>
+            window.dispatchEvent(new CustomEvent('blode:firmware-tools', { detail: { mode: 'flash' } })),
+          disabled: !!busy,
+        },
+        separator,
         {
           label: studio.validatesFirmware ? 'action.validateFirmware' : 'action.build',
           run: build,

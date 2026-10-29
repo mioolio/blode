@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import {
   CircleAlert,
   CircleCheck,
@@ -9,8 +9,10 @@ import {
   Trash2,
   Unplug,
   Usb,
+  TriangleAlert,
 } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
+import type { SerialOptions } from '../../shared/contracts';
 import { iconButton } from './IconButton';
 
 /** ConsolePanel renders one workspace surface; application actions stay in useStudio. */
@@ -24,8 +26,14 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     setLogs,
     busy,
     errors,
+    warnings,
+    config,
+    setConfig,
+    state,
     serialBaud,
     setSerialBaud,
+    serialOptions,
+    setSerialOptions,
     serialConnected,
     serialToggle,
     logEnd,
@@ -34,6 +42,9 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     setSerialInput,
   } = studio;
   const logRef = useRef<HTMLDivElement>(null);
+  const baudRatesId = useId();
+  const [encoding, setEncoding] = useState<'utf8' | 'hex'>('utf8');
+  const [lineEnding, setLineEnding] = useState<'none' | 'lf' | 'cr' | 'crlf'>('lf');
   // Ctrl+A inside the console selects the visible log text, never the whole window.
   const selectLogText = (event: KeyboardEvent<HTMLElement>) => {
     const target = event.target as HTMLElement | null;
@@ -53,6 +64,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     { id: 'output' as const, icon: SquareTerminal },
     { id: 'serial' as const, icon: Usb },
     { id: 'problems' as const, icon: CircleAlert },
+    { id: 'warnings' as const, icon: TriangleAlert },
   ];
   const emptyIcon =
     tab === 'serial' ? (
@@ -71,6 +83,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               <Icon size={13} strokeWidth={1.9} aria-hidden="true" />
               {t(`console.${id}`)}
               {id === 'problems' && <span className="count-badge">{errors.length}</span>}
+              {id === 'warnings' && <span className="count-badge">{warnings.length}</span>}
             </button>
           ))}
         </div>
@@ -92,28 +105,171 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
         </div>
       </div>
       {tab === 'serial' && (
-        <div className="serial-toolbar">
-          <Usb size={13} strokeWidth={1.8} aria-hidden="true" />
-          <select
-            aria-label={t('console.baud')}
-            value={serialBaud}
-            disabled={serialConnected}
-            onChange={(e) => setSerialBaud(Number(e.target.value))}
+        <>
+          <div className="serial-toolbar" style={{ flexWrap: 'wrap' }}>
+            <Usb size={13} strokeWidth={1.8} aria-hidden="true" />
+            <select
+              aria-label={t('console.serialDevice')}
+              title={t('console.serialDevice')}
+              value={
+                state?.ports.some((port) => port.path === config?.port) ||
+                (state?.connections?.serial.open && state.connections.serial.port === config?.port)
+                  ? (config?.port ?? '')
+                  : ''
+              }
+              disabled={serialConnected || !!busy || !config}
+              onChange={(event) => {
+                if (config) setConfig({ ...config, port: event.target.value });
+              }}
+            >
+              <option value="">{t('device.selectPort')}</option>
+              {state?.connections?.serial.open &&
+                !state.ports.some((port) => port.path === state.connections!.serial.port) && (
+                  <option value={state.connections.serial.port}>
+                    {state.connections.serial.port} · {t('status.serialConnected')}
+                  </option>
+                )}
+              {(state?.ports ?? []).map((port) => (
+                <option key={port.path} value={port.path}>
+                  {port.path}
+                  {port.manufacturer ? ` — ${port.manufacturer}` : ''}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min={110}
+              max={4000000}
+              step={1}
+              list={baudRatesId}
+              style={{ width: 114 }}
+              aria-label={t('console.baud')}
+              title={t('console.customBaud')}
+              value={serialBaud}
+              disabled={serialConnected}
+              onChange={(e) => setSerialBaud(Number(e.target.value))}
+            />
+            <datalist id={baudRatesId}>
+              {[
+                110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 230400, 460800,
+                921600, 1000000, 2000000, 3000000, 4000000,
+              ].map((rate) => (
+                <option key={rate} value={rate} />
+              ))}
+            </datalist>
+            <button className="text-button serial-toggle" onClick={serialToggle} disabled={!!busy}>
+              {serialConnected ? (
+                <Unplug size={13} strokeWidth={1.8} />
+              ) : (
+                <PlugZap size={13} strokeWidth={1.8} />
+              )}
+              {t(serialConnected ? 'action.disconnect' : 'action.connect')}
+            </button>
+            <span className={`status-dot ${serialConnected ? '' : 'inactive'}`} />
+            <select
+              aria-label={t('console.encoding')}
+              value={encoding}
+              onChange={(event) => setEncoding(event.target.value as 'utf8' | 'hex')}
+            >
+              <option value="utf8">UTF-8</option>
+              <option value="hex">HEX</option>
+            </select>
+            <select
+              aria-label={t('console.lineEnding')}
+              value={lineEnding}
+              disabled={encoding === 'hex'}
+              onChange={(event) => setLineEnding(event.target.value as 'none' | 'lf' | 'cr' | 'crlf')}
+            >
+              <option value="none">{t('console.noLineEnding')}</option>
+              <option value="lf">LF</option>
+              <option value="cr">CR</option>
+              <option value="crlf">CRLF</option>
+            </select>
+          </div>
+          <details
+            className="serial-options"
+            style={{ borderBottom: '1px solid var(--border)', padding: '6px 12px' }}
           >
-            {[9600, 57600, 115200, 230400, 460800, 921600].map((n) => (
-              <option key={n}>{n}</option>
-            ))}
-          </select>
-          <button className="text-button serial-toggle" onClick={serialToggle} disabled={!!busy}>
-            {serialConnected ? (
-              <Unplug size={13} strokeWidth={1.8} />
-            ) : (
-              <PlugZap size={13} strokeWidth={1.8} />
-            )}
-            {t(serialConnected ? 'action.disconnect' : 'action.connect')}
-          </button>
-          <span className={`status-dot ${serialConnected ? '' : 'inactive'}`} />
-        </div>
+            <summary>{t('console.serialOptions')}</summary>
+            <div className="serial-toolbar" style={{ flexWrap: 'wrap', paddingLeft: 0 }}>
+              <label>
+                {t('console.dataBits')}{' '}
+                <select
+                  value={serialOptions?.dataBits ?? 8}
+                  disabled={serialConnected || !!busy}
+                  onChange={(event) =>
+                    setSerialOptions((current) => ({
+                      ...current,
+                      dataBits: Number(event.target.value) as SerialOptions['dataBits'],
+                    }))
+                  }
+                >
+                  {[5, 6, 7, 8].map((bits) => (
+                    <option key={bits} value={bits}>
+                      {bits}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {t('console.parity')}{' '}
+                <select
+                  value={serialOptions?.parity ?? 'none'}
+                  disabled={serialConnected || !!busy}
+                  onChange={(event) =>
+                    setSerialOptions((current) => ({
+                      ...current,
+                      parity: event.target.value as SerialOptions['parity'],
+                    }))
+                  }
+                >
+                  {(['none', 'even', 'odd', 'mark', 'space'] as const).map((parity) => (
+                    <option key={parity} value={parity}>
+                      {t(`console.parity.${parity}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {t('console.stopBits')}{' '}
+                <select
+                  value={serialOptions?.stopBits ?? 1}
+                  disabled={serialConnected || !!busy}
+                  onChange={(event) =>
+                    setSerialOptions((current) => ({
+                      ...current,
+                      stopBits: Number(event.target.value) as SerialOptions['stopBits'],
+                    }))
+                  }
+                >
+                  {[1, 1.5, 2].map((bits) => (
+                    <option key={bits} value={bits}>
+                      {bits}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {t('console.flowControl')}{' '}
+                <select
+                  value={serialOptions?.flowControl ?? 'none'}
+                  disabled={serialConnected || !!busy}
+                  onChange={(event) =>
+                    setSerialOptions((current) => ({
+                      ...current,
+                      flowControl: event.target.value as SerialOptions['flowControl'],
+                    }))
+                  }
+                >
+                  <option value="none">{t('console.flow.none')}</option>
+                  <option value="rtscts">RTS/CTS</option>
+                  <option value="xonxoff">XON/XOFF</option>
+                </select>
+              </label>
+            </div>
+            <p className="subtle-note">{t('console.serialDeviceHint')}</p>
+          </details>
+        </>
       )}
       <div
         className="log-scroll"
@@ -127,7 +283,9 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           ? logs.filter((log) => log.kind === 'serial')
           : tab === 'problems'
             ? errors
-            : logs.filter((log) => log.kind !== 'serial')
+            : tab === 'warnings'
+              ? warnings
+              : logs.filter((log) => log.kind !== 'serial')
         ).map((log, index) => (
           <div className={`log-line ${log.level}`} key={`${log.time}-${index}`}>
             <time>{new Date(log.time).toLocaleTimeString(locale, { hour12: false })}</time>
@@ -141,7 +299,9 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           ? logs.some((log) => log.kind === 'serial')
           : tab === 'problems'
             ? errors.length
-            : logs.some((log) => log.kind !== 'serial')) && (
+            : tab === 'warnings'
+              ? warnings.length
+              : logs.some((log) => log.kind !== 'serial')) && (
           <div className="console-empty">
             <span className="console-empty-icon">{emptyIcon}</span>
             <span>
@@ -150,7 +310,9 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                   ? 'console.serialEmpty'
                   : tab === 'problems'
                     ? 'console.noProblems'
-                    : 'console.empty',
+                    : tab === 'warnings'
+                      ? 'console.noWarnings'
+                      : 'console.empty',
               )}
             </span>
           </div>
@@ -163,7 +325,12 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           onSubmit={(event) => {
             event.preventDefault();
             void perform('action.send', async () => {
-              await window.blode.serialWrite(serialInput + '\n');
+              const suffix =
+                lineEnding === 'crlf' ? '\r\n' : lineEnding === 'lf' ? '\n' : lineEnding === 'cr' ? '\r' : '';
+              await window.blode.serialWrite(
+                encoding === 'hex' ? serialInput : serialInput + suffix,
+                encoding,
+              );
               setSerialInput('');
             });
           }}

@@ -66,6 +66,12 @@ export interface PortInfo {
   productId?: string;
   serialNumber?: string;
 }
+export interface SerialOptions {
+  dataBits?: 5 | 6 | 7 | 8;
+  parity?: 'none' | 'even' | 'odd' | 'mark' | 'space';
+  stopBits?: 1 | 1.5 | 2;
+  flowControl?: 'none' | 'rtscts' | 'xonxoff';
+}
 export interface DebugProbeInfo {
   serialNumber: string;
   name: string;
@@ -137,6 +143,8 @@ export interface ToolchainStatus {
   esptool: boolean;
   stlink?: boolean;
   armCompiler?: boolean;
+  /** Managed GNU Arm GCC used when Arm Compiler 6 is not installed. */
+  gnuArm?: boolean;
   versions: Record<string, string>;
 }
 /** Debug probes installed through a vendor INF package, currently only ST-Link on Windows. */
@@ -167,7 +175,25 @@ export interface ReopenProjectResult {
   status: 'opened' | 'missing' | 'none';
   recent?: RecentProject;
 }
+export interface InstallationProgress {
+  tool: string;
+  phase: 'starting' | 'downloading' | 'verifying' | 'extracting' | 'installing' | 'completed' | 'failed';
+  receivedBytes?: number;
+  totalBytes?: number;
+}
+export interface InstallationState extends InstallationProgress {
+  id: string;
+  status: 'running' | 'completed' | 'failed';
+  updatedAt: string;
+  logs: LogEvent[];
+}
 export interface AppState {
+  installation?: InstallationState;
+  connections?: {
+    serial: { open: boolean; port: string; baudRate: number; options?: SerialOptions };
+    probes: { state: 'unknown' | 'ready' | 'unavailable'; checkedAt?: string; error?: string };
+  };
+  recentProjects?: RecentProject[];
   /** Empty until the user opens a project area (a folder containing the `be` marker). */
   projectRoot: string;
   workspaceOpen: boolean;
@@ -193,6 +219,9 @@ export interface LogEvent {
   level: 'info' | 'success' | 'warning' | 'error';
   message: string;
   time: string;
+  installation?: Omit<InstallationState, 'logs'>;
+  /** Byte updates refresh the progress bar without flooding ordinary output. */
+  progressOnly?: boolean;
 }
 export interface CoreApi {
   getState(): Promise<AppState>;
@@ -211,11 +240,69 @@ export interface CoreApi {
   /** Optional config allows explicit board/probe selection before a workspace is open. */
   probe(port?: string, config?: ProjectConfig): Promise<string>;
   installToolchain(): Promise<ToolchainStatus>;
-  serialOpen(port?: string, baudRate?: number): Promise<void>;
+  serialOpen(port?: string, baudRate?: number, options?: SerialOptions): Promise<void>;
   serialClose(): Promise<void>;
-  serialWrite(data: string): Promise<void>;
+  serialWrite(data: string, encoding?: 'utf8' | 'hex'): Promise<void>;
+}
+export type FirmwareFormat = 'bin' | 'hex' | 'srec' | 'elf';
+export interface PreparedFirmware {
+  id: string;
+  name: string;
+  format: 'bin' | 'hex' | 'srec';
+  size: number;
+  address: number | null;
+  segments: number;
+  sha256: string;
+}
+export interface FirmwareFlashRequest {
+  id: string;
+  config: ProjectConfig;
+  address?: number;
+  confirm: true;
+}
+export interface FirmwareExportResult {
+  status: 'saved' | 'cancelled';
+  path?: string;
+}
+export interface DebuggerState {
+  instructions?: { address: string; function?: string; offset?: string; instruction: string }[];
+  updatedAt?: string;
+  programCounter?: string;
+  connection: 'disconnected' | 'connecting' | 'stopped' | 'running' | 'error';
+  tools: { gdb: boolean; server: boolean };
+  message: string;
+  symbols: string;
+  registers: { name: string; value: string }[];
+  stack: { level: string; function: string; file?: string; line?: string; address: string }[];
+  breakpoints: { id: string; location: string }[];
+  log: string[];
+}
+export type DebuggerAction = 'continue' | 'pause' | 'step' | 'next' | 'finish' | 'disconnect';
+export interface DebuggerStorage {
+  name: string;
+  size: number;
+  segments: { address: number; size: number; kind: 'flash' | 'ram' | 'other' }[];
+  preview: string;
+  source: 'elf';
 }
 export interface DesktopApi extends CoreApi {
+  listRecentProjects(): Promise<RecentProject[]>;
+  openRecentProject(path: string): Promise<ReopenProjectResult>;
+  removeRecentProject(path: string): Promise<void>;
+  closeProject(): Promise<void>;
+  firmwareExport(format: FirmwareFormat): Promise<FirmwareExportResult>;
+  firmwareChoose(): Promise<PreparedFirmware | null>;
+  firmwareFlash(request: FirmwareFlashRequest): Promise<void>;
+  openDebugger(): Promise<void>;
+  debuggerState(): Promise<DebuggerState>;
+  debuggerSymbols(): Promise<string | null>;
+  debuggerConnect(config: ProjectConfig): Promise<void>;
+  debuggerAction(action: DebuggerAction): Promise<void>;
+  debuggerBreakpoint(location: string, removeId?: string): Promise<void>;
+  debuggerMemory(address: number, length: number): Promise<string>;
+  debuggerInstallTools(): Promise<void>;
+  debuggerChooseGdb(): Promise<boolean>;
+  debuggerStorage(): Promise<DebuggerStorage | null>;
   /** Native save dialog on desktop; browser clients initiate a download. */
   exportProbeLog(content: string): Promise<import('./probe-log').ProbeLogExportResult>;
   /** Driver setup is a native, machine-wide action; browser clients cannot request it. */

@@ -13,8 +13,10 @@ import type {
   ToolchainStatus,
   LogEvent,
   ProjectConfig,
+  PortInfo,
+  InstallationProgress,
 } from '../shared/contracts';
-import type { CreatePlatformRuntimes, RuntimeHost } from '../../extensions/runtime';
+import type { CreatePlatformRuntimes, RuntimeHost, RuntimeFirmwareImage } from '../../extensions/runtime';
 import { createPlatformRuntimes } from '../../extensions/runtime-registry';
 import { getBoardAdapter, listBoards } from '../../extensions/registry';
 import { parseConfig, parseProjectDescriptor, type ProjectBuild } from './config';
@@ -38,6 +40,14 @@ import { loadBuildState, saveBuildState, hashArtifacts, artifactsMatch } from '.
 import { runCommand } from './process';
 import { SerialConnection } from './serial';
 import { Drivers } from './drivers';
+import { InstallationTracker } from './installation';
+
+interface InstallationReporter {
+  progress: (progress: InstallationProgress) => void;
+  log: (line: string) => void;
+  fetcher?: typeof fetch;
+  signal: AbortSignal;
+}
 
 export interface CoreOptions {
   /** Empty when the application starts without a workspace. */
@@ -52,10 +62,20 @@ export interface CoreOptions {
   driverRoot?: string;
   /** Injectable hardware boundary; used by integration tests without touching a device. */
   createRuntimes?: CreatePlatformRuntimes;
+  /** Initialize desktop discovery once; further scans require refresh or an OS device event. */
+  refreshDevices?: boolean;
+  /** A debugger owns the physical connection until its session is stopped. */
+  hardwareBusy?: () => boolean;
 }
 export interface CoreService extends CoreApi {
   shutdown(): Promise<void>;
   setProjectRoot(root: string): Promise<void>;
+  closeProject(): Promise<void>;
+  flashPrepared(config: ProjectConfig, image: RuntimeFirmwareImage): Promise<void>;
+  runHardwareAction(action: () => Promise<void>): Promise<void>;
+  runInstallation(tool: string, action: (reporter: InstallationReporter) => Promise<void>): Promise<void>;
+  /** Coalesce OS device notifications; hardware is enumerated only after operations are idle. */
+  notifyDevicesChanged(): void;
   driverStatuses(refresh?: boolean): Promise<DriverStatus[]>;
   installDriver(id: DriverId): Promise<DriverStatus[]>;
 }
@@ -82,24 +102,86 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   let artifactHashes: Record<string, string> = {};
   let busy = false;
   const lifecycle = new AbortController();
+  const installation = new InstallationTracker(options.onEvent);
   const emit = (message: string, level: LogEvent['level'] = 'info', kind: LogEvent['kind'] = 'log') =>
-    options.onEvent({ kind, level, message, time: new Date().toISOString() });
+    options.onEvent(installation.capture({ kind, level, message, time: new Date().toISOString() }));
   const serial = new SerialConnection(
     (data) => emit(data, 'info', 'serial'),
     (error) => emit(error.message, 'error', 'serial'),
+    (open) =>
+      emit(
+        open ? 'status.serialConnected' : 'status.serialDisconnected',
+        open ? 'success' : 'info',
+        'status',
+      ),
   );
   const drivers = new Drivers({
     archiveRoot: options.driverRoot ?? path.join(process.cwd(), 'tools', 'STSW-LINK'),
     dataRoot: options.dataRoot,
     log: (line, level = 'info') => emit(line, level),
+    onProgress: installation.progress,
     signal: lifecycle.signal,
   });
   let debugProbes: DebugProbeInfo[] = [];
   let detection: DetectionScan = { candidates: [], unavailablePlatforms: [] };
+  let ports: PortInfo[] = [];
+  let portsInitialized = false;
+  let devicesDirty = !!options.refreshDevices;
+  let deviceRevision = 0;
+  let deviceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingDeviceScan: Promise<DetectionScan> | undefined;
+  let probeState: NonNullable<AppState['connections']>['probes'] = { state: 'unknown' };
+  const requireHardware = () => {
+    if (options.hardwareBusy?.()) throw new Error('error.debuggerOwnsDevice');
+  };
   const closeSerial = async () => {
-    const wasOpen = serial.isOpen;
     await serial.close();
-    if (wasOpen) emit('status.serialDisconnected', 'info', 'status');
+  };
+  const clearMissingSelection = (livePorts?: PortInfo[], liveProbes?: DebugProbeInfo[]) => {
+    let changed = false;
+    if (
+      livePorts &&
+      config.port &&
+      !livePorts.some((port) => port.path === config.port) &&
+      serial.state.port !== config.port
+    ) {
+      config = { ...config, port: '' };
+      changed = true;
+      if (config.boardId === 'auto' && config.programmer?.transport === 'serial')
+        config.programmer = { ...config.programmer, transport: 'auto' };
+    }
+    if (
+      liveProbes &&
+      config.programmer?.serialNumber &&
+      !liveProbes.some(
+        (probe) => probe.serialNumber.toLowerCase() === config.programmer!.serialNumber.toLowerCase(),
+      )
+    ) {
+      config = {
+        ...config,
+        programmer: {
+          ...config.programmer,
+          serialNumber: '',
+          ...(config.boardId === 'auto' ? { transport: 'auto' as const } : {}),
+        },
+      };
+      changed = true;
+    }
+    if (changed) emit('status.deviceSelectionCleared', 'warning', 'status');
+  };
+  const refreshPorts = async (clearSelection = !busy) => {
+    portsInitialized = true;
+    try {
+      ports = await SerialConnection.list();
+      if (clearSelection) clearMissingSelection(ports);
+    } catch (error) {
+      // A failed enumeration is not evidence that previously seen devices disappeared.
+      emit(
+        'status.portEnumerationUnavailable ' + (error instanceof Error ? error.message : String(error)),
+        'warning',
+      );
+    }
+    return structuredClone(ports);
   };
 
   const withLock = async <T>(action: () => Promise<T>): Promise<T> => {
@@ -109,7 +191,20 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     try {
       return await action();
     } catch (error) {
-      emit(error instanceof Error ? error.message : String(error), 'error');
+      const message = error instanceof Error ? error.message : String(error);
+      const warning = new Set([
+        'error.selectPort',
+        'error.portUnavailable',
+        'error.selectDebugProbe',
+        'error.stm32ProbeRequired',
+        'error.buildRequired',
+        'error.detectBoardFirst',
+        'error.selectCompilePlatform',
+        'error.noWorkspace',
+        'error.debuggerOwnsDevice',
+        'error.serialClosed',
+      ]).has(message.split(/\s/)[0]);
+      emit(message, warning ? 'warning' : 'error');
       throw error;
     } finally {
       busy = false;
@@ -129,6 +224,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     signal: lifecycle.signal,
     runCommand,
     emit,
+    installationProgress: installation.progress,
     projectRoot: requireWorkspace,
     readProjectFiles: () => readProjectFiles(requireWorkspace()),
     resolveWorkspacePath: (relative, flags) => safeWorkspacePath(requireWorkspace(), relative, flags),
@@ -148,7 +244,8 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       await fs.mkdir(target, { recursive: true });
       return target;
     },
-    listPorts: () => SerialConnection.list(),
+    // A full scan reads COM ports once; serial-platform discovery shares that snapshot.
+    listPorts: () => (pendingDeviceScan ? Promise.resolve(structuredClone(ports)) : refreshPorts()),
     requirePort,
     closeSerial,
   };
@@ -177,31 +274,102 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       versions: {},
     };
     for (const status of statuses) {
-      for (const key of ['arduinoCli', 'esp32Core', 'python', 'esptool', 'stlink', 'armCompiler'] as const)
+      for (const key of [
+        'arduinoCli',
+        'esp32Core',
+        'python',
+        'esptool',
+        'stlink',
+        'armCompiler',
+        'gnuArm',
+      ] as const)
         combined[key] ||= !!status[key];
       Object.assign(combined.versions, status.versions);
     }
     return combined;
   };
   const scan = async (): Promise<DetectionScan> => {
-    const scanned = await Promise.allSettled(runtimes.map((runtime) => runtime.discover(config)));
-    const candidates: DetectionCandidate[] = [];
-    const unavailablePlatforms: string[] = [];
-    scanned.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        for (const candidate of result.value) {
-          if (
-            candidate.platformId !== runtimes[index].id ||
-            candidate.transport !== runtimes[index].transport
-          )
-            throw new Error('error.invalidPlatformRegistry');
-          if (!candidates.some((existing) => existing.id === candidate.id)) candidates.push(candidate);
+    requireHardware();
+    if (pendingDeviceScan) return pendingDeviceScan;
+    const revision = deviceRevision;
+    pendingDeviceScan = (async () => {
+      await refreshPorts(true);
+      await drivers.statuses(true);
+      const scanned = await Promise.allSettled(runtimes.map((runtime) => runtime.discover(config)));
+      const candidates: DetectionCandidate[] = [];
+      const unavailablePlatforms: string[] = [];
+      scanned.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          for (const candidate of result.value) {
+            if (
+              candidate.platformId !== runtimes[index].id ||
+              candidate.transport !== runtimes[index].transport
+            )
+              throw new Error('error.invalidPlatformRegistry');
+            if (!candidates.some((existing) => existing.id === candidate.id)) candidates.push(candidate);
+          }
+        } else {
+          unavailablePlatforms.push(runtimes[index].id);
+          // Keep the last successful result when a tool is temporarily busy/unavailable.
+          candidates.push(
+            ...detection.candidates.filter((candidate) => candidate.platformId === runtimes[index].id),
+          );
         }
-      } else unavailablePlatforms.push(runtimes[index].id);
-    });
-    debugProbes = candidates.flatMap((candidate) => (candidate.debugProbe ? [candidate.debugProbe] : []));
-    detection = { candidates, unavailablePlatforms };
-    return structuredClone(detection);
+      });
+      const stlinkResults = scanned.filter((_result, index) => runtimes[index].transport === 'stlink');
+      const stlinkFailed = stlinkResults.find((result) => result.status === 'rejected');
+      const checkedAt = new Date().toISOString();
+      probeState =
+        stlinkFailed?.status === 'rejected'
+          ? {
+              state: 'unavailable',
+              checkedAt,
+              error:
+                stlinkFailed.reason instanceof Error
+                  ? stlinkFailed.reason.message
+                  : String(stlinkFailed.reason),
+            }
+          : { state: 'ready', checkedAt };
+      const foundProbes = candidates.flatMap((candidate) =>
+        candidate.debugProbe ? [candidate.debugProbe] : [],
+      );
+      debugProbes = foundProbes.map((probe) => ({
+        ...debugProbes.find((old) => old.serialNumber.toLowerCase() === probe.serialNumber.toLowerCase()),
+        ...probe,
+      }));
+      if (!stlinkFailed && stlinkResults.length) clearMissingSelection(undefined, debugProbes);
+      detection = { candidates, unavailablePlatforms };
+      if (revision === deviceRevision) devicesDirty = false;
+      emit('status.devicesChanged', 'info', 'status');
+      return structuredClone(detection);
+    })();
+    try {
+      return await pendingDeviceScan;
+    } finally {
+      pendingDeviceScan = undefined;
+    }
+  };
+  const scheduleDeviceRefresh = (delay = 350) => {
+    clearTimeout(deviceRefreshTimer);
+    if (lifecycle.signal.aborted || !devicesDirty) return;
+    deviceRefreshTimer = setTimeout(async () => {
+      deviceRefreshTimer = undefined;
+      if (lifecycle.signal.aborted || !devicesDirty) return;
+      // This only checks ownership flags; it never polls devices while a tool owns them.
+      if (busy || options.hardwareBusy?.()) {
+        scheduleDeviceRefresh(500);
+        return;
+      }
+      try {
+        await scan();
+      } catch (error) {
+        // Retry only on another device notification or an explicit user refresh.
+        devicesDirty = false;
+        emit(error instanceof Error ? error.message : String(error), 'warning');
+      }
+      if (devicesDirty) scheduleDeviceRefresh();
+    }, delay);
+    deviceRefreshTimer.unref();
   };
   const connectedUnavailable = async () => {
     const statuses = await drivers.statuses();
@@ -227,7 +395,9 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     }
     const scanned = await scan();
     const candidates = scanned.candidates.filter(
-      (candidate) => transport === 'auto' || candidate.transport === transport,
+      (candidate) =>
+        !scanned.unavailablePlatforms.includes(candidate.platformId) &&
+        (transport === 'auto' || candidate.transport === transport),
     );
     if (candidates.length > 1) throw new Error('error.multipleDetectionDevices');
     if (!candidates.length) {
@@ -339,15 +509,16 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   }
   const api: CoreService = {
     async getState(): Promise<AppState> {
-      const [ports, toolchain, driverStatuses] = await Promise.all([
-        SerialConnection.list(),
-        toolchainStatus(),
-        drivers.statuses(),
-      ]);
+      if (devicesDirty && !busy && !options.hardwareBusy?.()) await scan();
+      else if (!portsInitialized) await refreshPorts();
+      const [toolchain, driverStatuses] = await Promise.all([toolchainStatus(), drivers.statuses()]);
+      const connections = { serial: serial.state, probes: structuredClone(probeState) };
       if (!projectRoot)
         return {
           projectRoot: '',
+          installation: installation.snapshot(),
           workspaceOpen: false,
+          connections,
           config: structuredClone(config),
           build: structuredClone(projectBuild),
           files: [],
@@ -370,7 +541,9 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       ]);
       return {
         projectRoot,
+        installation: installation.snapshot(),
         workspaceOpen: true,
+        connections,
         config: structuredClone(config),
         build: structuredClone(projectBuild),
         files,
@@ -388,25 +561,56 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       };
     },
     async listPorts() {
-      return SerialConnection.list();
+      const value = await refreshPorts();
+      emit('status.devicesChanged', 'info', 'status');
+      return value;
     },
     async listDebugProbes() {
+      await pendingDeviceScan;
       return withLock(async () => {
-        const connections = (
-          await Promise.all(
-            runtimes
-              .filter((runtime) => runtime.transport === 'stlink')
-              .map((runtime) => runtime.discover(config)),
-          )
-        ).flat();
-        debugProbes = connections.flatMap((connection) =>
-          connection.debugProbe ? [connection.debugProbe] : [],
-        );
-        return structuredClone(debugProbes);
+        requireHardware();
+        try {
+          const connections = (
+            await Promise.all(
+              runtimes
+                .filter((runtime) => runtime.transport === 'stlink')
+                .map((runtime) => runtime.discover(config)),
+            )
+          ).flat();
+          debugProbes = connections.flatMap((connection) =>
+            connection.debugProbe ? [connection.debugProbe] : [],
+          );
+          probeState = { state: 'ready', checkedAt: new Date().toISOString() };
+          clearMissingSelection(undefined, debugProbes);
+          detection.candidates = [
+            ...detection.candidates.filter((candidate) => candidate.transport !== 'stlink'),
+            ...connections,
+          ];
+          detection.unavailablePlatforms = detection.unavailablePlatforms.filter(
+            (id) => runtimeById.get(id)?.transport !== 'stlink',
+          );
+          emit('status.devicesChanged', 'info', 'status');
+          return structuredClone(debugProbes);
+        } catch (error) {
+          probeState = {
+            state: 'unavailable',
+            checkedAt: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          };
+          emit('status.probeEnumerationUnavailable', 'warning');
+          return structuredClone(debugProbes);
+        }
       });
     },
     async scanDevices() {
+      await pendingDeviceScan;
       return withLock(scan);
+    },
+    notifyDevicesChanged() {
+      deviceRevision += 1;
+      devicesDirty = true;
+      drivers.invalidate();
+      scheduleDeviceRefresh();
     },
     async saveFile(relative, content) {
       return withLock(async () => {
@@ -502,8 +706,54 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         return structuredClone(result);
       });
     },
+    async runHardwareAction(action) {
+      await pendingDeviceScan;
+      return withLock(async () => {
+        requireHardware();
+        await action();
+      });
+    },
+    async runInstallation(tool, action) {
+      await pendingDeviceScan;
+      return withLock(async () => {
+        requireHardware();
+        await installation.run(tool, () =>
+          action({
+            progress: installation.progress,
+            log: (line) => emit(line),
+            fetcher: options.fetcher,
+            signal: lifecycle.signal,
+          }),
+        );
+        invalidateRuntimes();
+      });
+    },
+    async flashPrepared(value, image) {
+      return withLock(async () => {
+        await pendingDeviceScan;
+        requireHardware();
+        const target = parseConfig(value);
+        if (target.boardId === 'auto') throw new Error('error.detectBoardFirst');
+        const runtime = runtimeFor(target.boardId);
+        if (!runtime.flashPrepared) throw new Error('error.preparedFlashUnsupported');
+        if (
+          !path.isAbsolute(image.path) ||
+          !Number.isSafeInteger(image.address) ||
+          image.address < 0 ||
+          !Number.isSafeInteger(image.size) ||
+          image.size < 1 ||
+          !/^[a-f0-9]{64}$/.test(image.sha256)
+        )
+          throw new Error('error.invalidFirmwareImage');
+        emit('status.flashStarted', 'info', 'status');
+        await runtime.flashPrepared(target, image);
+        emit('status.flashSucceeded', 'success', 'status');
+      });
+    },
     async flash() {
       return withLock(async () => {
+        await pendingDeviceScan;
+        requireHardware();
         requireWorkspace();
         if (config.boardId === 'auto') throw new Error('error.detectBoardFirst');
         getBoardAdapter(config.boardId).validateConfig(config);
@@ -517,6 +767,8 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     },
     async probe(port, requestedConfig) {
       return withLock(async () => {
+        await pendingDeviceScan;
+        requireHardware();
         // A config override lets the welcome page test an explicitly selected
         // board/probe before a project exists; normal calls keep the core config.
         const source = requestedConfig ? parseConfig(requestedConfig) : config;
@@ -532,52 +784,64 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         const next = parseConfig(result.config);
         if (projectRoot) await persistConfig(projectRoot, next);
         config = next;
-        if (result.debugProbes) debugProbes = structuredClone(result.debugProbes);
+        if (result.debugProbes) {
+          debugProbes = structuredClone(result.debugProbes);
+          probeState = { state: 'ready', checkedAt: new Date().toISOString() };
+        }
         invalidateRuntimes();
         return result.output;
       });
     },
     async installToolchain() {
       return withLock(async () => {
-        let runtime =
-          config.boardId !== 'auto'
-            ? runtimeFor(config.boardId)
-            : runtimes.find((item) => item.transport === selectedTransport());
-        if (!runtime) {
-          const scanned = await scan();
-          if (scanned.candidates.length === 1) runtime = runtimeFor(scanned.candidates[0].platformId);
-          else if (scanned.candidates.length > 1) throw new Error('error.multipleDetectionDevices');
-          else {
-            const missing = await connectedUnavailable();
-            if (missing.length === 1) runtime = runtimeFor(missing[0]);
-          }
-        }
-        if (!runtime) throw new Error('error.selectPlatformForTools');
-        await runtime.install(config);
-        invalidateRuntimes();
-        await scan();
-        return toolchainStatus(true);
+        return installation.run(
+          config.boardId === 'auto' ? 'Toolchain' : runtimeFor(config.boardId).id,
+          async () => {
+            await pendingDeviceScan;
+            requireHardware();
+            let runtime =
+              config.boardId !== 'auto'
+                ? runtimeFor(config.boardId)
+                : runtimes.find((item) => item.transport === selectedTransport());
+            if (!runtime) {
+              const scanned = await scan();
+              if (scanned.candidates.length === 1) runtime = runtimeFor(scanned.candidates[0].platformId);
+              else if (scanned.candidates.length > 1) throw new Error('error.multipleDetectionDevices');
+              else {
+                const missing = await connectedUnavailable();
+                if (missing.length === 1) runtime = runtimeFor(missing[0]);
+              }
+            }
+            if (!runtime) throw new Error('error.selectPlatformForTools');
+            await runtime.install(config);
+            invalidateRuntimes();
+            await scan();
+            return toolchainStatus(true);
+          },
+        );
       });
     },
     async driverStatuses(refresh = false) {
       return drivers.statuses(refresh);
     },
     async installDriver(id) {
-      return withLock(async () => drivers.install(id));
-    },
-    async serialOpen(port, baudRate = 115200) {
       return withLock(async () => {
-        if (!Number.isInteger(baudRate) || baudRate < 1200 || baudRate > 3_000_000)
+        requireHardware();
+        return installation.run('ST-Link driver', () => drivers.install(id));
+      });
+    },
+    async serialOpen(port, baudRate = 115200, options) {
+      return withLock(async () => {
+        if (!Number.isInteger(baudRate) || baudRate < 110 || baudRate > 4_000_000)
           throw new Error('error.invalidBaudRate');
-        await serial.open(await requirePort(port), baudRate);
-        emit('status.serialConnected', 'success', 'status');
+        await serial.open(await requirePort(port), baudRate, options);
       });
     },
     async serialClose() {
       return withLock(async () => closeSerial());
     },
-    async serialWrite(data) {
-      return withLock(async () => serial.write(data));
+    async serialWrite(data, encoding = 'utf8') {
+      return withLock(async () => serial.write(data, encoding));
     },
     async setProjectRoot(root) {
       return withLock(async () => {
@@ -607,8 +871,21 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     },
     async shutdown() {
       lifecycle.abort();
+      clearTimeout(deviceRefreshTimer);
       stopWatching();
       await serial.close();
+    },
+    async closeProject() {
+      return withLock(async () => {
+        await closeSerial();
+        stopWatching();
+        projectRoot = '';
+        projectBuild = {};
+        lastBuild = null;
+        builtFingerprint = '';
+        artifactHashes = {};
+        emit('status.projectClosed', 'success', 'status');
+      });
     },
   };
   return api;

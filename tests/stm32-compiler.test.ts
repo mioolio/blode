@@ -4,6 +4,8 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { Stm32Compiler, inspectStm32Elf, validateStm32Binary } from '../extensions/boards/stm32/compiler';
+import { createF1GnuLinkerScript, createF1GnuStartup } from '../extensions/boards/stm32/templates';
+import { GNU_WINDOWS_RELEASE, GnuArmToolchain } from '../extensions/boards/stm32/gnu';
 import { stm32Adapter } from '../extensions/boards/stm32/adapter';
 import { createStm32Runtime } from '../extensions/boards/stm32/runtime';
 import { safeWorkspacePath } from '../src/core/workspace';
@@ -86,10 +88,20 @@ async function fixture(t: TestContext) {
     async runCommand(command, args) {
       const tool = path.basename(command).replace(/\.exe$/i, '');
       calls.push({ tool, args });
-      if (args.includes('--version')) return { code: 0, output: 'Arm Compiler for Embedded 6.22' };
+      if (args.includes('--version'))
+        return {
+          code: 0,
+          output: tool === 'arm-none-eabi-gcc' ? 'arm-none-eabi-gcc (GNU) 15.2.1' : 'Arm Compiler for Embedded 6.22',
+        };
       if (failing) return { code: 1, output: 'main.c:3: error: expected expression' };
       if (tool === 'armclang' || tool === 'armasm')
         await fs.writeFile(args[args.indexOf('-o') + 1], 'object');
+      if (tool === 'arm-none-eabi-gcc') {
+        const output = args.indexOf('-o');
+        if (output >= 0)
+          await fs.writeFile(args[output + 1], args.includes('-c') ? 'object' : elfFixture());
+      }
+      if (tool === 'arm-none-eabi-objcopy') await fs.writeFile(args.at(-1)!, binaryFixture());
       if (tool === 'armlink') await fs.writeFile(args[args.indexOf('-o') + 1], elfFixture());
       if (tool === 'fromelf') await fs.writeFile(args[args.indexOf('--output') + 1], binaryFixture());
       return { code: 0, output: `${tool} completed` };
@@ -243,7 +255,7 @@ test('compiler discovery accepts a complete absolute PATH directory and never ov
   config.toolchain.armCompilerDirectory = partial;
   assert.equal((await compiler.status(config)).installed, false);
   assert.equal(calls.length, 1, 'an explicit incomplete directory must not use PATH');
-  await assert.rejects(compiler.build(config, { entry: 'src/main.c' }), /armCompilerMissing/);
+  await assert.rejects(compiler.build(config, { entry: 'src/main.c' }), /stm32CompilerMissing/);
 });
 
 test('native Arm startup requires armasm in the selected toolchain directory', async (t) => {
@@ -256,6 +268,23 @@ test('native Arm startup requires armasm in the selected toolchain directory', a
   await fs.writeFile(path.join(project, 'firmware.sct'), 'LR_FLASH 0x08000000 0x10000 {}');
   await assert.rejects(compiler.build(config, { entry: 'src/main.c' }), /armCompilerMissing/);
   assert.ok(!calls.some((call) => call.tool === 'armasm' || call.tool === 'armlink'));
+});
+
+test('native Arm startup falls back to GNU Arm only when a GNU compiler is present', async (t) => {
+  const { compiler, project, config, root, calls } = await fixture(t);
+  await fs.unlink(path.join(root, 'tools/armclang/bin', executable('armasm')));
+  await fs.writeFile(
+    path.join(project, 'src/startup.s'),
+    'AREA RESET, DATA, READONLY\nEXPORT Reset_Handler\n',
+  );
+  await fs.writeFile(path.join(project, 'firmware.sct'), 'LR_FLASH 0x08000000 0x10000 {}');
+  const gnuBin = path.join(root, 'tools/armgcc/bin');
+  await fs.mkdir(gnuBin, { recursive: true });
+  for (const name of ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'])
+    await fs.writeFile(path.join(gnuBin, executable(name)), 'fixture');
+  const result = await compiler.build(config, { entry: 'src/main.c' });
+  assert.match(result.output, /GNU Arm GCC/);
+  assert.ok(!calls.some((call) => call.tool === 'armasm'));
 });
 
 test('ELF/binary validation rejects wrong architectures, overflow and invalid Cortex-M vectors', () => {
@@ -309,4 +338,65 @@ test('source compilation keeps compiler selection after probing and flashes the 
   const precompiled = { ...result, artifacts: ['firmware.bin'] } satisfies BuildResult;
   await runtime.flash(detected.config, precompiled);
   assert.equal(flashed, path.join(project, 'firmware.bin'));
+});
+
+test('GNU Arm builds with generated startup and linker script when Arm Compiler is absent', async (t) => {
+  const { compiler, config, root, calls } = await fixture(t);
+  await fs.rm(path.join(root, 'tools/armclang'), { recursive: true, force: true });
+  const gnuBin = path.join(root, 'tools/armgcc/bin');
+  await fs.mkdir(gnuBin, { recursive: true });
+  for (const name of ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'])
+    await fs.writeFile(path.join(gnuBin, executable(name)), 'fixture');
+  const status = await compiler.status(config);
+  assert.deepEqual(status, { installed: true, version: '15.2.1', gnu: true });
+  const result = await compiler.build(config, { entry: 'src/main.c' });
+  assert.equal(result.flashUsed, 32);
+  assert.match(result.output, /GNU Arm GCC/);
+  assert.ok(calls.some((call) => call.tool === 'arm-none-eabi-gcc' && call.args.includes('-T')));
+  assert.ok(calls.some((call) => call.tool === 'arm-none-eabi-objcopy'));
+});
+
+test('GNU startup and linker templates keep the partition boundary and stack budget', () => {
+  const script = createF1GnuLinkerScript(0x10000, true);
+  assert.match(script, /ENTRY\(Reset_Handler\)/);
+  assert.match(script, /LENGTH = 0x10000/);
+  assert.match(script, /_Min_Stack_Size = 0x400/);
+  assert.match(script, /\.fwtag/);
+  const startup = createF1GnuStartup();
+  assert.match(startup, /__libc_init_array/);
+  assert.match(startup, /\.isr_vector/);
+  assert.match(startup, /Reset_Handler/);
+});
+
+test('managed GNU Arm rejects a release whose digest does not match', async (t) => {
+  if (process.platform !== 'win32' || process.arch !== 'x64') return;
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'blode-gnu-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const bytes = Buffer.from('archive fixture');
+  const fetcher = async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === GNU_WINDOWS_RELEASE.metadataUrl)
+      return new Response(
+        JSON.stringify({
+          tag_name: GNU_WINDOWS_RELEASE.version,
+          assets: [
+            {
+              name: GNU_WINDOWS_RELEASE.asset,
+              browser_download_url: GNU_WINDOWS_RELEASE.downloadUrl,
+              digest: `sha256:${'0'.repeat(64)}`,
+              size: bytes.length,
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    return new Response(bytes, { status: 200 });
+  };
+  const tool = new GnuArmToolchain({
+    root,
+    fetcher: fetcher as typeof fetch,
+    runner: async () => ({ code: 0, output: '' }),
+  });
+  await assert.rejects(tool.install(), /gnuChecksum/);
+  assert.deepEqual(await fs.readdir(root).catch(() => []), []);
 });

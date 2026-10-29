@@ -10,6 +10,23 @@ import {
 // Only this typed, explicit surface crosses the sandbox boundary.
 const call = (method: string, ...args: unknown[]) => ipcRenderer.invoke(IPC_CHANNEL, method, args);
 const bridge: DesktopApi = {
+  listRecentProjects: () => call('listRecentProjects'),
+  openRecentProject: (path) => call('openRecentProject', path),
+  removeRecentProject: (path) => call('removeRecentProject', path),
+  closeProject: () => call('closeProject'),
+  firmwareExport: (format) => call('firmwareExport', format),
+  firmwareChoose: () => call('firmwareChoose'),
+  firmwareFlash: (request) => call('firmwareFlash', request),
+  openDebugger: () => call('openDebugger'),
+  debuggerState: () => call('debuggerState'),
+  debuggerSymbols: () => call('debuggerSymbols'),
+  debuggerConnect: (config) => call('debuggerConnect', config),
+  debuggerAction: (action) => call('debuggerAction', action),
+  debuggerBreakpoint: (location, removeId) => call('debuggerBreakpoint', location, removeId),
+  debuggerMemory: (address, length) => call('debuggerMemory', address, length),
+  debuggerInstallTools: () => call('debuggerInstallTools'),
+  debuggerChooseGdb: () => call('debuggerChooseGdb'),
+  debuggerStorage: () => call('debuggerStorage'),
   exportProbeLog: (content) => call('exportProbeLog', content),
   getState: () => call('getState'),
   listPorts: () => call('listPorts'),
@@ -28,9 +45,9 @@ const bridge: DesktopApi = {
   installToolchain: () => call('installToolchain'),
   installDriver: (id) => call('installDriver', id),
   refreshDrivers: () => call('refreshDrivers'),
-  serialOpen: (port, baudRate) => call('serialOpen', port, baudRate),
+  serialOpen: (port, baudRate, options) => call('serialOpen', port, baudRate, options),
   serialClose: () => call('serialClose'),
-  serialWrite: (data) => call('serialWrite', data),
+  serialWrite: (data, encoding) => call('serialWrite', data, encoding),
   selectProject: () => call('selectProject'),
   selectProjectMarker: () => call('selectProjectMarker'),
   reopenProject: () => call('reopenProject'),
@@ -55,3 +72,5 @@ const bridge: DesktopApi = {
   },
 };
 contextBridge.exposeInMainWorld('blode', bridge);
+// Describe the window that actually exists, rather than assuming HMR restarted Electron.
+contextBridge.exposeInMainWorld('__blodeFrameless', process.argv.includes('--blode-frameless'));

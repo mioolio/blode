@@ -5,7 +5,7 @@ import { projectFootprint } from '../workspace/resources';
 
 /** StudioStatusBar renders one workspace surface; application actions stay in useStudio. */
 export function StudioStatusBar({ studio }: { studio: Studio }) {
-  const { t, busy, errors, warnings, state, config, setView, drafts, usesStlink, isAuto } = studio;
+  const { t, busy, errors, warnings, state, config, setView, drafts, usesStlink, isAuto, setTab } = studio;
   const footprint = projectFootprint(state?.inventory, state?.files ?? [], drafts);
   const appCapacity =
     config?.partitions
@@ -16,22 +16,31 @@ export function StudioStatusBar({ studio }: { studio: Studio }) {
   const connectedDevice = automaticChoice
     ? ''
     : usesStlink
-      ? config?.programmer?.serialNumber && `ST-Link ${config.programmer.serialNumber}`
-      : config?.port;
+      ? state?.debugProbes.some(
+          (probe) => probe.serialNumber.toLowerCase() === config?.programmer?.serialNumber.toLowerCase(),
+        ) &&
+        config?.programmer?.serialNumber &&
+        `ST-Link ${config.programmer.serialNumber}`
+      : state?.connections?.serial.open
+        ? state.connections.serial.port
+        : '';
   return (
     <footer className="statusbar">
       <span className="status-left">
         <span className={`status-dot ${busy ? 'amber' : ''}`} />
         {t(busy ? 'status.busy' : 'status.ready')}
         <i />
-        <span className={`status-item ${errors.length ? 'error-text' : ''}`}>
+        <button
+          className={`status-item ${errors.length ? 'error-text' : ''}`}
+          onClick={() => setTab('problems')}
+        >
           <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
           {t('status.errors')} {errors.length}
-        </span>
-        <span className="status-item">
+        </button>
+        <button className="status-item" onClick={() => setTab('warnings')}>
           <TriangleAlert size={11} strokeWidth={2} aria-hidden="true" />
           {t('status.warnings')} {warnings.length}
-        </span>
+        </button>
       </span>
       <span className="status-center">
         {!state?.workspaceOpen

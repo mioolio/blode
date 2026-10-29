@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { CoreApi, LogEvent, ProjectConfig } from '../shared/contracts';
+import type { CoreApi, LogEvent, ProjectConfig, SerialOptions } from '../shared/contracts';
 
 const defaultPort = 47821;
 const mime: Record<string, string> = {
@@ -99,11 +99,18 @@ async function invoke(api: CoreApi, method: string, args: unknown[]): Promise<un
       return api.serialOpen(
         typeof args[0] === 'string' ? args[0] : undefined,
         typeof args[1] === 'number' ? args[1] : undefined,
+        args[2] as SerialOptions | undefined,
       );
     case 'serialClose':
       return api.serialClose();
     case 'serialWrite':
-      return api.serialWrite(String(args[0]));
+      if (
+        args.length > 2 ||
+        typeof args[0] !== 'string' ||
+        (args[1] !== undefined && args[1] !== 'utf8' && args[1] !== 'hex')
+      )
+        throw new Error('rpc.invalidParams');
+      return api.serialWrite(args[0], args[1] as 'utf8' | 'hex' | undefined);
     default:
       throw new Error('rpc.methodNotFound');
   }

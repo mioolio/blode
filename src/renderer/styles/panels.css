@@ -139,6 +139,40 @@
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   color: var(--text-faint);
+  flex-wrap: wrap;
+}
+.serial-toolbar > :is(input, select, button) {
+  height: 28px;
+  min-height: 28px;
+}
+.serial-toolbar > svg,
+.serial-toolbar > .status-dot {
+  flex-shrink: 0;
+}
+.serial-toolbar > select:first-of-type {
+  flex: 1 1 180px;
+  min-width: 130px;
+  max-width: 320px;
+  text-overflow: ellipsis;
+}
+.serial-options > summary {
+  padding: 4px 0;
+  cursor: pointer;
+}
+.serial-options .serial-toolbar {
+  align-items: flex-end;
+  border-bottom: 0;
+  padding-top: 10px;
+  gap: 12px;
+}
+.serial-options label {
+  margin: 0;
+  min-width: 108px;
+  font-size: 11px;
+}
+.serial-options label > select {
+  height: 28px;
+  width: 100%;
 }
 .serial-toolbar select {
   width: 108px;

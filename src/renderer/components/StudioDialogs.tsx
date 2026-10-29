@@ -7,6 +7,7 @@ import {
   Flame,
   ScanSearch,
   Trash2,
+  TriangleAlert,
   Usb,
   X,
 } from 'lucide-react';
@@ -56,9 +57,11 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
   return (
     <>
       {toast && (
-        <div className={`toast ${toast.error ? 'error' : ''}`} role="status">
-          <span className={`toast-icon ${toast.error ? 'error' : 'success'}`}>
-            {toast.error ? (
+        <div className={`toast ${toast.error ? 'error' : toast.warning ? 'warning' : ''}`} role="status">
+          <span className={`toast-icon ${toast.error ? 'error' : toast.warning ? 'warning' : 'success'}`}>
+            {toast.warning ? (
+              <TriangleAlert size={16} strokeWidth={2} aria-hidden="true" />
+            ) : toast.error ? (
               <CircleAlert size={16} strokeWidth={2} aria-hidden="true" />
             ) : (
               <CircleCheck size={16} strokeWidth={2} aria-hidden="true" />
