@@ -1193,5 +1193,11 @@
   "debugger.serverPath": "调试服务可执行文件",
   "debugger.scriptsPath": "OpenOCD scripts 目录",
   "debugger.discoverTools": "检查工具",
-  "debugger.managedPath": "自动查找"
+  "debugger.managedPath": "自动查找",
+  "debugger.viewLog": "查看调试日志",
+  "error.debuggerUsbJtagMissing": "未找到 ESP32-S3 原生 USB-JTAG。请连接开发板原生 USB 接口；CH340/CP210x 串口不能用于 JTAG 调试。",
+  "error.debuggerUsbJtagUnavailable": "无法打开 ESP32-S3 USB-JTAG。请检查原生 USB 连接、USB-JTAG 驱动，以及设备是否被其他调试器占用。",
+  "error.debuggerUsbJtagAmbiguous": "检测到多个 USB-JTAG 设备，请填写目标设备的 USB 序列号。",
+  "error.debuggerUsbJtagSerialMismatch": "未找到指定序列号的 USB-JTAG 设备。请检查 USB 序列号，或留空自动选择。",
+  "error.debuggerUsbJtagDriver": "ESP32-S3 USB-JTAG 驱动不可用，请检查系统中的 USB-JTAG 设备驱动。"
 }

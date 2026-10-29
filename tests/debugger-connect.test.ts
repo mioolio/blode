@@ -17,7 +17,7 @@ if(kind==='server') {
   } else if(mode==='cancel') {
     setInterval(()=>{},1000);
   } else {
-    const port=Number(args.find(value=>value.startsWith('gdb_port ')).split(' ')[1]);
+    const port=Number(args.find(value=>value.startsWith('gdb port ')).split(' ')[2]);
     net.createServer(socket=>socket.end()).listen(port,'127.0.0.1');
   }
 } else if(mode==='gdb-failure') {
@@ -58,6 +58,7 @@ async function fixture(t: TestContext, mode: string) {
     signalStarted = resolve;
   });
   t.mock.method(debug as any, 'tools', async () => ({ gdb: 'gdb', server: 'server', scripts: root }));
+  t.mock.method(debug as any, 'probeUsbJtag', async () => {});
   t.mock.method(debug as any, 'spawnProcess', (command: string, args: string[], options: object) => {
     calls.push({ command, args });
     const child = spawn(process.execPath, [script, command, mode, ...args], options);
@@ -123,4 +124,54 @@ test('explicit cancellation while waiting for the server is distinct from startu
   const state = await f.debug.state();
   assert.equal(state.connection, 'disconnected');
   assert.equal(state.message, '');
+});
+
+test('confirmed USB-JTAG preflight failure starts neither OpenOCD nor GDB', async (t) => {
+  const f = await fixture(t, 'success');
+  t.mock.method(f.debug as any, 'probeUsbJtag', async () => {
+    throw Error('error.debuggerUsbJtagMissing');
+  });
+  await assert.rejects(f.debug.connect(f.config), /debuggerUsbJtagMissing/);
+  assert.equal(f.calls.length, 0);
+});
+
+test('missing tools are reported before any USB preflight starts', async (t) => {
+  const f = await fixture(t, 'success');
+  let checked = false;
+  t.mock.method(f.debug as any, 'tools', async () => ({ gdb: null, server: null, scripts: null }));
+  t.mock.method(f.debug as any, 'probeUsbJtag', async () => {
+    checked = true;
+  });
+  await assert.rejects(f.debug.connect(f.config), /debuggerToolsMissing/);
+  assert.equal(checked, false);
+  assert.equal(f.calls.length, 0);
+});
+
+test('cancelling during USB enumeration cannot launch a late OpenOCD process', async (t) => {
+  const f = await fixture(t, 'success');
+  let enter!: () => void, finish!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const complete = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let pendingSignal: AbortSignal | undefined;
+  t.mock.method(
+    f.debug as any,
+    'probeUsbJtag',
+    async (_config: unknown, _profile: unknown, signal: AbortSignal) => {
+      pendingSignal = signal;
+      enter();
+      await complete;
+    },
+  );
+  const connecting = f.debug.connect(f.config);
+  const cancelled = assert.rejects(connecting, /operationCancelled/);
+  await entered;
+  await f.debug.disconnect();
+  assert.equal(pendingSignal?.aborted, true);
+  finish();
+  await cancelled;
+  assert.equal(f.calls.length, 0);
 });

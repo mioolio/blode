@@ -1193,5 +1193,11 @@
   "debugger.serverPath": "Debug server executable",
   "debugger.scriptsPath": "OpenOCD scripts directory",
   "debugger.discoverTools": "Check tools",
-  "debugger.managedPath": "Automatic discovery"
+  "debugger.managedPath": "Automatic discovery",
+  "debugger.viewLog": "View debug log",
+  "error.debuggerUsbJtagMissing": "No native ESP32-S3 USB-JTAG device found. Connect the board’s native USB port; CH340/CP210x serial ports cannot provide JTAG debugging.",
+  "error.debuggerUsbJtagUnavailable": "Cannot open ESP32-S3 USB-JTAG. Check the native USB connection and USB-JTAG driver, and close other debuggers using the device.",
+  "error.debuggerUsbJtagAmbiguous": "Multiple USB-JTAG devices found. Enter the USB serial number of the target device.",
+  "error.debuggerUsbJtagSerialMismatch": "No USB-JTAG device matches this serial number. Check the USB serial number, or leave it blank for automatic selection.",
+  "error.debuggerUsbJtagDriver": "The ESP32-S3 USB-JTAG driver is unavailable. Check the USB-JTAG device driver in your system."
 }

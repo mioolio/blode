@@ -51,9 +51,9 @@ test('ESP USB-JTAG server uses builtin configuration with localhost-only attach 
   const args = debuggerServerArguments(debuggerProfiles.Esp32_S3_CAM, config, 45001, '/openocd/scripts');
   for (const expected of [
     'bindto 127.0.0.1',
-    'gdb_port 45001',
-    'tcl_port disabled',
-    'telnet_port disabled',
+    'gdb port 45001',
+    'tcl port disabled',
+    'telnet port disabled',
     'set ESP_FLASH_SIZE 0',
     'board/esp32s3-builtin.cfg',
     'adapter serial {60:55:F9:00:01:02}',

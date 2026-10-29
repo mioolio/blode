@@ -17,6 +17,7 @@ import { assembleThumbInstruction, assemblerToolsFromGdb } from './debugger-asse
 import { debuggerProfiles, getDebuggerProfile, type DebuggerProfile } from '../shared/debugger-profiles';
 import { debuggerServerArguments, debuggerSegmentKind } from './debugger-target';
 import { discoverEsp32DebugTools, installEsp32DebugTools } from './esp32-debug-tools';
+import { preflightEsp32UsbJtag } from '../../extensions/boards/Esp32_S3_CAM/device/debug-usb';
 import {
   breakpointLocationsSchema,
   debuggerPatchSchema,
@@ -33,6 +34,7 @@ const str = (v: MiValue | undefined) => (typeof v === 'string' ? v : '');
 /** Owns an explicit SWD attach session. Code edits use verified SRAM writes, never GDB load. */
 export class HardwareDebugger {
   private spawnProcess: typeof spawn = spawn;
+  private usbPreflightAbort?: AbortController;
   private gdb: ChildProcessWithoutNullStreams | null = null;
   private server: ReturnType<typeof spawn> | null = null;
   private sequence = 0;
@@ -132,6 +134,22 @@ export class HardwareDebugger {
           path.join(this.root, 'stlink', 'bin', 'st-util'),
         ]);
     return { gdb, server, scripts: null };
+  }
+  private async probeUsbJtag(
+    config: ProjectConfig,
+    profile: DebuggerProfile,
+    signal: AbortSignal,
+    session: number,
+  ) {
+    if (profile.transport !== 'usb-jtag') return;
+    await preflightEsp32UsbJtag({
+      runner: runCommand,
+      signal,
+      serialNumber: config.debugger?.serialNumber,
+      onDiagnostic: (message) => {
+        if (session === this.session) this.log(message);
+      },
+    });
   }
   private configure(config?: ProjectConfig) {
     if (!config || this.active) return;
@@ -369,6 +387,15 @@ export class HardwareDebugger {
       const tools = await this.tools(config);
       assertSession();
       if (!tools.gdb || !tools.server) throw new Error('error.debuggerToolsMissing');
+      if (profile.transport === 'usb-jtag' && !tools.scripts) throw new Error('error.debuggerEspScripts');
+      const preflight = new AbortController();
+      this.usbPreflightAbort = preflight;
+      try {
+        await this.probeUsbJtag(config, profile, preflight.signal, session);
+      } finally {
+        if (this.usbPreflightAbort === preflight) this.usbPreflightAbort = undefined;
+      }
+      assertSession();
       const command = (text: string) => {
         assertSession();
         return this.command(text);
@@ -818,6 +845,8 @@ export class HardwareDebugger {
     return contents;
   }
   async disconnect(state: 'disconnected' | 'error' = 'disconnected') {
+    this.usbPreflightAbort?.abort();
+    this.usbPreflightAbort = undefined;
     const gdb = this.gdb,
       server = this.server;
     this.gdb = null;

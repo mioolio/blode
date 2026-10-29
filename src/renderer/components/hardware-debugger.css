@@ -126,12 +126,27 @@
   color: var(--amber);
 }
 .debug-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 12px;
   border: 1px solid var(--red);
   color: var(--red);
   border-radius: 8px;
   margin: 12px 0;
   overflow-wrap: anywhere;
+}
+.debug-error > span {
+  flex: 1 1 240px;
+  min-width: 0;
+  line-height: 1.6;
+}
+.debug-error > button {
+  flex: 0 0 auto;
+  color: var(--text);
+  white-space: nowrap;
 }
 .debug-workbench-bar {
   display: flex;

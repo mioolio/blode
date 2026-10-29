@@ -18,6 +18,8 @@ import {
   debuggerToolIdentity,
 } from '../src/renderer/components/debuggerProfiles';
 import { DebuggerToolsPanel } from '../src/renderer/components/DebuggerToolsPanel';
+import { DebuggerErrorNotice } from '../src/renderer/components/DebuggerErrorNotice';
+import { debuggerErrorSummary, debuggerDiagnosticLog } from '../src/shared/debugger-errors';
 import { getDebuggerProfile } from '../src/shared/debugger-profiles';
 import { getBoardAdapter } from '../extensions/registry';
 import { translate } from '../src/renderer/i18n';
@@ -293,4 +295,56 @@ test('a tool result belongs to its exact platform and configured lookup paths', 
     }),
     identity,
   );
+});
+
+const openOcdFailure = [
+  'Open On-Chip Debugger v0.12.0-esp32',
+  'Licensed under GNU GPL v2',
+  'Info : esp_usb_jtag: VID set to 0x303a and PID to 0x1001',
+  'Error: esp_usb_jtag: could not find or open device!',
+  'C:/tools/openocd/scripts/target/esp32s3.cfg:12: Error:',
+].join('\n');
+
+test('USB-JTAG failure notice shows an actionable reason and keeps raw output in the log', () => {
+  const html = renderToStaticMarkup(
+    createElement(DebuggerErrorNotice, { message: openOcdFailure, transport: 'usb-jtag', onViewLog() {} }),
+  );
+  assert.match(html, /无法打开 ESP32-S3 USB-JTAG/);
+  assert.match(html, /查看调试日志/);
+  assert.doesNotMatch(html, /Open On-Chip|Licensed|esp32s3\.cfg/);
+  assert.equal((html.match(/role="alert"/g) ?? []).length, 1);
+  assert.deepEqual(debuggerDiagnosticLog([], [openOcdFailure]), [openOcdFailure]);
+  assert.deepEqual(
+    debuggerDiagnosticLog(openOcdFailure.split('\n'), [openOcdFailure]),
+    openOcdFailure.split('\n'),
+  );
+});
+
+test('preflight RPC errors are localized while unrelated failures retain their actual cause', () => {
+  for (const suffix of ['Missing', 'Unavailable', 'Ambiguous', 'SerialMismatch', 'Driver']) {
+    const key = `error.debuggerUsbJtag${suffix}`;
+    assert.equal(
+      debuggerErrorSummary(`Error invoking remote method 'blode:request': Error: ${key}`, 'usb-jtag'),
+      key,
+    );
+    assert.notEqual(translate('zh-CN', key), key);
+    assert.notEqual(translate('en', key), key);
+  }
+  assert.equal(
+    debuggerErrorSummary('GDB launch failed: missing libpython3.dll', 'usb-jtag'),
+    'GDB launch failed: missing libpython3.dll',
+  );
+  assert.equal(
+    debuggerErrorSummary('Open On-Chip Debugger\nInfo : setup\nError: target voltage too low', 'usb-jtag'),
+    'Error: target voltage too low',
+  );
+  assert.equal(
+    debuggerErrorSummary('Error: st-util could not open device', 'swd'),
+    'st-util could not open device',
+  );
+  const long = 'Failed to read ' + 'memory '.repeat(100);
+  assert.ok(debuggerErrorSummary(long).length <= 240);
+  assert.ok(debuggerErrorSummary(long).endsWith('…'));
+  assert.equal(debuggerDiagnosticLog([], [long, long]).length, 1);
+  assert.equal(debuggerDiagnosticLog([], [long])[0], long.trim());
 });

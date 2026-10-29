@@ -23,6 +23,20 @@ ESP32-S3 USB 序列号留空时不传入 `adapter serial`，由 OpenOCD 自动�
 
 GDB 连接后延迟到达的停止通知会重新采样，不再误判为会话被替换。插件连接中的状态轮询不能改变目标；主动取消后，晚到的连接结果会释放连接。
 
+### 原生 USB-JTAG 现场诊断
+
+2026-10-30 后续排查确认，当前宿主连接的是 `USB-SERIAL CH340 (COM3)`，硬件标识为 `VID_1A86&PID_7523`；未枚举到原生 ESP USB Serial/JTAG 的 `VID_303A&PID_1001`。CH340 提供串口烧录和通信，不提供当前调试后端所需的 USB-JTAG 接口。
+
+现有 Espressif OpenOCD `0.12.0-esp32-20250707` 单独加载 `interface/esp_usb_jtag.cfg` 并执行 `init; shutdown`，同样报告 `esp_usb_jtag: could not find or open device!`。这次复现没有加载 target 配置，没有复位、暂停或写入芯片，也未安装驱动。
+
+需要将数据线连接到板上的 ESP32-S3 原生 USB 接口；未引出该接口的板卡，可按板卡原理图与 [Espressif 官方接线说明](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/jtag-debugging/configure-builtin-jtag.html)连接 GPIO19（D−）、GPIO20（D+）及相应电源、地线。Windows 驱动应针对原生 JTAG 接口配置。
+
+### Windows 连接预检
+
+ESP32-S3 模块在显式连接时执行一次只读 USB 枚举，按复合设备与 `MI_02` JTAG 接口关联目标，区分缺少设备、PnP 状态异常、序列号不匹配和多目标。断开的历史设备不参与选择；无法关联的多个接口保持独立，同一序列号匹配多个目标时要求消除歧义。
+
+枚举失败、超时或信息不足时，记录诊断并继续使用 OpenOCD；Linux 也由 OpenOCD 报告实际连接结果。预检不根据驱动服务名称排除 `libusbK`、`libusb0` 等配置。取消连接会终止本次枚举，过期响应与日志不写入新会话，也不会晚启动 OpenOCD。
+
 ## 验证记录
 
 环境：Windows x64、现有 Arduino CLI 1.5.2-rc.1、ESP32 Arduino 3.0.7。固件构建使用隔离工程，没有烧录或连接物理 JTAG。
@@ -39,5 +53,9 @@ GDB 连接后延迟到达的停止通知会重新采样，不再误判为会话�
 | 调试连接                       | 本地测试子进程验证空序列号、延迟停止、OpenOCD USB 错误、GDB 启动错误及主动取消；插件连接另有竞态测试                                 |
 
 本机详细报告保存在 `.tools/firmware-validation/`、`.tools/component-firmware-validation/`、`.tools/component-validation/` 和 `.tools/components-ui-validation/`，不随源码发布。
+
+USB-JTAG 失败复现的原始输出保存在 `.tools/usb-jtag-validation/1793317512230-33124/openocd.log`。后续预检在同一宿主返回 `error.debuggerUsbJtagMissing`，日志记录原生接口缺失及已发现的 CH340 标识，未启动 OpenOCD 或 GDB；记录见 `.tools/usb-jtag-validation/1793317978916-66920/preflight.json`。实机 USB-JTAG 会话验收仍待完成。
+
+USB-JTAG 后续修复完成后，全量测试 **587/587**、类型检查、格式检查及差异空白检查通过，无跳过测试。后台 Electron 另验证 6 个错误界面场景：旧 OpenOCD 长日志仅显示一条摘要、完整日志可查看、缺少设备预检、成功重试清除提示，以及其他错误的摘要和完整日志。无运行时异常，测试未连接芯片；报告位于 `.tools/debugger-error-ui-validation/1793317969993-41068/result.json`。
 
 ESP32-S3 实机 USB-JTAG 连接及 Linux 硬件运行仍待验证；适配范围见[硬件调试](../HARDWARE-DEBUGGING.md)和[平台支持](../PLATFORM-SUPPORT.md)。

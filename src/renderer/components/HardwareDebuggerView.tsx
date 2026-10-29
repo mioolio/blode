@@ -12,6 +12,8 @@ import {
 import { DebuggerRequests } from './debuggerRequests';
 import { debuggerPresentation, debuggerRegister, debuggerToolIdentity } from './debuggerProfiles';
 import { DebuggerToolsPanel } from './DebuggerToolsPanel';
+import { DebuggerErrorNotice } from './DebuggerErrorNotice';
+import { debuggerDiagnosticLog } from '../../shared/debugger-errors';
 import { getDebuggerProfile } from '../../shared/debugger-profiles';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -75,6 +77,7 @@ export function HardwareDebuggerView() {
   const [checkingTools, setCheckingTools] = useState<string | null>(null);
   const busyRef = useRef(false);
   const [error, setError] = useState('');
+  const [localFailures, setLocalFailures] = useState<string[]>([]);
   const [location, setLocation] = useState('main');
   const [dialog, setDialog] = useState<'connection' | 'tools' | 'breakpoints' | null>(null);
   const [batchText, setBatchText] = useState('');
@@ -89,7 +92,6 @@ export function HardwareDebuggerView() {
   const [assembled, setAssembled] = useState(false);
   const [patchResume, setPatchResume] = useState(false);
   const [patchResult, setPatchResult] = useState('');
-  const [dialogError, setDialogError] = useState('');
   const [address, setAddress] = useState('0x20000000');
   const [length, setLength] = useState(128);
   const [memory, setMemory] = useState<{ contents: string; address: number; time: string } | null>(null);
@@ -132,11 +134,30 @@ export function HardwareDebuggerView() {
   const toolsLocked = busy || connected || attaching || !config;
   const debugSupported = nativeDebugger || pluginDebugger;
   const builtinPanels = !customOnly && (!config || debugSupported);
-  const statusMessage =
-    error ||
-    (!customOnly && !(debug?.message === 'error.runtimeDebuggerUnsupported' && !debugSupported)
-      ? debug?.message
-      : '');
+  const statusMessage = busy
+    ? ''
+    : error ||
+      (!customOnly && !(debug?.message === 'error.runtimeDebuggerUnsupported' && !debugSupported)
+        ? debug?.message
+        : '');
+  const diagnosticLog = debuggerDiagnosticLog(debug?.log ?? [], [...localFailures, debug?.message ?? '']);
+  const reportError = (value: unknown) => {
+    const message = value instanceof Error ? value.message : String(value);
+    setError(message);
+    setLocalFailures((current) => (current.at(-1) === message ? current : [...current.slice(-15), message]));
+  };
+  const showLog = () => {
+    setDialog(null);
+    setPatch(null);
+    setView('log');
+  };
+  const errorNotice = statusMessage ? (
+    <DebuggerErrorNotice
+      message={statusMessage}
+      transport={usbJtag ? 'usb-jtag' : 'swd'}
+      onViewLog={showLog}
+    />
+  ) : null;
   const tabs = [
     { id: 'overview' as const, icon: Activity },
     { id: 'cpu' as const, icon: Cpu },
@@ -186,6 +207,8 @@ export function HardwareDebuggerView() {
     checkedToolsRef.current = undefined;
     setCheckingTools(null);
     setInstallation(undefined);
+    setError('');
+    setLocalFailures([]);
     installationOwner.current = { requested: false };
     void requests.current
       .read('storage', async () => {
@@ -196,7 +219,7 @@ export function HardwareDebuggerView() {
         if (!disposed && result && requests.current.current(result.token)) setStorage(result.value);
       })
       .catch((e) => {
-        if (!disposed) setError(String(e));
+        if (!disposed) reportError(e);
       });
     return () => {
       disposed = true;
@@ -292,16 +315,16 @@ export function HardwareDebuggerView() {
           'status.projectClosed',
         ].includes(event.message)
       )
-        void devices().catch((e) => setError(String(e)));
+        void devices().catch(reportError);
     });
-    void devices().catch((e) => setError(String(e)));
+    void devices().catch(reportError);
     const tick = async () => {
       if (pending || busyRef.current) return;
       pending = true;
       try {
         await refresh();
       } catch (e) {
-        if (!disposed) setError(String(e));
+        if (!disposed) reportError(e);
       } finally {
         pending = false;
       }
@@ -327,7 +350,7 @@ export function HardwareDebuggerView() {
       await action();
       if (requests.current.current(actionRequest)) await refresh();
     } catch (e) {
-      if (requests.current.current(actionRequest)) setError(e instanceof Error ? e.message : String(e));
+      if (requests.current.current(actionRequest)) reportError(e);
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -360,7 +383,6 @@ export function HardwareDebuggerView() {
         setMemory({ contents, address: start, time: new Date().toISOString() });
     });
   const openDialog = (next: typeof dialog) => {
-    setDialogError('');
     setDialog(next);
   };
   const editInstruction = (item: NonNullable<DebuggerState['instructions']>[number]) => {
@@ -372,19 +394,9 @@ export function HardwareDebuggerView() {
     setAssembled(false);
     setPatchResume(false);
     setPatchResult('');
-    setDialogError('');
   };
   const dialogAct = async (action: () => Promise<unknown>) => {
-    if (busyRef.current) return;
-    setDialogError('');
-    await act(async () => {
-      try {
-        await action();
-      } catch (e) {
-        setDialogError(e instanceof Error ? e.message : String(e));
-        throw e;
-      }
-    });
+    await act(action);
   };
   const addBatch = () =>
     void dialogAct(async () => {
@@ -1016,11 +1028,7 @@ export function HardwareDebuggerView() {
               )}
             </>
           )}
-          {dialogError && (
-            <p className="debug-error" role="alert">
-              {t(dialogError)}
-            </p>
-          )}
+          {errorNotice}
         </DebuggerDialog>
       )}
       {patch && (
@@ -1139,11 +1147,7 @@ export function HardwareDebuggerView() {
               {t('debugger.patch.write')}
             </button>
           </div>
-          {dialogError && (
-            <p className="debug-error" role="alert">
-              {t(dialogError)}
-            </p>
-          )}
+          {errorNotice}
         </DebuggerDialog>
       )}
       <header className="topbar debug-titlebar">
@@ -1184,11 +1188,7 @@ export function HardwareDebuggerView() {
         {!debugSupported && config && (
           <div className="debug-runtime-status">{t('debugger.runtimeUnsupported')}</div>
         )}
-        {statusMessage && (
-          <div className="debug-error" role="alert">
-            {t(statusMessage)}
-          </div>
-        )}
+        {!dialog && !patch && errorNotice}
         {patchResult && (
           <p className="debug-patch-result" role="status">
             {patchResult}
@@ -1397,7 +1397,7 @@ export function HardwareDebuggerView() {
                     {t('debugger.log')}
                   </h2>
                   <pre className="debug-log-view">
-                    {debug?.log.join('\n') || t('debugger.dashboard.logEmpty')}
+                    {diagnosticLog.map((line) => t(line)).join('\n') || t('debugger.dashboard.logEmpty')}
                   </pre>
                 </section>
               )}

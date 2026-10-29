@@ -29,7 +29,22 @@ ESP32-S3 当前不提供汇编预览或指令写入。其他 ESP32 系列、外�
 
 ## ESP32-S3 接线与工具
 
-使用板上的原生 USB 接口：USB D− 为 GPIO19、D+ 为 GPIO20。板载 USB-UART 桥只提供串口，不等同于 USB-JTAG。板级接线和引脚复用以板卡文档为准。
+使用板上的原生 USB 接口：USB D− 为 GPIO19、D+ 为 GPIO20。若板卡仅引出 USB-UART 接口，需要使用另一个原生 USB 接口，或按板卡原理图与 [Espressif 接线说明](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/jtag-debugging/configure-builtin-jtag.html)连接原生 USB 引脚。供电与引脚复用以板卡文档为准。
+
+### 串口已连接，但调试器找不到设备
+
+串口烧录与 USB-JTAG 使用不同接口。CH340、CP210x 等 USB-UART 桥可以用于烧录和串口通信，不能作为内置 USB-JTAG 调试器。
+
+| 宿主识别到的接口                                   | 可用于当前功能                                         |
+| -------------------------------------------------- | ------------------------------------------------------ |
+| CH340 串口，例如 `COM3`、`VID_1A86&PID_7523`       | 串口烧录、串口监视                                     |
+| ESP32-S3 原生 USB Serial/JTAG，`VID_303A&PID_1001` | 原生 USB-JTAG 调试；Windows 中还需 JTAG 接口对应的驱动 |
+
+遇到 `esp_usb_jtag: could not find or open device!` 时，先检查原生 USB 连接是否出现在宿主设备列表，再检查对应接口的驱动、序列号和占用情况。
+
+Windows 在点击连接时检查一次 USB 设备，分别提示未找到原生接口、设备状态异常、序列号不匹配或存在多个目标；状态刷新不触发枚举。系统枚举不可用或信息不足时，继续由 OpenOCD 判断连接结果。
+
+### 工具与驱动
 
 默认使用 `board/esp32s3-builtin.cfg`。Windows 需要适用的 Espressif USB 驱动；Linux 需要相应 USB 权限和 udev 配置。工具安装器不修改系统驱动或提升权限。
 
@@ -71,6 +86,8 @@ Windows 已验证两份 ESP32 调试工具的真实下载、SHA-256、解压和�
 工具窗口另覆盖程序存在但脚本缺失、切换平台时的旧响应、安装中变更目标和 GDB 文件选择器返回时目标已变化等情况。检查只发现本地文件，不在状态刷新时反复启动 GDB 或 OpenOCD。
 
 2026-10-30 工具窗口修复通过 62 项相关回归及类型检查，并在独立 Electron 窗口中验证 6 种界面场景：缺工具、检查中、仅缺 scripts、工具完整、模拟安装进度和切换 STM32。这组界面测试使用模拟接口，没有执行真实工具安装或硬件连接。
+
+同日本机排查中，宿主只枚举到 CH340 串口 `COM3`，没有 ESP 原生 USB-JTAG 设备。使用现有 OpenOCD 单独加载 USB-JTAG 接口并执行 `init; shutdown`，复现了 `could not find or open device`。该检查没有加载芯片 target 配置，也没有执行复位、暂停、烧录或驱动安装。本次为失败场景复现，实机调试成功验收仍待完成。
 
 待验收：ESP32-S3 实机连接、暂停、断点、内存读取和断开重连；STM32 RAM 指令修改；桌面与 Web 同时操作；Linux x64/ARM64 工具执行与 USB 访问。已有历史烧录记录见[硬件验证记录](HARDWARE-VALIDATION.md)。
 
