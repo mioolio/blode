@@ -102,6 +102,10 @@ test('desktop renders before proxy/services finish and queues early RPC behind i
       }
       const electron = {
         app, BrowserWindow, ipcMain,
+        protocol: { registerSchemesAsPrivileged(schemes) {
+          assert.equal(schemes[0].scheme, 'blode-runtime-ui');
+          assert.equal(schemes[0].privileges.secure, true);
+        }, handle() {} },
         nativeTheme: Object.assign(new EventEmitter(), { shouldUseDarkColors: false }),
         session: { defaultSession: { resolveProxy() {
           proxyCalls++;

@@ -67,6 +67,16 @@ export const workbenchRouteSchemas = {
 export type WorkbenchRouteName = keyof typeof workbenchRouteSchemas;
 
 export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
+  'runtime.context': 'Read the runtime device context and declared capabilities.',
+  'runtime.configure': 'Update selected runtime device values using its declared configuration constraints.',
+  'runtime.device':
+    'Run a declared action of the selected approved native device runtime. Pass confirm=true when required by its declaration.',
+  'runtime.plugins':
+    'Inspect declared third-party runtime packages and approval status without executing code.',
+  'runtime.trust':
+    'Approve native plugin execution after reviewing the package fingerprint. Requires confirm=true; permanent approval writes a machine-bound .uel marker.',
+  'runtime.view': 'Read an approved plugin custom interface for an isolated frame.',
+  'runtime.debug': 'Invoke an approved runtime debug provider method.',
   'language.index': 'Index saved C/C++ workspace symbols and export their source locations.',
   'capabilities.get': 'List all available automation capabilities and required confirmations.',
   'file.create': 'Create a project-relative file.',

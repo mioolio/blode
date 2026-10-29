@@ -10,7 +10,7 @@ import type {
   InstallationProgress,
 } from '../shared/contracts';
 import { parseMiValues, type MiValue } from './gdb-mi';
-import { GnuArmToolchain } from '../../extensions/boards/stm32/gnu';
+import { GnuArmToolchain } from '../../extensions/boards/STM32F103C8T6/gnu';
 import { runCommand } from './process';
 
 const object = (v: MiValue | undefined) => (v && !Array.isArray(v) && typeof v === 'object' ? v : {});
@@ -218,7 +218,7 @@ export class HardwareDebugger {
   }
   async connect(config: ProjectConfig) {
     if (this.active) throw new Error('error.debuggerBusy');
-    if (config.boardId !== 'stm32') throw new Error('error.debuggerPlatform');
+    if (config.boardId !== 'STM32F103C8T6') throw new Error('error.debuggerPlatform');
     const serial = config.programmer?.serialNumber;
     if (!serial || !/^[a-fA-F0-9]{1,64}$/.test(serial)) throw new Error('error.selectDebugProbe');
     const tools = await this.tools(config);

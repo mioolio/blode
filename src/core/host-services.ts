@@ -16,6 +16,7 @@ import { configSchema, parseProjectBuild } from './config';
 import { toolVersionSchemas } from './tool-version-schemas';
 import { hostParameterSchemas } from './host-service-schemas';
 import { LanguageIndexService } from './language-index';
+import type { RuntimeDebugger } from './runtime-debugger';
 
 interface Options {
   core: CoreService;
@@ -29,6 +30,8 @@ interface Options {
   toolchainEnv?: NodeJS.ProcessEnv;
   reloadProject?: () => Promise<void>;
   savePackage?: (file: { path: string; name: string }) => Promise<boolean>;
+  runtimeDebugger?: () => RuntimeDebugger | undefined;
+  runtimeViewDocument?: (id: string, kind: 'debugger' | 'device') => string;
 }
 const absolute = (value: string) => {
   if (!path.isAbsolute(value) || /[\0\r\n]/.test(value)) throw new Error('error.invalidPath');
@@ -67,6 +70,113 @@ export function createHostServices(options: Options) {
   const noArgs = z.tuple([]),
     nativePath = z.string().min(1).max(4096);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    runtimePluginsState: { args: noArgs, run: () => core.runtimePlugins.state() },
+    runtimePluginTrust: {
+      args: z.tuple([
+        z
+          .object({
+            id: z.string().min(1).max(80),
+            fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+            confirm: z.literal(true),
+            permanent: z.boolean(),
+          })
+          .strict(),
+      ]),
+      run: async (request) => {
+        let result;
+        await core.runHardwareAction(async () => {
+          result = await core.runtimePlugins.trust(request);
+        });
+        options.emit({
+          kind: 'status',
+          level: 'info',
+          message: 'status.runtimePluginTrusted',
+          time: new Date().toISOString(),
+        });
+        core.notifyDevicesChanged();
+        return result;
+      },
+    },
+    runtimePluginView: {
+      args: z.tuple([z.string().min(1).max(80), z.enum(['debugger', 'device'])]),
+      run: (id, kind) => core.runtimePlugins.view(id, kind),
+    },
+    runtimePluginViewDocument: {
+      args: z.tuple([z.string().min(1).max(80), z.enum(['debugger', 'device'])]),
+      run: async (id, kind) => {
+        const html = await core.runtimePlugins.view(id, kind);
+        return html ? (options.runtimeViewDocument?.(id, kind) ?? null) : null;
+      },
+    },
+    runtimePluginDebug: {
+      args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80), z.array(z.unknown()).max(8)]),
+      run: async (id, method, args) => {
+        const debug = options.runtimeDebugger?.();
+        if (!debug) throw new Error('error.runtimeDebuggerUnsupported');
+        if (['state', 'storage'].includes(method)) return debug.invokePlugin(id, method, args);
+        let result;
+        await core.runDebuggerAction(async () => {
+          result = await debug.invokePlugin(id, method, args);
+        });
+        return result;
+      },
+    },
+    runtimePluginContext: {
+      args: z.tuple([z.string().min(1).max(80)]),
+      run: async (id) => {
+        const plugin = (await core.runtimePlugins.state()).plugins.find((item) => item.id === id);
+        if (!plugin) throw new Error('error.runtimePluginMissing');
+        const config = core.currentConfig();
+        const defaults = Object.fromEntries(
+          plugin.manifest.ui.fields
+            .filter((field) => field.default !== undefined)
+            .map((field) => [field.id, field.default]),
+        );
+        return {
+          deviceId: config.boardId === id ? (config.runtime?.deviceId ?? '') : '',
+          values: { ...defaults, ...(config.boardId === id ? config.runtime?.values : {}) },
+          capabilities: plugin.manifest.capabilities,
+          support: plugin.manifest.support,
+          layout: plugin.manifest.layout,
+        };
+      },
+    },
+    runtimePluginConfigure: {
+      args: z.tuple([
+        z.string().min(1).max(80),
+        configSchema.shape.runtime
+          .unwrap()
+          .pick({ deviceId: true, values: true, disabledCapabilities: true }),
+      ]),
+      run: async (id, value) => {
+        const config = core.currentConfig();
+        if (config.boardId !== id) throw new Error('error.runtimePluginConfig');
+        await core.saveConfig({
+          ...config,
+          runtime: {
+            ...config.runtime,
+            ...value,
+            ...(value.values ? { values: { ...config.runtime?.values, ...value.values } } : {}),
+          },
+        });
+      },
+    },
+    runtimePluginDevice: {
+      args: z.tuple([
+        z.string().min(1).max(80),
+        z.string().min(1).max(80),
+        z.array(z.unknown()).max(8),
+        z.literal(true).optional(),
+      ]),
+      run: async (id, method, args, confirm) => {
+        if (core.currentConfig().boardId !== id) throw new Error('error.runtimePluginConfig');
+        let result;
+        await core.runHardwareAction(async () => {
+          result = await core.runtimePlugins.invokeDevice(id, method, args, confirm);
+        });
+        return result;
+      },
+    },
     languageIndex: { args: noArgs, run: () => language.snapshot() },
     ...createGitRoutes(git).routes,
     toolVersionsState: { args: noArgs, run: () => tools.toolVersionsState() },
@@ -207,6 +317,13 @@ export function createHostServices(options: Options) {
     return route.run(...(parsed.data as unknown[]));
   };
   const aliases: Record<string, [string, (params: any) => unknown[]]> = {
+    'runtime.plugins': ['runtimePluginsState', () => []],
+    'runtime.context': ['runtimePluginContext', (p) => [p.id]],
+    'runtime.configure': ['runtimePluginConfigure', (p) => [p.id, p.value]],
+    'runtime.device': ['runtimePluginDevice', (p) => [p.id, p.method, p.args, p.confirm]],
+    'runtime.trust': ['runtimePluginTrust', (p) => [p]],
+    'runtime.view': ['runtimePluginView', (p) => [p.id, p.kind]],
+    'runtime.debug': ['runtimePluginDebug', (p) => [p.id, p.method, p.args]],
     'language.index': ['languageIndex', () => []],
     'git.status': ['gitStatus', () => []],
     'git.diff': ['gitDiff', (p) => [p]],

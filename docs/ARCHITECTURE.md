@@ -1,6 +1,6 @@
 # 平台包与宿主架构
 
-设备实现按平台归属。`extensions/boards/<platform>/` 组合该平台的配置、检测、工具链、构建、烧录、布局和驱动描述；`src/core` 提供通用宿主能力，不按厂商拼接工具命令。当前只有检测配置 `auto` 和具体平台 `esp32-s3`、`stm32`。
+设备实现按平台归属。`extensions/boards/<platform>/` 组合该平台的配置、检测、工具链、构建、烧录、布局和驱动描述；`src/core` 提供通用宿主能力，不按厂商拼接工具命令。当前只有检测配置 `auto` 和具体平台 `Esp32_S3_CAM`、`stm32`。
 
 ## 目录责任
 
@@ -30,7 +30,7 @@ flowchart LR
     IPC --> Core[通用 CoreApi service]
     Routes --> Core
     Core --> Registry[runtime-registry]
-    Registry --> S3[esp32-s3 平台包]
+    Registry --> S3[Esp32_S3_CAM 平台包]
     Registry --> STM32[stm32 平台包]
     S3 --> Host[RuntimeHost SDK]
     STM32 --> Host

@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import {
   Fragment,
   lazy,
@@ -459,7 +460,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                       <div className="editor-pane">
                         <div className="split-pane-header">
                           <span>{t('action.splitEditor')}</span>
-                          <select
+                          <ModernSelect
                             value={secondaryPath}
                             aria-label={t('action.splitEditor')}
                             onChange={(event) => {
@@ -472,7 +473,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                                 {file.path}
                               </option>
                             ))}
-                          </select>
+                          </ModernSelect>
                         </div>
                         <div className="monaco-container">{renderEditor(secondaryPath)}</div>
                       </div>

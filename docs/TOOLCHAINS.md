@@ -63,7 +63,7 @@ Windows x64 托管 ST-Link 使用固定官方发行归档及元数据 SHA-256 �
 
 本机 Arm 工具版本标识为 Keil MDK Community 非商业使用环境；原始 license_terms 保留，工具使用和重新分发遵循这些条款。可分享的平台源码不包含编译器，也不将本机授权当作向其他用户分发工具的许可。
 
-参见 [STM32 平台包](../extensions/boards/stm32/README.md) 与 [设备使用说明](STM32.md)。
+参见 [STM32 平台包](../extensions/boards/STM32F103C8T6/README.md) 与 [设备使用说明](STM32.md)。
 
 ## 输入与构建记录
 

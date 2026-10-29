@@ -28,7 +28,7 @@ test('file, directory and root entries persist other build inputs and survive co
     onEvent: () => {},
     createRuntimes: () => [
       {
-        id: 'stm32',
+        id: 'STM32F103C8T6',
         transport: 'stlink',
         sourceInputs: [],
         status: async () => ({

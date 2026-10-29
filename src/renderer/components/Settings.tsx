@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import {
   Bot,
   CircleCheck,
@@ -80,7 +81,7 @@ export function Settings({
   const container = useRef<HTMLDivElement>(null);
   const installationPanel = useRef<HTMLDivElement>(null);
   const isAutomatic = config.boardId === 'auto';
-  const usesStlink = config.boardId === 'stm32' || config.programmer?.transport === 'stlink';
+  const usesStlink = config.boardId === 'STM32F103C8T6' || config.programmer?.transport === 'stlink';
   const stlinkTool = { id: 'stlink' as const, name: 'stlink-tools', versionKey: 'stlink' };
   const armCompilerTool = { id: 'armCompiler' as const, name: 'Arm Compiler 6', versionKey: 'armCompiler' };
   const gnuTool = { id: 'gnuArm' as const, name: 'GNU Arm GCC', versionKey: 'gnuArm' };
@@ -218,10 +219,10 @@ export function Settings({
             </label>
             <label>
               {t('settings.language')}
-              <select value={locale} onChange={(event) => setLocale(event.target.value as Locale)}>
+              <ModernSelect value={locale} onChange={(event) => setLocale(event.target.value as Locale)}>
                 <option value="zh-CN">{t('language.zh-CN')}</option>
                 <option value="en">{t('language.en')}</option>
-              </select>
+              </ModernSelect>
             </label>
           </div>
           {!workspaceOpen && <p className="subtle-note">{t('settings.openProjectFirst')}</p>}

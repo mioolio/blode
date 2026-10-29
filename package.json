@@ -65,5 +65,6 @@
   "bugs": {
     "url": "https://github.com/mioolio/blode/issues"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "developmentChannel": "internal-runtime-plugins"
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { validatePartitions, toPartitionCsv } from '../extensions/boards/esp32-s3/layout';
+import { validatePartitions, toPartitionCsv } from '../extensions/boards/Esp32_S3_CAM/layout';
 import { parseConfig } from '../src/core/config';
 import {
   safeWorkspacePath,
@@ -16,10 +16,10 @@ import {
   watchWorkspace,
 } from '../src/core/workspace';
 import { createCore } from '../src/core/service';
-import { parseBuildOutput } from '../extensions/boards/esp32-s3/runtime';
+import { parseBuildOutput } from '../extensions/boards/Esp32_S3_CAM/runtime';
 import { loadBuildState } from '../src/core/build-state';
-import { esp32S3Adapter } from '../extensions/boards/esp32-s3/adapter';
-import { stm32Adapter } from '../extensions/boards/stm32/adapter';
+import { esp32S3Adapter } from '../extensions/boards/Esp32_S3_CAM/adapter';
+import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/adapter';
 import { runCommand } from '../src/core/process';
 
 test('partition validation rejects overlap, bounds and misaligned app addresses', () => {

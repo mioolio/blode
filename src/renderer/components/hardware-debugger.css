@@ -6,14 +6,14 @@
   overflow: auto;
   background: var(--bg);
   color: var(--text);
-  padding: 0 24px 28px;
+  padding: 0 14px 18px;
   scrollbar-gutter: stable;
 }
 .hardware-debugger.debug-has-titlebar {
   height: calc(100vh - 36px);
 }
 .hardware-debugger > * {
-  max-width: 1600px;
+  max-width: none;
   margin-inline: auto;
 }
 .hardware-debugger :is(button, input, select) {
@@ -26,7 +26,7 @@
   margin-top: 16px;
 }
 .hardware-debugger h1 {
-  font-size: 21px;
+  font-size: 15px;
   margin: 0 0 5px;
   font-weight: 650;
 }
@@ -50,7 +50,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 25px 0 20px;
+  padding: 12px 0;
 }
 .debug-brand {
   display: flex;
@@ -59,6 +59,7 @@
 }
 .debug-brand p {
   margin: 0;
+  font-size: 11px;
 }
 .debug-state {
   display: inline-flex;
@@ -85,9 +86,9 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px;
-  padding: 16px;
+  padding: 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 5px;
   background: var(--surface-1);
 }
 .debug-connection-bar label {
@@ -137,7 +138,7 @@
   justify-content: space-between;
   gap: 14px;
   border-bottom: 1px solid var(--border);
-  margin-top: 16px;
+  margin-top: 10px;
 }
 .debug-workbench-bar nav {
   display: flex;
@@ -149,8 +150,8 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 42px;
-  padding: 0 14px;
+  height: 34px;
+  padding: 0 12px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -175,7 +176,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 14px 0;
+  padding: 8px 0;
 }
 .debug-execution-toolbar > span {
   color: var(--text-faint);
@@ -184,14 +185,14 @@
 }
 .debug-page-content {
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 .debug-card {
   min-width: 0;
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 18px;
+  border-radius: 5px;
+  padding: 12px;
 }
 .debug-two-columns {
   display: grid;
@@ -201,15 +202,15 @@
 .debug-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 .debug-summary {
   display: grid;
   align-content: start;
-  gap: 10px;
-  padding: 17px;
+  gap: 6px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   background: var(--surface-1);
 }
 .debug-summary > span {
@@ -218,11 +219,183 @@
 }
 .debug-summary strong {
   font:
-    600 18px Consolas,
+    600 13px Consolas,
     monospace;
   color: var(--text-strong);
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
+}
+.debug-dock-grid {
+  display: grid;
+  align-items: stretch;
+  min-width: 0;
+}
+.debug-main-stack,
+.debug-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.debug-pane-divider {
+  cursor: col-resize;
+  touch-action: none;
+  margin-inline: 1px;
+  border-radius: 2px;
+}
+.debug-pane-divider:is(:hover, :focus-visible),
+.debug-pane-divider[data-dragging] {
+  background: var(--accent);
+  outline: none;
+}
+.debug-dock-grid .debug-card {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+.debug-dock-grid .debug-card > h2 {
+  margin: 0;
+  min-height: 32px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.debug-dock-grid .debug-card > :not(h2, .debug-scroll, .debug-register-bank, .debug-hexdump) {
+  margin-inline: 10px;
+}
+.debug-dock-grid .debug-scroll {
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.debug-dock-grid .debug-instructions table {
+  min-width: 560px;
+  font-size: 11px;
+}
+.debug-dock-grid .debug-instructions :is(td, th) {
+  padding: 6px 10px;
+}
+.debug-dock-grid .debug-instructions td:last-child {
+  white-space: pre;
+}
+.debug-dock-grid .debug-instructions {
+  height: 390px;
+  min-height: 200px;
+  max-height: 75vh;
+  resize: vertical;
+}
+.debug-dock-grid .debug-register-bank {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  padding: 5px;
+}
+.debug-dock-grid .debug-register {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 11px;
+}
+.debug-dock-grid .debug-register code {
+  font-size: 11px;
+}
+.debug-dock-grid .debug-stack {
+  height: 170px;
+  resize: vertical;
+}
+.debug-dock-grid .debug-frame {
+  font-size: 11px;
+  padding: 7px 10px;
+}
+.debug-dock-grid .debug-breakpoints {
+  min-height: 150px;
+  flex: 1;
+}
+.debug-dock-grid .debug-inline {
+  margin-top: 8px;
+  margin-bottom: 6px;
+}
+.debug-dock-grid .debug-memory-view {
+  height: 245px;
+  min-height: 190px;
+  resize: vertical;
+}
+.debug-dock-grid .debug-memory-presets {
+  gap: 5px;
+  padding-top: 7px;
+}
+.debug-dock-grid .debug-memory-presets button {
+  font-size: 10px;
+  min-height: 26px;
+  padding: 4px 8px;
+}
+.debug-dock-grid .debug-hexdump {
+  margin: 0;
+  border-radius: 0;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.debug-dock-grid .debug-empty {
+  min-height: 80px;
+  padding: 12px;
+}
+.debug-connection-bar .modern-select {
+  width: min(360px, 32vw);
+}
+.debug-runtime-status {
+  padding: 9px 2px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.debug-plugin-view {
+  min-height: 320px;
+  padding: 0;
+  overflow: hidden;
+}
+@media (max-width: 1000px) {
+  .debug-dock-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px;
+  }
+  .debug-pane-divider {
+    display: none;
+  }
+  .debug-side-stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .debug-side-stack .debug-registers {
+    grid-row: span 2;
+  }
+}
+@media (max-width: 600px) {
+  .debug-side-stack {
+    display: flex;
+  }
+  .debug-connection-bar label:first-child {
+    width: 100%;
+  }
+  .debug-connection-bar .modern-select {
+    width: 100%;
+  }
+  .debug-sample-stamp {
+    display: none;
+  }
 }
 .debug-summary .file-value {
   font-family: inherit;

@@ -31,7 +31,7 @@ async function fixture(t: TestContext, overrides: Partial<CoreOptions> = {}) {
   let statusReads = 0;
   const events: LogEvent[] = [];
   const runtime: PlatformRuntime = {
-    id: 'stm32',
+    id: 'STM32F103C8T6',
     transport: 'stlink',
     sourceInputs: [],
     status: async () => {
@@ -43,7 +43,7 @@ async function fixture(t: TestContext, overrides: Partial<CoreOptions> = {}) {
       return [
         {
           id: 'stlink:test',
-          platformId: 'stm32',
+          platformId: 'STM32F103C8T6',
           transport: 'stlink',
           name: 'Test probe',
           serialNumber: 'test',

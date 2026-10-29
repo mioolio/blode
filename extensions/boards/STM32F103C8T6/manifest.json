@@ -1,0 +1,73 @@
+{
+  "id": "STM32F103C8T6",
+  "name": "STM32F103C8T6",
+  "version": "2.0.0-dev.1",
+  "apiVersion": 2,
+  "runtimeApiVersion": 2,
+  "kind": "board",
+  "entry": "adapter.ts",
+  "runtime": "runtime.ts",
+  "transport": "stlink",
+  "vendor": "STMicroelectronics",
+  "descriptionKey": "boards.stm32Description",
+  "capabilities": ["compile", "validate-firmware", "flash", "probe", "serial", "layout"],
+  "sourceInputs": [],
+  "support": {
+    "chips": ["STM32F103C8T6"],
+    "families": ["STM32F103C8"],
+    "status": "experimental",
+    "notes": "Default 64 KiB Flash and 20 KiB SRAM. ST-Link chip ID 0x410 does not identify the package marking."
+  },
+  "defaultConfig": {
+    "version": 1,
+    "name": "firmware",
+    "boardId": "STM32F103C8T6",
+    "port": "",
+    "baudRate": 115200,
+    "flashSize": 65536,
+    "partitions": [
+      {
+        "id": "firmware",
+        "name": "firmware",
+        "type": "app",
+        "offset": 0,
+        "size": 65536
+      }
+    ],
+    "programmer": {
+      "transport": "stlink",
+      "serialNumber": "",
+      "frequencyKhz": 1800
+    },
+    "toolchain": {
+      "mode": "managed",
+      "arduinoCli": "",
+      "python": "",
+      "additionalUrls": [],
+      "fqbn": "",
+      "stlinkDirectory": "",
+      "armCompilerDirectory": ""
+    }
+  },
+  "compiler": {
+    "mode": "host",
+    "baseRuntime": "STM32F103C8T6"
+  },
+  "debugger": {
+    "mode": "builtin"
+  },
+  "layout": {
+    "flashBaseAddress": 134217728,
+    "recommendedFlashSizes": [65536],
+    "possibleFlashSizes": [65536],
+    "ramSize": 20480
+  },
+  "constraints": {
+    "chipIds": ["0x410"],
+    "notes": ["Custom resource sizes are project settings; recommendations do not constrain them."]
+  },
+  "ui": {
+    "fields": [],
+    "hiddenCapabilities": []
+  }
+}

@@ -5,8 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { projectFootprint } from '../src/renderer/workspace/resources';
 import { MemoryUsage } from '../src/renderer/components/MemoryUsage';
 import { I18nProvider } from '../src/renderer/i18n';
-import { esp32S3Adapter } from '../extensions/boards/esp32-s3/adapter';
-import { stm32Adapter } from '../extensions/boards/stm32/adapter';
+import { esp32S3Adapter } from '../extensions/boards/Esp32_S3_CAM/adapter';
+import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/adapter';
 import type { AppState } from '../src/shared/contracts';
 
 test('project footprint counts binary files, UTF-8 drafts, and real directory distribution', () => {

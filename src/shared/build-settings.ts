@@ -1,7 +1,8 @@
-export type CompilerFamily = 'inherit' | 'auto' | 'gnu-arm' | 'armclang' | 'arduino';
+export type CompilerFamily = 'inherit' | 'auto' | 'gnu-arm' | 'armclang' | 'arduino' | 'plugin';
 
 export interface CompilerChoice {
   family: CompilerFamily;
+  pluginId?: string;
   directory?: string;
   version?: string;
   arduinoCli?: string;
@@ -18,5 +19,5 @@ export interface BuildSettings {
   mode?: 'debug' | 'release';
   optimizeForSize?: boolean;
   common?: CompilerChoice;
-  platforms?: Partial<Record<'stm32' | 'esp32-s3', PlatformCompilerSettings>>;
+  platforms?: Record<string, PlatformCompilerSettings>;
 }

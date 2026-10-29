@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import {
   CircleAlert,
@@ -118,7 +119,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
         <>
           <div className="serial-toolbar" style={{ flexWrap: 'wrap' }}>
             <Usb size={13} strokeWidth={1.8} aria-hidden="true" />
-            <select
+            <ModernSelect
               aria-label={t('console.serialDevice')}
               title={t('console.serialDevice')}
               value={
@@ -145,7 +146,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                   {port.manufacturer ? ` — ${port.manufacturer}` : ''}
                 </option>
               ))}
-            </select>
+            </ModernSelect>
             <input
               type="number"
               min={110}
@@ -176,15 +177,15 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               {t(serialConnected ? 'action.disconnect' : 'action.connect')}
             </button>
             <span className={`status-dot ${serialConnected ? '' : 'inactive'}`} />
-            <select
+            <ModernSelect
               aria-label={t('console.encoding')}
               value={encoding}
               onChange={(event) => setEncoding(event.target.value as 'utf8' | 'hex')}
             >
               <option value="utf8">UTF-8</option>
               <option value="hex">HEX</option>
-            </select>
-            <select
+            </ModernSelect>
+            <ModernSelect
               aria-label={t('console.lineEnding')}
               value={lineEnding}
               disabled={encoding === 'hex'}
@@ -194,7 +195,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               <option value="lf">LF</option>
               <option value="cr">CR</option>
               <option value="crlf">CRLF</option>
-            </select>
+            </ModernSelect>
           </div>
           <details
             className="serial-options"
@@ -204,7 +205,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
             <div className="serial-toolbar" style={{ flexWrap: 'wrap', paddingLeft: 0 }}>
               <label>
                 {t('console.dataBits')}{' '}
-                <select
+                <ModernSelect
                   value={serialOptions?.dataBits ?? 8}
                   disabled={serialConnected || !!busy}
                   onChange={(event) =>
@@ -219,11 +220,11 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                       {bits}
                     </option>
                   ))}
-                </select>
+                </ModernSelect>
               </label>
               <label>
                 {t('console.parity')}{' '}
-                <select
+                <ModernSelect
                   value={serialOptions?.parity ?? 'none'}
                   disabled={serialConnected || !!busy}
                   onChange={(event) =>
@@ -238,11 +239,11 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                       {t(`console.parity.${parity}`)}
                     </option>
                   ))}
-                </select>
+                </ModernSelect>
               </label>
               <label>
                 {t('console.stopBits')}{' '}
-                <select
+                <ModernSelect
                   value={serialOptions?.stopBits ?? 1}
                   disabled={serialConnected || !!busy}
                   onChange={(event) =>
@@ -257,11 +258,11 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                       {bits}
                     </option>
                   ))}
-                </select>
+                </ModernSelect>
               </label>
               <label>
                 {t('console.flowControl')}{' '}
-                <select
+                <ModernSelect
                   value={serialOptions?.flowControl ?? 'none'}
                   disabled={serialConnected || !!busy}
                   onChange={(event) =>
@@ -274,7 +275,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                   <option value="none">{t('console.flow.none')}</option>
                   <option value="rtscts">RTS/CTS</option>
                   <option value="xonxoff">XON/XOFF</option>
-                </select>
+                </ModernSelect>
               </label>
             </div>
             <p className="subtle-note">{t('console.serialDeviceHint')}</p>

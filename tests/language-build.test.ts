@@ -16,7 +16,7 @@ test('invalid or error-level project language rules stop the build before runnin
   let core: Awaited<ReturnType<typeof createCore>> | undefined;
   try {
     await fs.mkdir(path.join(root, 'languages/C/c17'), { recursive: true });
-    await persistConfig(root, getBoardAdapter('stm32').createConfig());
+    await persistConfig(root, getBoardAdapter('STM32F103C8T6').createConfig());
     await fs.writeFile(path.join(root, 'main.c'), 'int main(void) { forbidden(); return 0; }');
     await fs.writeFile(path.join(root, rulePath), '{ bad json');
     core = await createCore({
@@ -25,7 +25,7 @@ test('invalid or error-level project language rules stop the build before runnin
       onEvent: (event) => events.push(event),
       createRuntimes: () => [
         {
-          id: 'stm32',
+          id: 'STM32F103C8T6',
           transport: 'stlink',
           sourceInputs: [],
           invalidate() {},

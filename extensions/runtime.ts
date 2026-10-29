@@ -9,6 +9,7 @@ import type {
   ProjectBuildInputs,
   InstallationProgress,
 } from '../src/shared/contracts.js';
+import type { RuntimeTransport } from '../src/shared/plugins.js';
 
 /** Stable host capabilities provided to statically registered, trusted platform packages. */
 export interface RuntimeCommandResult {
@@ -55,7 +56,7 @@ export interface RuntimeFirmwareImage {
 }
 export interface PlatformRuntime {
   readonly id: string;
-  readonly transport: 'serial' | 'stlink';
+  readonly transport: RuntimeTransport;
   /** Project-relative binary inputs not represented by the source editor. */
   readonly sourceInputs: readonly string[];
   projectConfig?(config: ProjectConfig, build: ProjectBuildInputs): Promise<ProjectConfig | null>;
@@ -66,7 +67,7 @@ export interface PlatformRuntime {
   discover(config: ProjectConfig): Promise<DetectionCandidate[]>;
   probe(
     config: ProjectConfig,
-    selection?: { port?: string; serialNumber?: string },
+    selection?: { port?: string; serialNumber?: string; deviceId?: string },
   ): Promise<PlatformProbeResult>;
   build(config: ProjectConfig, build: ProjectBuildInputs): Promise<BuildResult>;
   flash(config: ProjectConfig, build: BuildResult): Promise<void>;

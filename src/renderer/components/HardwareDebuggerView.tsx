@@ -1,7 +1,9 @@
+import { ModernSelect } from './ModernSelect';
+import { RuntimePluginView } from './RuntimePluginView';
+import { RuntimePluginTrustDialog } from './RuntimePluginTrustDialog';
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
-  ArrowRight,
   Braces,
   Cpu,
   Database,
@@ -39,8 +41,10 @@ export function HardwareDebuggerView() {
   const isWeb = window.__blodeWeb === true;
   const { t, locale } = useI18n();
   const [debug, setDebug] = useState<DebuggerState | null>(null);
+  const debugRef = useRef<DebuggerState | null>(null);
   const [app, setApp] = useState<AppState | null>(null);
   const [config, setConfig] = useState<ProjectConfig | null>(null);
+  const [paneWidth, setPaneWidth] = useState(64);
   const [view, setView] = useState<DebugView>('overview');
   const [storage, setStorage] = useState<DebuggerStorage | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,6 +80,11 @@ export function HardwareDebuggerView() {
   const probes = app?.debugProbes ?? [];
   const serialAvailable = probes.some((probe) => probe.serialNumber === serial);
   const selectedSerial = serialAvailable || connected ? serial : '';
+  const selectedRuntime = app?.boards.find((board) => board.id === config?.boardId);
+  const plugin = selectedRuntime?.runtimePlugin;
+  const pluginDebugger = plugin?.debugger.mode === 'extend' || plugin?.debugger.mode === 'replace';
+  const nativeDebugger = config?.boardId === 'STM32F103C8T6' || plugin?.debugger.mode === 'builtin';
+  const debugSupported = nativeDebugger || pluginDebugger;
   const tabs = [
     { id: 'overview' as const, icon: Activity },
     { id: 'cpu' as const, icon: Cpu },
@@ -85,6 +94,7 @@ export function HardwareDebuggerView() {
   ];
 
   const updateDebug = (next: DebuggerState) => {
+    debugRef.current = next;
     if (next.updatedAt && next.updatedAt !== lastSample.current) {
       const previous = lastRegisters.current;
       setChangedRegisters(
@@ -109,11 +119,14 @@ export function HardwareDebuggerView() {
         : state.installation,
     );
     setConfig((current) => {
-      const next =
-        current ??
-        (state.config.boardId === 'stm32'
+      if (debugRef.current && ['running', 'stopped', 'connecting'].includes(debugRef.current.connection))
+        return current;
+      const target =
+        state.config.boardId !== 'auto'
           ? state.config
-          : (state.boards.find((board) => board.id === 'stm32')?.defaultConfig as ProjectConfig));
+          : (state.boards.find((board) => board.id === 'STM32F103C8T6')?.defaultConfig as ProjectConfig);
+      const next =
+        current?.boardId === target?.boardId ? { ...target, programmer: current.programmer } : target;
       if (!next) return null;
       if (
         state.connections?.probes.state === 'ready' &&
@@ -138,7 +151,15 @@ export function HardwareDebuggerView() {
               : []
             : [...(current?.id === event.installation!.id ? current.logs.slice(-299) : []), event],
         }));
-      if (event.message === 'status.devicesChanged') void devices().catch((e) => setError(String(e)));
+      if (
+        [
+          'status.devicesChanged',
+          'status.configSaved',
+          'status.projectOpened',
+          'status.projectClosed',
+        ].includes(event.message)
+      )
+        void devices().catch((e) => setError(String(e)));
     });
     void devices().catch((e) => setError(String(e)));
     void window.blode
@@ -216,7 +237,7 @@ export function HardwareDebuggerView() {
   );
 
   const stackPanel = (
-    <section className="debug-card">
+    <section className="debug-card debug-stack">
       <h2>
         <Layers3 size={15} />
         {t('debugger.stack')}
@@ -242,7 +263,7 @@ export function HardwareDebuggerView() {
     </section>
   );
   const breakpointsPanel = (
-    <section className="debug-card">
+    <section className="debug-card debug-breakpoints">
       <h2>
         <ListTree size={15} />
         {t('debugger.breakpoints')}
@@ -322,8 +343,119 @@ export function HardwareDebuggerView() {
     </section>
   );
 
+  const registerPanel = (
+    <section className="debug-card debug-registers">
+      <h2>
+        <Cpu size={15} />
+        {t('debugger.registers')}
+      </h2>
+      {debug?.registers.length ? (
+        <div className="debug-register-bank">
+          {coreRegisterNames.map((name) => (
+            <div
+              key={name}
+              className={`debug-register ${name === 'pc' ? 'register-pc' : ''} ${changedRegisters.has(name) ? 'register-changed' : ''}`}
+            >
+              <span>{name.toUpperCase()}</span>
+              <code>{register(name)}</code>
+            </div>
+          ))}
+        </div>
+      ) : (
+        emptyHardware
+      )}
+      <div className="debug-flags">
+        <span>xPSR</span>
+        <code>{record.get('xpsr') ?? record.get('cpsr') ?? '—'}</code>
+        {[
+          ['N', 31],
+          ['Z', 30],
+          ['C', 29],
+          ['V', 28],
+          ['T', 24],
+        ].map(([label, bit]) => (
+          <span className="debug-flag" key={label}>
+            {label}
+            <b>{Number.isFinite(psr) ? (psr >>> Number(bit)) & 1 : '—'}</b>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+  const memoryPanel = (
+    <section className="debug-card debug-memory-view">
+      <h2>
+        <MemoryStick size={15} />
+        {t('debugger.memory')}
+        <span className="debug-data-source">{t('debugger.dashboard.sourceHardware')}</span>
+      </h2>
+      <div className="debug-memory-presets">
+        <button onClick={() => setAddress('0x20000000')}>SRAM · 0x20000000</button>
+        <button onClick={() => setAddress('0x08000000')}>Flash · 0x08000000</button>
+        <button
+          onClick={() =>
+            Number.isFinite(numberOf(register('sp'))) && setAddress(hexAddress(numberOf(register('sp'))))
+          }
+          disabled={!Number.isFinite(numberOf(register('sp')))}
+        >
+          {t('debugger.dashboard.atSp')}
+        </button>
+        <button
+          onClick={() => Number.isFinite(numberOf(pc)) && setAddress(hexAddress(numberOf(pc)))}
+          disabled={!Number.isFinite(numberOf(pc))}
+        >
+          {t('debugger.dashboard.atPc')}
+        </button>
+      </div>
+      <div className="debug-inline">
+        <label>
+          {t('debugger.address')}
+          <input value={address} onChange={(event) => setAddress(event.target.value)} />
+        </label>
+        <label>
+          {t('debugger.length')}
+          <input
+            type="number"
+            min={1}
+            max={4096}
+            value={length}
+            onChange={(event) => setLength(Number(event.target.value))}
+          />
+        </label>
+        <button
+          disabled={
+            !stopped ||
+            busy ||
+            !Number.isSafeInteger(Number(address)) ||
+            Number(address) < 0 ||
+            !Number.isInteger(length) ||
+            length < 1 ||
+            length > 4096
+          }
+          onClick={readMemory}
+        >
+          {t('debugger.read')}
+        </button>
+      </div>
+      {memory ? (
+        <>
+          <div className="debug-memory-caption">
+            {hexAddress(memory.address)} · {memory.contents.length / 2} B · {timestamp(memory.time)}
+          </div>
+          <pre className="debug-hexdump">{hexdump(memory.contents, memory.address)}</pre>
+        </>
+      ) : (
+        <div className="debug-empty">
+          <MemoryStick size={30} strokeWidth={1.3} />
+          <p>{t('debugger.dashboard.memoryEmpty')}</p>
+        </div>
+      )}
+    </section>
+  );
+
   return (
     <>
+      <RuntimePluginTrustDialog id={config?.boardId} />
       {customTitlebar && (
         <header className="topbar debug-titlebar">
           <span className="brand-name">Blode Studio</span>
@@ -359,7 +491,9 @@ export function HardwareDebuggerView() {
           <div className="debug-brand">
             <div>
               <h1>{t('debugger.dashboard.title')}</h1>
-              <p>{t(isWeb ? 'debugger.webSubtitle' : 'debugger.dashboard.subtitle')}</p>
+              <p>
+                {selectedRuntime?.name ?? t(isWeb ? 'debugger.webSubtitle' : 'debugger.dashboard.subtitle')}
+              </p>
             </div>
           </div>
           <span className={`debug-state state-${debug?.connection ?? 'disconnected'}`}>
@@ -367,75 +501,104 @@ export function HardwareDebuggerView() {
           </span>
         </header>
         <section className="debug-connection-bar">
-          <label>
-            <span>ST-Link / SWD</span>
-            <select
-              value={selectedSerial}
-              disabled={connected || attaching || busy}
-              onChange={(event) =>
-                setConfig((current) =>
-                  current
-                    ? {
-                        ...current,
-                        programmer: {
-                          transport: 'stlink',
-                          serialNumber: event.target.value,
-                          frequencyKhz: current.programmer?.frequencyKhz ?? 1800,
-                        },
-                      }
-                    : current,
-                )
-              }
-            >
-              <option value="">{t('error.selectDebugProbe')}</option>
-              {probes.map((probe) => (
-                <option key={probe.serialNumber} value={probe.serialNumber}>
-                  {probe.description ?? 'ST-Link'} · {probe.serialNumber}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            disabled={connected || attaching || busy}
-            onClick={() =>
-              void act(async () => {
-                await window.blode.listDebugProbes();
-                await devices();
-              })
-            }
-          >
-            <RefreshCw size={13} />
-            {t('action.refresh')}
-          </button>
-          <label className="debug-frequency">
-            <span>{t('debugger.dashboard.frequency')}</span>
-            <input
-              aria-label={t('debugger.dashboard.frequency')}
-              type="number"
-              min={5}
-              max={4000}
-              disabled={connected || attaching || busy}
-              value={config?.programmer?.frequencyKhz ?? 1800}
-              onChange={(event) =>
-                setConfig((current) =>
-                  current
-                    ? {
-                        ...current,
-                        programmer: {
-                          transport: 'stlink',
-                          serialNumber: current.programmer?.serialNumber ?? '',
-                          frequencyKhz: Number(event.target.value),
-                        },
-                      }
-                    : current,
-                )
-              }
-            />
-          </label>
+          {pluginDebugger ? (
+            <label>
+              <span>{t('runtime.deviceId')}</span>
+              <input
+                value={config?.runtime?.deviceId ?? ''}
+                disabled={connected || attaching || busy}
+                onChange={(event) =>
+                  setConfig((current) =>
+                    current
+                      ? { ...current, runtime: { ...current.runtime, deviceId: event.target.value } }
+                      : current,
+                  )
+                }
+              />
+            </label>
+          ) : (
+            nativeDebugger && (
+              <>
+                <label>
+                  <span>ST-Link / SWD</span>
+                  <ModernSelect
+                    value={selectedSerial}
+                    disabled={connected || attaching || busy}
+                    onChange={(event) =>
+                      setConfig((current) =>
+                        current
+                          ? {
+                              ...current,
+                              programmer: {
+                                transport: 'stlink',
+                                serialNumber: event.target.value,
+                                frequencyKhz: current.programmer?.frequencyKhz ?? 1800,
+                              },
+                            }
+                          : current,
+                      )
+                    }
+                  >
+                    <option value="">{t('error.selectDebugProbe')}</option>
+                    {probes.map((probe) => (
+                      <option key={probe.serialNumber} value={probe.serialNumber}>
+                        {probe.description ?? 'ST-Link'} · {probe.serialNumber}
+                      </option>
+                    ))}
+                  </ModernSelect>
+                </label>
+              </>
+            )
+          )}
+          {nativeDebugger && (
+            <>
+              <button
+                disabled={connected || attaching || busy}
+                onClick={() =>
+                  void act(async () => {
+                    await window.blode.listDebugProbes();
+                    await devices();
+                  })
+                }
+              >
+                <RefreshCw size={13} />
+                {t('action.refresh')}
+              </button>
+              <label className="debug-frequency">
+                <span>{t('debugger.dashboard.frequency')}</span>
+                <input
+                  aria-label={t('debugger.dashboard.frequency')}
+                  type="number"
+                  min={5}
+                  max={4000}
+                  disabled={connected || attaching || busy}
+                  value={config?.programmer?.frequencyKhz ?? 1800}
+                  onChange={(event) =>
+                    setConfig((current) =>
+                      current
+                        ? {
+                            ...current,
+                            programmer: {
+                              transport: 'stlink',
+                              serialNumber: current.programmer?.serialNumber ?? '',
+                              frequencyKhz: Number(event.target.value),
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                />
+              </label>
+            </>
+          )}
           <button
             className="primary"
             disabled={
-              connected || attaching || busy || !selectedSerial || !debug?.tools.gdb || !debug?.tools.server
+              connected ||
+              attaching ||
+              busy ||
+              !debugSupported ||
+              (!pluginDebugger && (!selectedSerial || !debug?.tools.gdb || !debug?.tools.server))
             }
             onClick={() => config && void act(() => window.blode.debuggerConnect(config))}
           >
@@ -444,9 +607,11 @@ export function HardwareDebuggerView() {
           <button disabled={(!connected && !attaching) || busy} onClick={() => command('disconnect')}>
             {t('debugger.disconnect')}
           </button>
-          <span className="debug-connection-note">{t('debugger.dashboard.attachNote')}</span>
         </section>
-        {(!debug?.tools.gdb || !debug?.tools.server) && (
+        {!debugSupported && config && (
+          <div className="debug-runtime-status">{t('debugger.runtimeUnsupported')}</div>
+        )}
+        {nativeDebugger && (!debug?.tools.gdb || !debug?.tools.server) && (
           <section className="debug-tools-note">
             <span>
               {t('debugger.toolsMissing')} GDB: {debug?.tools.gdb ? '✓' : '—'} · st-util:{' '}
@@ -521,7 +686,6 @@ export function HardwareDebuggerView() {
               {t(`debugger.${action}`)}
             </button>
           ))}
-          <span>{t('debugger.dashboard.samplingNote')}</span>
         </div>
         <main
           className="debug-page-content"
@@ -529,270 +693,188 @@ export function HardwareDebuggerView() {
           id={`debug-panel-${view}`}
           aria-labelledby={`debug-tab-${view}`}
         >
-          {view === 'overview' && (
-            <>
-              <div className="debug-summary-grid">
-                <div className="debug-summary">
-                  <span>{t('debugger.dashboard.programCounter')}</span>
-                  <strong>{pc}</strong>
-                </div>
-                <div className="debug-summary">
-                  <span>{t('debugger.dashboard.stackPointer')}</span>
-                  <strong>{register('sp')}</strong>
-                </div>
-                <div className="debug-summary">
-                  <span>{t('debugger.dashboard.symbolFile')}</span>
-                  <strong className="file-value">{debug?.symbols || t('debugger.noSymbols')}</strong>
-                </div>
-                <div className="debug-summary">
-                  <span>{t('debugger.dashboard.target')}</span>
-                  <strong>
-                    {probes.find((probe) => probe.serialNumber === selectedSerial)?.description ||
-                      'STM32 / Cortex-M'}
-                  </strong>
-                </div>
-              </div>
-              <section className="debug-card">
-                <h2>
-                  <Cpu size={15} />
-                  {t('debugger.dashboard.cpuOverview')}
-                </h2>
-                <div className="debug-cpu-flow">
-                  <div>
-                    <span>PC</span>
-                    <strong>{pc}</strong>
-                    <small>{t('debugger.dashboard.fetch')}</small>
-                  </div>
-                  <ArrowRight />
-                  <div>
-                    <span>{t('debugger.dashboard.decode')}</span>
-                    <strong>
-                      {debug?.instructions?.find((item) => numberOf(item.address) === numberOf(pc))
-                        ?.instruction || '—'}
-                    </strong>
-                    <small>{t('debugger.dashboard.currentInstruction')}</small>
-                  </div>
-                  <ArrowRight />
-                  <div>
-                    <span>{t('debugger.dashboard.execute')}</span>
-                    <strong>ALU · R0–R12</strong>
-                    <small>{t('debugger.dashboard.registerBank')}</small>
-                  </div>
-                  <ArrowRight />
-                  <div>
-                    <span>SRAM / Flash</span>
-                    <strong>{register('sp')}</strong>
-                    <small>{t('debugger.dashboard.storageBus')}</small>
-                  </div>
-                </div>
-              </section>
-              <div className="debug-two-columns">
-                {stackPanel}
-                {breakpointsPanel}
-              </div>
-              {instructionPanel}
-            </>
+          {plugin?.debugger.view && (
+            <section className="debug-card debug-plugin-view">
+              <RuntimePluginView id={plugin.id} kind="debugger" />
+            </section>
           )}
-          {view === 'cpu' && (
+          {!(plugin?.debugger.mode === 'replace' && plugin.debugger.view) && (
             <>
-              <section className="debug-card">
-                <h2>
-                  <Cpu size={15} />
-                  {t('debugger.registers')}
-                </h2>
-                {debug?.registers.length ? (
-                  <div className="debug-register-bank">
-                    {coreRegisterNames.map((name) => (
-                      <div
-                        key={name}
-                        className={`debug-register ${name === 'pc' ? 'register-pc' : ''} ${changedRegisters.has(name) ? 'register-changed' : ''}`}
-                      >
-                        <span>{name.toUpperCase()}</span>
-                        <code>{register(name)}</code>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  emptyHardware
-                )}
-                <div className="debug-flags">
-                  <span>xPSR</span>
-                  <code>{record.get('xpsr') ?? record.get('cpsr') ?? '—'}</code>
-                  {[
-                    ['N', 31],
-                    ['Z', 30],
-                    ['C', 29],
-                    ['V', 28],
-                    ['T', 24],
-                  ].map(([label, bit]) => (
-                    <span className="debug-flag" key={label}>
-                      {label}
-                      <b>{Number.isFinite(psr) ? (psr >>> Number(bit)) & 1 : '—'}</b>
-                    </span>
-                  ))}
-                </div>
-                <p className="debug-footnote">{t('debugger.dashboard.changedNote')}</p>
-              </section>
-              {instructionPanel}
-              <div className="debug-two-columns">
-                {stackPanel}
-                {breakpointsPanel}
-              </div>
-              <section className="debug-card">
-                <h2>
-                  <Braces size={15} />
-                  {t('debugger.dashboard.allRegisters')}
-                </h2>
-                <div className="debug-scroll">
-                  <table>
-                    <tbody>
-                      {debug?.registers.map((item) => (
-                        <tr
-                          key={item.name}
-                          className={changedRegisters.has(item.name) ? 'register-changed' : ''}
-                        >
-                          <th>{item.name}</th>
-                          <td>{item.value}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            </>
-          )}
-          {view === 'memory' && (
-            <section className="debug-card debug-memory-view">
-              <h2>
-                <MemoryStick size={15} />
-                {t('debugger.memory')}
-                <span className="debug-data-source">{t('debugger.dashboard.sourceHardware')}</span>
-              </h2>
-              <p className="debug-muted">{t('debugger.dashboard.memoryNote')}</p>
-              <div className="debug-memory-presets">
-                <button onClick={() => setAddress('0x20000000')}>SRAM · 0x20000000</button>
-                <button onClick={() => setAddress('0x08000000')}>Flash · 0x08000000</button>
-                <button
-                  onClick={() =>
-                    Number.isFinite(numberOf(register('sp'))) &&
-                    setAddress(hexAddress(numberOf(register('sp'))))
-                  }
-                  disabled={!Number.isFinite(numberOf(register('sp')))}
-                >
-                  {t('debugger.dashboard.atSp')}
-                </button>
-                <button
-                  onClick={() => Number.isFinite(numberOf(pc)) && setAddress(hexAddress(numberOf(pc)))}
-                  disabled={!Number.isFinite(numberOf(pc))}
-                >
-                  {t('debugger.dashboard.atPc')}
-                </button>
-              </div>
-              <div className="debug-inline">
-                <label>
-                  {t('debugger.address')}
-                  <input value={address} onChange={(event) => setAddress(event.target.value)} />
-                </label>
-                <label>
-                  {t('debugger.length')}
-                  <input
-                    type="number"
-                    min={1}
-                    max={4096}
-                    value={length}
-                    onChange={(event) => setLength(Number(event.target.value))}
-                  />
-                </label>
-                <button
-                  disabled={
-                    !stopped ||
-                    busy ||
-                    !Number.isSafeInteger(Number(address)) ||
-                    Number(address) < 0 ||
-                    !Number.isInteger(length) ||
-                    length < 1 ||
-                    length > 4096
-                  }
-                  onClick={readMemory}
-                >
-                  {t('debugger.read')}
-                </button>
-              </div>
-              {memory ? (
+              {view === 'overview' && (
                 <>
-                  <div className="debug-memory-caption">
-                    {hexAddress(memory.address)} · {memory.contents.length / 2} B · {timestamp(memory.time)}
+                  <div className="debug-summary-grid">
+                    <div className="debug-summary">
+                      <span>{t('debugger.dashboard.programCounter')}</span>
+                      <strong>{pc}</strong>
+                    </div>
+                    <div className="debug-summary">
+                      <span>{t('debugger.dashboard.stackPointer')}</span>
+                      <strong>{register('sp')}</strong>
+                    </div>
+                    <div className="debug-summary">
+                      <span>{t('debugger.dashboard.symbolFile')}</span>
+                      <strong className="file-value">{debug?.symbols || t('debugger.noSymbols')}</strong>
+                    </div>
+                    <div className="debug-summary">
+                      <span>{t('debugger.dashboard.target')}</span>
+                      <strong>
+                        {probes.find((probe) => probe.serialNumber === selectedSerial)?.description ||
+                          'STM32 / Cortex-M'}
+                      </strong>
+                    </div>
                   </div>
-                  <pre className="debug-hexdump">{hexdump(memory.contents, memory.address)}</pre>
+                  <div
+                    className="debug-dock-grid"
+                    style={{
+                      gridTemplateColumns: `minmax(320px, ${paneWidth}fr) 6px minmax(260px, ${100 - paneWidth}fr)`,
+                    }}
+                  >
+                    <div className="debug-main-stack">
+                      {instructionPanel}
+                      {memoryPanel}
+                    </div>
+                    <div
+                      className="debug-pane-divider"
+                      role="separator"
+                      aria-label={t('debugger.resizePanes')}
+                      aria-orientation="vertical"
+                      aria-valuemin={35}
+                      aria-valuemax={75}
+                      aria-valuenow={paneWidth}
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                          event.preventDefault();
+                          setPaneWidth((value) =>
+                            Math.max(35, Math.min(75, value + (event.key === 'ArrowRight' ? 2 : -2))),
+                          );
+                        }
+                      }}
+                      onPointerDown={(event) => {
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        event.currentTarget.dataset.dragging = 'true';
+                      }}
+                      onPointerUp={(event) => {
+                        delete event.currentTarget.dataset.dragging;
+                        event.currentTarget.releasePointerCapture(event.pointerId);
+                      }}
+                      onPointerCancel={(event) => {
+                        delete event.currentTarget.dataset.dragging;
+                      }}
+                      onPointerMove={(event) => {
+                        if (!event.currentTarget.dataset.dragging) return;
+                        const bounds = event.currentTarget.parentElement!.getBoundingClientRect();
+                        setPaneWidth(
+                          Math.round(
+                            Math.max(35, Math.min(75, ((event.clientX - bounds.left) / bounds.width) * 100)),
+                          ),
+                        );
+                      }}
+                    />
+                    <div className="debug-side-stack">
+                      {registerPanel}
+                      {stackPanel}
+                      {breakpointsPanel}
+                    </div>
+                  </div>
                 </>
-              ) : (
-                <div className="debug-empty">
-                  <MemoryStick size={30} strokeWidth={1.3} />
-                  <p>{t('debugger.dashboard.memoryEmpty')}</p>
-                </div>
               )}
-            </section>
-          )}
-          {view === 'storage' && (
-            <>
-              <section className="debug-card">
-                <h2>
-                  <Database size={15} />
-                  {t('debugger.dashboard.firmwareStorage')}
-                  <span className="debug-data-source source-file">{t('debugger.dashboard.sourceFile')}</span>
-                </h2>
-                <p className="debug-muted">{t('debugger.dashboard.storageNote')}</p>
-                <div className="debug-inline">
-                  <button disabled={connected || attaching || busy} onClick={chooseSymbols}>
-                    {t('debugger.symbols')}
-                  </button>
-                  <span>{debug?.symbols || t('debugger.noSymbols')}</span>
-                </div>
-                {storage ? (
-                  <>
-                    <div className="debug-file-summary">
-                      <FileCode2 size={24} />
-                      <strong>{storage.name}</strong>
-                      <span>{bytesLabel(storage.size)}</span>
-                      <span>ARM ELF</span>
-                    </div>
-                    <div className="debug-storage-segments">
-                      {storage.segments.map((segment, index) => (
-                        <div
-                          key={`${segment.address}-${index}`}
-                          className={`debug-storage-segment storage-${segment.kind}`}
-                        >
-                          <span>{segment.kind.toUpperCase()}</span>
-                          <code>
-                            {hexAddress(segment.address)} –{' '}
-                            {hexAddress(segment.address + Math.max(0, segment.size - 1))}
-                          </code>
-                          <strong>{bytesLabel(segment.size)}</strong>
-                        </div>
-                      ))}
-                    </div>
-                    <h3>{t('debugger.dashboard.filePreview')}</h3>
-                    <pre className="debug-hexdump">{hexdump(storage.preview, 0)}</pre>
-                  </>
-                ) : (
-                  <div className="debug-empty">
-                    <Database size={30} strokeWidth={1.3} />
-                    <p>{t('debugger.dashboard.storageEmpty')}</p>
+              {view === 'cpu' && (
+                <>
+                  {registerPanel}
+                  {instructionPanel}
+                  <div className="debug-two-columns">
+                    {stackPanel}
+                    {breakpointsPanel}
                   </div>
-                )}
-              </section>
+                  <section className="debug-card">
+                    <h2>
+                      <Braces size={15} />
+                      {t('debugger.dashboard.allRegisters')}
+                    </h2>
+                    <div className="debug-scroll">
+                      <table>
+                        <tbody>
+                          {debug?.registers.map((item) => (
+                            <tr
+                              key={item.name}
+                              className={changedRegisters.has(item.name) ? 'register-changed' : ''}
+                            >
+                              <th>{item.name}</th>
+                              <td>{item.value}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </>
+              )}
+              {view === 'memory' && memoryPanel}
+              {view === 'storage' && (
+                <>
+                  <section className="debug-card">
+                    <h2>
+                      <Database size={15} />
+                      {t('debugger.dashboard.firmwareStorage')}
+                      <span className="debug-data-source source-file">
+                        {t('debugger.dashboard.sourceFile')}
+                      </span>
+                    </h2>
+                    <p className="debug-muted">{t('debugger.dashboard.storageNote')}</p>
+                    <div className="debug-inline">
+                      <button disabled={connected || attaching || busy} onClick={chooseSymbols}>
+                        {t('debugger.symbols')}
+                      </button>
+                      <span>{debug?.symbols || t('debugger.noSymbols')}</span>
+                    </div>
+                    {storage ? (
+                      <>
+                        <div className="debug-file-summary">
+                          <FileCode2 size={24} />
+                          <strong>{storage.name}</strong>
+                          <span>{bytesLabel(storage.size)}</span>
+                          <span>ARM ELF</span>
+                        </div>
+                        <div className="debug-storage-segments">
+                          {storage.segments.map((segment, index) => (
+                            <div
+                              key={`${segment.address}-${index}`}
+                              className={`debug-storage-segment storage-${segment.kind}`}
+                            >
+                              <span>{segment.kind.toUpperCase()}</span>
+                              <code>
+                                {hexAddress(segment.address)} –{' '}
+                                {hexAddress(segment.address + Math.max(0, segment.size - 1))}
+                              </code>
+                              <strong>{bytesLabel(segment.size)}</strong>
+                            </div>
+                          ))}
+                        </div>
+                        <h3>{t('debugger.dashboard.filePreview')}</h3>
+                        <pre className="debug-hexdump">{hexdump(storage.preview, 0)}</pre>
+                      </>
+                    ) : (
+                      <div className="debug-empty">
+                        <Database size={30} strokeWidth={1.3} />
+                        <p>{t('debugger.dashboard.storageEmpty')}</p>
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
+              {view === 'log' && (
+                <section className="debug-card">
+                  <h2>
+                    <Terminal size={15} />
+                    {t('debugger.log')}
+                  </h2>
+                  <pre className="debug-log-view">
+                    {debug?.log.join('\n') || t('debugger.dashboard.logEmpty')}
+                  </pre>
+                </section>
+              )}
             </>
-          )}
-          {view === 'log' && (
-            <section className="debug-card">
-              <h2>
-                <Terminal size={15} />
-                {t('debugger.log')}
-              </h2>
-              <pre className="debug-log-view">
-                {debug?.log.join('\n') || t('debugger.dashboard.logEmpty')}
-              </pre>
-            </section>
           )}
         </main>
       </div>

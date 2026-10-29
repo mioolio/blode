@@ -33,7 +33,7 @@ function fakeApi(): {
     config: {
       version: 1,
       name: 'test',
-      boardId: 'esp32-s3',
+      boardId: 'Esp32_S3_CAM',
       port: 'COM3',
       baudRate: 115200,
       flashSize: 8 * 1024 * 1024,
@@ -133,7 +133,7 @@ async function rawRequest(endpoint: string, frames: string[]): Promise<RpcRespon
 
 test('device.probe forwards an optional config before a workspace exists', async () => {
   const fake = fakeApi();
-  const config = { ...(await fake.api.getState()).config, boardId: 'stm32' };
+  const config = { ...(await fake.api.getState()).config, boardId: 'STM32F103C8T6' };
   await dispatch(fake.api, new EventBuffer(), 'device.probe', { port: 'COM3', config });
   assert.deepEqual(fake.probes, [{ port: 'COM3', config }]);
 });

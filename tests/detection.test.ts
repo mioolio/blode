@@ -10,8 +10,8 @@ import { SerialConnection } from '../src/core/serial';
 import { Drivers } from '../src/core/drivers';
 import { persistConfig, loadProjectDescriptor } from '../src/core/workspace';
 import { getBoardAdapter, listBoards } from '../extensions/registry';
-import { createEsp32S3Runtime } from '../extensions/boards/esp32-s3/runtime';
-import { createStm32Runtime } from '../extensions/boards/stm32/runtime';
+import { createEsp32S3Runtime } from '../extensions/boards/Esp32_S3_CAM/runtime';
+import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime';
 import type { DebugProbeInfo, PortInfo } from '../src/shared/contracts';
 
 const device: DebugProbeInfo = {
@@ -38,7 +38,7 @@ async function fixture(
   await fs.mkdir(project);
   const ports = options.ports ?? [acpi];
   const probes = options.probes ?? [device];
-  const calls = { esp: 0, stm32: 0, probeEnumeration: 0, selectedSerial: '', selectedPort: '' };
+  const calls = { esp: 0, STM32F103C8T6: 0, probeEnumeration: 0, selectedSerial: '', selectedPort: '' };
   // No native USB/COM enumeration, PnP lookup, process execution or flash occurs.
   t.mock.method(SerialConnection, 'list', async () => structuredClone(ports));
   t.mock.method(Drivers.prototype, 'statuses', async () => []);
@@ -73,7 +73,7 @@ async function fixture(
           return structuredClone(probes);
         },
         probe: async (serialNumber) => {
-          calls.stm32++;
+          calls.STM32F103C8T6++;
           calls.selectedSerial = serialNumber;
           const selected = probes.find((probe) => probe.serialNumber === serialNumber);
           assert.ok(selected, 'the core must explicitly select an enumerated probe');
@@ -115,14 +115,14 @@ test('automatic detection selects the sole ST-Link and ignores a saved ACPI COM1
   await core.probe();
   const state = await core.getState();
   assert.equal(calls.esp, 0);
-  assert.equal(calls.stm32, 1);
+  assert.equal(calls.STM32F103C8T6, 1);
   assert.equal(calls.selectedSerial, device.serialNumber);
-  assert.equal(state.config.boardId, 'stm32');
+  assert.equal(state.config.boardId, 'STM32F103C8T6');
   assert.equal(state.config.flashSize, device.flashSize);
   assert.equal(state.config.programmer?.targetChipId, device.chipId);
   assert.equal(state.config.port, 'COM1', 'the independent monitor port can be preserved');
   const saved = await loadProjectDescriptor(project, getBoardAdapter('auto').createConfig());
-  assert.equal(saved.config.boardId, 'stm32');
+  assert.equal(saved.config.boardId, 'STM32F103C8T6');
 
   // A clone may report the wrong capacity; an explicit manual size survives a new probe.
   const manual = structuredClone(state.config);
@@ -141,7 +141,7 @@ test('automatic detection refuses multiple candidates before probing either plat
   const { core, calls } = await fixture(t, { ports: [acpi, usb] });
   await assert.rejects(core.probe(), { message: 'error.multipleDetectionDevices' });
   assert.equal(calls.esp, 0);
-  assert.equal(calls.stm32, 0);
+  assert.equal(calls.STM32F103C8T6, 0);
   assert.equal((await core.getState()).config.boardId, 'auto');
 });
 
@@ -149,7 +149,7 @@ test('automatic detection refuses zero devices instead of falling back to ACPI C
   const { core, calls } = await fixture(t, { probes: [] });
   await assert.rejects(core.probe(), { message: 'error.noDetectionDevices' });
   assert.equal(calls.esp, 0);
-  assert.equal(calls.stm32, 0);
+  assert.equal(calls.STM32F103C8T6, 0);
   assert.equal((await core.getState()).config.boardId, 'auto');
 });
 
@@ -159,9 +159,9 @@ test('an explicit USB serial selection only invokes ESP32-S3 and promotes its re
   const state = await core.getState();
   assert.equal(calls.esp, 1);
   assert.equal(calls.selectedPort, 'COM7');
-  assert.equal(calls.stm32, 0);
+  assert.equal(calls.STM32F103C8T6, 0);
   assert.equal(calls.probeEnumeration, 0);
-  assert.equal(state.config.boardId, 'esp32-s3');
+  assert.equal(state.config.boardId, 'Esp32_S3_CAM');
   assert.equal(state.config.flashSize, 16 * 1024 * 1024);
   assert.equal(state.config.port, 'COM7');
 });
@@ -173,7 +173,7 @@ test('an explicitly selected USB device reporting an unsupported ESP model is re
   });
   await assert.rejects(core.probe('COM7'), { message: 'error.boardNotDetected' });
   assert.equal(calls.esp, 1);
-  assert.equal(calls.stm32, 0);
+  assert.equal(calls.STM32F103C8T6, 0);
   assert.equal((await core.getState()).config.boardId, 'auto');
 });
 
@@ -182,14 +182,14 @@ test('the board catalogue contains automatic detection and exactly the two suppo
     listBoards()
       .map((board) => board.id)
       .sort(),
-    ['auto', 'esp32-s3', 'stm32'],
+    ['auto', 'Esp32_S3_CAM', 'STM32F103C8T6'].sort(),
   );
   assert.throws(() => getBoardAdapter('generic'), /unknownBoard/);
 });
 
 for (const [platformId, transport] of [
-  ['esp32-s3', 'serial'],
-  ['stm32', 'stlink'],
+  ['Esp32_S3_CAM', 'serial'],
+  ['STM32F103C8T6', 'stlink'],
 ] as const) {
   test(`${platformId} runtime bundles after copying only its platform folder to an isolated directory`, async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(), 'blode-platform-copy-'));
@@ -198,7 +198,10 @@ for (const [platformId, transport] of [
       await fs.cp(path.resolve('extensions/boards', platformId), copied, { recursive: true });
       const manifest = JSON.parse(await fs.readFile(path.join(copied, 'manifest.json'), 'utf8'));
       assert.equal(manifest.runtime, 'runtime.ts');
-      assert.equal(manifest.runtimeApiVersion, 1);
+      assert.equal(manifest.runtimeApiVersion, 2);
+      assert.equal(manifest.apiVersion, 2);
+      assert.ok(manifest.support.chips.length > 0);
+      assert.equal(manifest.defaultConfig.boardId, platformId);
       assert.equal(manifest.transport, transport);
       const builtin = new Set(builtinModules.map((name) => name.replace(/^node:/, '')));
       const result = await bundle({

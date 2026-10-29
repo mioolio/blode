@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, session, shell } from 'electron';
 import { appendFileSync, mkdirSync, promises as fs, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import * as z from 'zod';
@@ -22,6 +22,7 @@ import { MAX_PROBE_LOG_BYTES } from '../shared/probe-log';
 import { RecentProjects } from './recent-projects';
 import { FirmwareStore, prepareBuildExport } from './firmware';
 import { HardwareDebugger } from './hardware-debugger';
+import { RuntimeDebugger } from './runtime-debugger';
 import { createWebDebugger } from './web-debugger';
 import { AiAssistance } from './ai-assistance';
 import { CollaborationService } from './collaboration';
@@ -34,6 +35,11 @@ import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from '../shared/contracts';
 import { createHostServices, type HostServices } from './host-services';
 import { protectSharedWorkspace } from './shared-workspace';
 import { RELEASE_VERSION } from '../shared/version';
+import { renderRuntimeView, RUNTIME_VIEW_CSP } from '../shared/runtime-view';
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'blode-runtime-ui', privileges: { standard: true, secure: true } },
+]);
 
 app.setName('Blode Studio');
 // Keep drafts in Local Storage, but avoid persistent GPU/Dawn cache handles.
@@ -293,6 +299,7 @@ async function bootstrap(): Promise<void> {
       method !== 'listDebugProbes' &&
       method !== 'windowAction' &&
       method !== 'hostBrowse' &&
+      !(typeof method === 'string' && method.startsWith('runtimePlugin')) &&
       !(typeof method === 'string' && method.startsWith('debugger'))
     )
       throw new Error('error.unauthorized');
@@ -398,6 +405,7 @@ async function bootstrap(): Promise<void> {
     .catch(() => false);
   logBoot(`bundledTools=${bundledToolsReady} ${bundledTools}`);
   core = await createCore({
+    pluginRoots: [path.join(app.getAppPath(), 'extensions', 'boards'), path.join(dataRoot, 'plugins')],
     projectRoot,
     dataRoot,
     onEvent: emit,
@@ -418,6 +426,32 @@ async function bootstrap(): Promise<void> {
     await core.shutdown();
     return;
   }
+  protocol.handle('blode-runtime-ui', async (request) => {
+    try {
+      const url = new URL(request.url);
+      const [id, kind, ...rest] = url.pathname.slice(1).split('/').map(decodeURIComponent);
+      if (
+        url.hostname !== 'view' ||
+        rest.length ||
+        !['debugger', 'device'].includes(kind) ||
+        !core ||
+        closing
+      )
+        return new Response('Not found', { status: 404 });
+      const html = await core.runtimePlugins.view(id, kind as 'debugger' | 'device');
+      if (!html) return new Response('Not found', { status: 404 });
+      return new Response(renderRuntimeView(html), {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': RUNTIME_VIEW_CSP,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    } catch {
+      return new Response('Runtime view unavailable', { status: 403 });
+    }
+  });
   const originalSaveFile = core.saveFile.bind(core);
   collaboration = new CollaborationService({
     workspace: () => core!.workspaceSnapshot(),
@@ -440,6 +474,8 @@ async function bootstrap(): Promise<void> {
   const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
   const protection = protectSharedWorkspace(core, collaboration);
   hostServices = createHostServices({
+    runtimeViewDocument: (id, kind) => `blode-runtime-ui://view/${encodeURIComponent(id)}/${kind}`,
+    runtimeDebugger: () => (hardwareDebugger instanceof RuntimeDebugger ? hardwareDebugger : undefined),
     core,
     collaboration,
     firmware: firmwareStore,
@@ -485,11 +521,13 @@ async function bootstrap(): Promise<void> {
       },
     };
   };
-  hardwareDebugger = new HardwareDebugger(
+  hardwareDebugger = new RuntimeDebugger(
     process.env.BLODE_TOOLCHAIN_ROOT ||
       (bundledToolsReady ? bundledTools : path.join(dataRoot, 'toolchains')),
     path.join(dataRoot, 'debugger'),
     (message) => emit({ kind: 'status', level: 'info', message, time: new Date().toISOString() }),
+    () => core?.runtimePlugins,
+    () => core?.currentConfig(),
   );
   await hardwareDebugger.restore();
   if (closing) return;

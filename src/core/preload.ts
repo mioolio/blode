@@ -82,6 +82,7 @@ const bridge: DesktopApi = {
     void call('windowAction', action);
   },
 };
-contextBridge.exposeInMainWorld('blode', bridge);
-// Describe the window that actually exists, rather than assuming HMR restarted Electron.
-contextBridge.exposeInMainWorld('__blodeFrameless', process.argv.includes('--blode-frameless'));
+if (process.isMainFrame) {
+  contextBridge.exposeInMainWorld('blode', bridge);
+  contextBridge.exposeInMainWorld('__blodeFrameless', process.argv.includes('--blode-frameless'));
+}

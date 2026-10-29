@@ -2,9 +2,24 @@
 
 简体中文 | [English](docs/README.en.md)
 
-Blode Studio 是面向 ESP32-S3 与 STM32 的模块化嵌入式开发工作台，覆盖源码编辑、多人协作、离线编译、固件导出、串口通信与硬件调试。
+Blode Studio 是模块化嵌入式开发工作台，覆盖源码编辑、多人协作、离线编译、固件导出、串口通信与硬件调试。当前开发分支内置 `Esp32_S3_CAM` 与 `STM32F103C8T6` 两个具体运行时配置。
 
 **当前发行：0.2.3.6** · [版本说明](docs/releases/0.2.3.6.md) · [变更记录](CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
+
+## 内部开发预览：运行时插件
+
+`codex/runtime-plugins-internal` 是基于 0.2.3.6 的内部开发分支，包含运行时命名迁移、API v2 插件声明、执行确认、可替换编译器与定制设备／调试界面。本次不生成新的正式发行版，`main` 保留稳定代码；验证记录和人工验收清单见[内部更新说明](docs/internal/runtime-plugins.md)。
+
+希望尝鲜的开发者可从源码运行：
+
+```sh
+git clone --branch codex/runtime-plugins-internal --single-branch https://github.com/mioolio/blode.git
+cd blode
+npm ci
+npm run dev
+```
+
+启动独立 Web 宿主时，在同一源码目录执行 `npm run web:build`，再执行 `npm run web:start`。扩展作者从[运行时插件开发指南](docs/RUNTIME-PLUGINS.md)开始；旧工程的 `esp32-s3`、`stm32` 标识和编译器版本配置会在读取时迁移。
 
 ## 选择发行版
 
@@ -155,15 +170,15 @@ npm run package:web
 
 ## 文档导航
 
-| 面向         | 文档                                                                                                                                                                              |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 发行与升级   | [0.2.3.6 发行说明](docs/releases/0.2.3.6.md) · [CHANGELOG](CHANGELOG.md)                                                                                                          |
-| 语言与编辑器 | [语言规则](docs/LANGUAGE-RULES.md) · [AI 补全与预测](docs/AI-COMPLETIONS.md)                                                                                                      |
-| 团队工作     | [多人协作](docs/COLLABORATION.md) · [Git 管理](docs/GIT.md) · [工程打包](docs/PROJECT-PACKAGING.md)                                                                               |
-| 编译与硬件   | [工程与编译设置](docs/PROJECTS.md) · [STM32](docs/STM32.md) · [ESP32-S3](extensions/boards/esp32-s3/README.md) · [工具链](docs/TOOLCHAINS.md) · [工具版本](docs/TOOL-VERSIONS.md) |
-| 部署与开发   | [Web 宿主](docs/WEB-HOST.md) · [开发约定](docs/DEVELOPMENT.md) · [架构](docs/ARCHITECTURE.md) · [扩展](extensions/README.md)                                                      |
-| 状态与计划   | [平台支持](docs/PLATFORM-SUPPORT.md) · [路线图](docs/ROADMAP.md) · [功能指南](docs/NEW-FEATURES.md) · [实机案例](SHOWCASE.md)                                                     |
-| 社区与安全   | [贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md) · [许可证](LICENSE)                                                                                                         |
+| 面向         | 文档                                                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 发行与升级   | [0.2.3.6 发行说明](docs/releases/0.2.3.6.md) · [CHANGELOG](CHANGELOG.md)                                                                                                              |
+| 语言与编辑器 | [语言规则](docs/LANGUAGE-RULES.md) · [AI 补全与预测](docs/AI-COMPLETIONS.md)                                                                                                          |
+| 团队工作     | [多人协作](docs/COLLABORATION.md) · [Git 管理](docs/GIT.md) · [工程打包](docs/PROJECT-PACKAGING.md)                                                                                   |
+| 编译与硬件   | [工程与编译设置](docs/PROJECTS.md) · [STM32](docs/STM32.md) · [ESP32-S3](extensions/boards/Esp32_S3_CAM/README.md) · [工具链](docs/TOOLCHAINS.md) · [工具版本](docs/TOOL-VERSIONS.md) |
+| 部署与开发   | [Web 宿主](docs/WEB-HOST.md) · [开发约定](docs/DEVELOPMENT.md) · [架构](docs/ARCHITECTURE.md) · [扩展](extensions/README.md)                                                          |
+| 状态与计划   | [平台支持](docs/PLATFORM-SUPPORT.md) · [路线图](docs/ROADMAP.md) · [功能指南](docs/NEW-FEATURES.md) · [实机案例](SHOWCASE.md)                                                         |
+| 社区与安全   | [贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md) · [许可证](LICENSE)                                                                                                             |
 
 ## 贡献与许可证
 

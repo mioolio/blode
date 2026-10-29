@@ -23,7 +23,7 @@ test('a platform supporting source and binary builds validates only when no sour
 });
 
 test('memory and flash confirmation distinguish compiled STM32 source from a validated binary', () => {
-  const adapter = getBoardAdapter('stm32');
+  const adapter = getBoardAdapter('STM32F103C8T6');
   const config = adapter.createConfig();
   const platform = { ...adapter.definition, capabilities: ['compile', 'flash', 'validate-firmware'] };
   const state: AppState = {
@@ -118,12 +118,12 @@ function settings(config: ProjectConfig): string {
 }
 
 test('automatic and STM32 preferences expose the Arm Compiler path and actual detected version', () => {
-  for (const platform of ['auto', 'stm32']) {
+  for (const platform of ['auto', 'STM32F103C8T6']) {
     const html = settings(getBoardAdapter(platform).createConfig());
     assert.ok(html.includes('value="C:\\tools\\armclang\\bin"'));
     assert.match(html, /Arm Compiler 6\.24/);
   }
-  const esp = settings(getBoardAdapter('esp32-s3').createConfig());
+  const esp = settings(getBoardAdapter('Esp32_S3_CAM').createConfig());
   assert.doesNotMatch(esp, /Arm Compiler 6\.24/);
   assert.ok(!esp.includes('value="C:\\tools\\armclang\\bin"'));
 });

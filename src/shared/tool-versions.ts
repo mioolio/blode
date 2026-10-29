@@ -28,7 +28,7 @@ export interface InstalledBuildTool {
   arduinoCli?: string;
   packageDirectory?: string;
   source: 'managed' | 'versioned' | 'custom' | 'path';
-  platforms: ('stm32' | 'esp32-s3')[];
+  platforms: ('STM32F103C8T6' | 'Esp32_S3_CAM')[];
 }
 export interface ToolVersionsApi {
   toolVersionsState(): Promise<ToolVersionsState>;

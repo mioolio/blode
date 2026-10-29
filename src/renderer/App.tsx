@@ -15,6 +15,7 @@ import { HostFilePicker } from './components/HostFilePicker';
 import { ProjectPackageDialog } from './components/ProjectPackageDialog';
 import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { BuildSettingsLauncher } from './components/BuildSettingsLauncher';
+import { RuntimePluginTrustDialog } from './components/RuntimePluginTrustDialog';
 import './styles/web-responsive.css';
 
 const HardwareDebuggerView = lazy(() =>
@@ -121,6 +122,7 @@ function WorkspaceApp() {
       <ProjectPackageDialog studio={studio} />
       <ProjectSettingsDialog studio={studio} />
       <BuildSettingsLauncher studio={studio} />
+      <RuntimePluginTrustDialog studio={studio} />
     </div>
   );
 }

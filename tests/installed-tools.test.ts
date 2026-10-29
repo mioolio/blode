@@ -28,7 +28,7 @@ test('local inventory detects both managed compiler families, versioned installs
     const state = await new ToolVersions({
       root,
       dataRoot: root,
-      config: () => getBoardAdapter('stm32').createConfig(),
+      config: () => getBoardAdapter('STM32F103C8T6').createConfig(),
       env: { PATH: [gnu, ac6, gnu].join(path.delimiter) },
       runner: async (file) => {
         calls.push(file);
@@ -80,7 +80,7 @@ test('Arduino installed choices pair runnable CLI versions with physical ESP32 c
     const calls: string[] = [];
     const tools = await discoverInstalledBuildTools({
       root,
-      config: getBoardAdapter('esp32-s3').createConfig(),
+      config: getBoardAdapter('Esp32_S3_CAM').createConfig(),
       env: { PATH: managedCli },
       runner: async (file) => {
         calls.push(file);
@@ -107,9 +107,11 @@ test('explicit build-setting paths are discoverable and select through the exist
     const manager = new ToolVersions({
       root: path.join(root, 'managed'),
       dataRoot: root,
-      config: () => getBoardAdapter('stm32').createConfig(),
+      config: () => getBoardAdapter('STM32F103C8T6').createConfig(),
       env: { PATH: '' },
-      build: () => ({ settings: { platforms: { stm32: { c: { family: 'gnu-arm', directory: custom } } } } }),
+      build: () => ({
+        settings: { platforms: { STM32F103C8T6: { c: { family: 'gnu-arm', directory: custom } } } },
+      }),
       runner: async () => ({ code: 0, output: 'gcc 12.3.1' }),
     });
     const state = await manager.toolVersionsState();
@@ -128,7 +130,7 @@ test('failed executable probes are not listed as installed build choices', async
     await put(path.join(root, 'armgcc', 'bin'), ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy']);
     const tools = await discoverInstalledBuildTools({
       root,
-      config: getBoardAdapter('stm32').createConfig(),
+      config: getBoardAdapter('STM32F103C8T6').createConfig(),
       env: { PATH: '' },
       runner: async () => ({ code: 1, output: 'not runnable' }),
     });

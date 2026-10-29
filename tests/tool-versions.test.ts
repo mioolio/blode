@@ -5,8 +5,8 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { ToolVersions, arduinoCliAsset } from '../src/core/tool-versions';
-import { GnuArmToolchain, gnuRelease } from '../extensions/boards/stm32/gnu';
-import { Toolchains } from '../extensions/boards/esp32-s3/toolchain';
+import { GnuArmToolchain, gnuRelease } from '../extensions/boards/STM32F103C8T6/gnu';
+import { Toolchains } from '../extensions/boards/Esp32_S3_CAM/toolchain';
 import { getBoardAdapter } from '../extensions/registry';
 
 test('version catalog resolves real Windows and Linux architecture asset names', () => {
@@ -29,7 +29,7 @@ test('installed GNU versions are selected by explicit project path without delet
     const manager = new ToolVersions({
       root,
       dataRoot: root,
-      config: () => getBoardAdapter('stm32').createConfig(),
+      config: () => getBoardAdapter('STM32F103C8T6').createConfig(),
       runner: async () => ({ code: 0, output: '' }),
     });
     const patch = await manager.toolVersionSelect({ id: 'gnu-arm:13.3.1-1.1' });
@@ -121,7 +121,7 @@ test('unverified GNU metadata cannot reach extraction', async () => {
 test('ESP32 core versions use isolated stores and an exact install target', async () => {
   const root = await fs.mkdtemp(path.join(tmpdir(), 'blode-esp-versions-'));
   const calls: string[][] = [];
-  const config = getBoardAdapter('esp32-s3').createConfig();
+  const config = getBoardAdapter('Esp32_S3_CAM').createConfig();
   const runner = async (_command: string, args: string[]) => {
     calls.push(args);
     return {

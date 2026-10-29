@@ -27,14 +27,14 @@ function studioFor(config: ProjectConfig): Studio {
       candidates: [
         {
           id: 'usb:COM7',
-          platformId: 'esp32-s3',
+          platformId: 'Esp32_S3_CAM',
           transport: 'serial',
           name: 'USB UART · COM7',
           port: 'COM7',
         },
         {
           id: `stlink:${serialNumber}`,
-          platformId: 'stm32',
+          platformId: 'STM32F103C8T6',
           transport: 'stlink',
           name: `ST-Link ${serialNumber}`,
           serialNumber,
@@ -61,9 +61,9 @@ function studioFor(config: ProjectConfig): Studio {
     state,
     config,
     board: state.boards.find((item) => item.id === config.boardId),
-    isStm32: config.boardId === 'stm32',
+    isStm32: config.boardId === 'STM32F103C8T6',
     isAuto: config.boardId === 'auto',
-    usesStlink: config.boardId === 'stm32' || config.programmer?.transport === 'stlink',
+    usesStlink: config.boardId === 'STM32F103C8T6' || config.programmer?.transport === 'stlink',
     busy: '',
     drafts: {},
     stale: false,
@@ -81,7 +81,7 @@ function studioFor(config: ProjectConfig): Studio {
 }
 
 test('STM32 inspector separates the selected ST-Link from the optional monitor COM port', () => {
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   config.port = 'COM7';
   config.programmer!.serialNumber = serialNumber;
   const html = renderToStaticMarkup(createElement(DeviceInspector, { studio: studioFor(config) }));
@@ -95,7 +95,7 @@ test('STM32 inspector separates the selected ST-Link from the optional monitor C
 });
 
 test('an attached ST-Link is not implicitly selected and COM alone cannot enable its probe action', () => {
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   config.port = 'COM7';
   config.programmer = { transport: 'stlink', serialNumber: '', frequencyKhz: 1800 };
   const html = renderToStaticMarkup(createElement(DeviceInspector, { studio: studioFor(config) }));
@@ -128,7 +128,7 @@ test('automatic detection offers one combined device choice and permits identifi
 });
 
 test('the serial ESP inspector keeps upload baud and its existing COM selection', () => {
-  const config = getBoardAdapter('esp32-s3').createConfig();
+  const config = getBoardAdapter('Esp32_S3_CAM').createConfig();
   config.port = 'COM7';
   const html = renderToStaticMarkup(createElement(DeviceInspector, { studio: studioFor(config) }));
   assert.match(html, /device\.port/);
@@ -137,7 +137,7 @@ test('the serial ESP inspector keeps upload baud and its existing COM selection'
 });
 
 test('the first loading snapshot keeps saved connectors visible without reporting missing tools', () => {
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   config.port = 'COM7';
   config.programmer!.serialNumber = serialNumber;
   const studio = studioFor(config);
@@ -157,7 +157,7 @@ test('the first loading snapshot keeps saved connectors visible without reportin
 });
 
 test('STM32 flash confirmation identifies the probe and physical target address instead of COM', () => {
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   config.port = 'COM7';
   config.programmer!.serialNumber = serialNumber;
   config.partitions[0].offset = 0x4000;

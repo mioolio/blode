@@ -2,9 +2,24 @@
 
 English | [简体中文](../README.md)
 
-Blode Studio is a modular embedded development workbench for ESP32-S3 and STM32, covering code editing, collaboration, offline builds, firmware export, serial communication and hardware debugging.
+Blode Studio is a modular embedded development workbench for editing, collaboration, offline builds, firmware export, serial communication and hardware debugging. The development branch includes the specific `Esp32_S3_CAM` and `STM32F103C8T6` runtime profiles.
 
 **Current release: 0.2.3.6** · [Release notes](releases/0.2.3.6.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
+
+## Internal development preview: runtime plugins
+
+`codex/runtime-plugins-internal` is a development branch based on 0.2.3.6. It introduces runtime identity migration, API v2 package declarations, execution consent, replaceable compilers, and custom device/debug views. This update does not create a new stable release; `main` keeps the stable code. See the [internal update and acceptance checklist](internal/runtime-plugins.md) for validation status.
+
+To try the source build:
+
+```sh
+git clone --branch codex/runtime-plugins-internal --single-branch https://github.com/mioolio/blode.git
+cd blode
+npm ci
+npm run dev
+```
+
+For the standalone Web host, run `npm run web:build`, then `npm run web:start` in the source directory. Extension authors should start with the [runtime plugin guide](RUNTIME-PLUGINS.md). Legacy `esp32-s3` and `stm32` project identifiers and compiler pins migrate when loaded.
 
 ## Choose an edition
 
@@ -128,7 +143,7 @@ The desktop command aliases the lightweight `package:lite` flow. The Web build c
 - [0.2.3.6 release notes](releases/0.2.3.6.md) and [changelog](../CHANGELOG.md)
 - [Language rules](LANGUAGE-RULES.md), [AI completion](AI-COMPLETIONS.md), [collaboration](COLLABORATION.md)
 - [Git](GIT.md), [project and build settings](PROJECTS.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
-- [STM32](STM32.md), [ESP32-S3](../extensions/boards/esp32-s3/README.md), [toolchains](TOOLCHAINS.md)
+- [STM32](STM32.md), [ESP32-S3](../extensions/boards/Esp32_S3_CAM/README.md), [toolchains](TOOLCHAINS.md)
 - [Web host](WEB-HOST.md), [development](DEVELOPMENT.md), [architecture](ARCHITECTURE.md)
 - [Platform support](PLATFORM-SUPPORT.md), [roadmap](ROADMAP.md), [feature guide](NEW-FEATURES.md)
 - [Contributing](../CONTRIBUTING.md), [security policy](../SECURITY.md), [license](../LICENSE)

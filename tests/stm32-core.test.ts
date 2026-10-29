@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createCore } from '../src/core/service';
-import { createStm32Runtime } from '../extensions/boards/stm32/runtime';
+import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime';
 import { getBoardAdapter } from '../extensions/registry';
 import { persistConfig } from '../src/core/workspace';
 import type { DebugProbeInfo } from '../src/shared/contracts';
@@ -59,7 +59,7 @@ test('ST-Link discovery, STM32 promotion and validated binary flashing work with
     assert.deepEqual(await core.listDebugProbes(), [device]);
     await core.probe();
     const identified = await core.getState();
-    assert.equal(identified.config.boardId, 'stm32');
+    assert.equal(identified.config.boardId, 'STM32F103C8T6');
     assert.equal(identified.config.flashSize, device.flashSize);
     assert.equal(identified.config.programmer?.targetChipId, device.chipId);
     assert.equal(identified.config.port, '');
@@ -114,7 +114,7 @@ test('STM32 probing requires an explicit probe while offline validation only req
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'blode-stm32-selection-'));
   const project = path.join(root, 'project');
   await fs.mkdir(project);
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   await persistConfig(project, config);
   let connected = false;
   const core = await createCore({

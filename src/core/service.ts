@@ -43,6 +43,7 @@ import { Drivers } from './drivers';
 import { InstallationTracker } from './installation';
 import { SnapshotCache } from './snapshot-cache';
 import { analyzeCSourceRules, validateProjectLanguageRules } from '../../extensions/completions/rules';
+import { RuntimePlugins } from './runtime-plugins';
 
 interface InstallationReporter {
   progress: (progress: InstallationProgress) => void;
@@ -70,8 +71,10 @@ export interface CoreOptions {
   progressiveStartup?: boolean;
   /** A debugger owns the physical connection until its session is stopped. */
   hardwareBusy?: () => boolean;
+  pluginRoots?: string[];
 }
 export interface CoreService extends CoreApi {
+  readonly runtimePlugins: RuntimePlugins;
   currentProjectRoot(): string;
   currentConfig(): ProjectConfig;
   workspaceSnapshot(fresh?: boolean): Promise<Pick<AppState, 'projectRoot' | 'files'>>;
@@ -80,6 +83,7 @@ export interface CoreService extends CoreApi {
   closeProject(): Promise<void>;
   flashPrepared(config: ProjectConfig, image: RuntimeFirmwareImage): Promise<void>;
   runHardwareAction(action: () => Promise<void>): Promise<void>;
+  runDebuggerAction(action: () => Promise<void>): Promise<void>;
   runInstallation(tool: string, action: (reporter: InstallationReporter) => Promise<void>): Promise<void>;
   /** Coalesce OS device notifications; hardware is enumerated only after operations are idle. */
   notifyDevicesChanged(): void;
@@ -89,16 +93,26 @@ export interface CoreService extends CoreApi {
 
 /** Hardware and filesystem services have one owner, independent of any window. */
 export async function createCore(options: CoreOptions): Promise<CoreService> {
+  const runtimePlugins = new RuntimePlugins({
+    roots: options.pluginRoots ?? [path.join(options.dataRoot, 'plugins')],
+    dataRoot: options.dataRoot,
+  });
+  await runtimePlugins.discover();
   let projectRoot = '';
   let config = getBoardAdapter('auto').createConfig();
   let projectBuild: ProjectBuild = {};
-  if (options.projectRoot) {
-    await fs.mkdir(options.projectRoot, { recursive: true });
-    projectRoot = await fs.realpath(options.projectRoot);
-    const loaded = await loadProjectDescriptor(projectRoot, config);
-    config = loaded.config;
-    projectBuild = loaded.build;
-    getBoardAdapter(config.boardId).validateConfig(config);
+  try {
+    if (options.projectRoot) {
+      await fs.mkdir(options.projectRoot, { recursive: true });
+      projectRoot = await fs.realpath(options.projectRoot);
+      const loaded = await loadProjectDescriptor(projectRoot, config);
+      config = loaded.config;
+      projectBuild = loaded.build;
+      getBoardAdapter(config.boardId).validateConfig(config);
+    }
+  } catch (error) {
+    await runtimePlugins.close();
+    throw error;
   }
   const requireWorkspace = (): string => {
     if (!projectRoot) throw new Error('error.noWorkspace');
@@ -281,7 +295,8 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     requirePort,
     closeSerial,
   };
-  const runtimes = (options.createRuntimes ?? createPlatformRuntimes)(host);
+  const builtinRuntimes = (options.createRuntimes ?? createPlatformRuntimes)(host);
+  const runtimes = [...builtinRuntimes, ...runtimePlugins.attach(host, builtinRuntimes)];
   const runtimeById = new Map(runtimes.map((runtime) => [runtime.id, runtime]));
   if (runtimeById.size !== runtimes.length) throw new Error('error.invalidPlatformRegistry');
   const runtimeFor = (id: string) => {
@@ -458,11 +473,20 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     }
     const transport = selectedTransport(source);
     const serialNumber = source.programmer?.serialNumber;
-    const explicit = transport === 'serial' ? source.port : transport === 'stlink' ? serialNumber : '';
+    const explicit =
+      transport === 'serial' ? source.port : transport === 'stlink' ? serialNumber : source.runtime?.deviceId;
     if (explicit) {
       const runtime = runtimes.find((item) => item.transport === transport);
       if (!runtime) throw new Error('error.noDetectionDevices');
-      return { runtime, selection: transport === 'serial' ? { port: explicit } : { serialNumber: explicit } };
+      return {
+        runtime,
+        selection:
+          transport === 'serial'
+            ? { port: explicit }
+            : transport === 'stlink'
+              ? { serialNumber: explicit }
+              : { deviceId: explicit },
+      };
     }
     const scanned = await scan();
     const candidates = scanned.candidates.filter(
@@ -479,7 +503,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     const candidate = candidates[0];
     return {
       runtime: runtimeFor(candidate.platformId),
-      selection: { port: candidate.port, serialNumber: candidate.serialNumber },
+      selection: { port: candidate.port, serialNumber: candidate.serialNumber, deviceId: candidate.deviceId },
     };
   };
   const fingerprint = async (
@@ -521,6 +545,11 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     // too, while retaining all build inputs and the expected target chip identity.
     return createHash('sha256')
       .update('blode-c-standards-v1')
+      .update(
+        JSON.stringify(
+          (await runtimePlugins.state()).plugins.map(({ id, fingerprint }) => [id, fingerprint]),
+        ),
+      )
       .update(JSON.stringify(stable(buildConfig(config))))
       .update(JSON.stringify(inputs))
       .digest('hex');
@@ -528,7 +557,10 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   const currentFingerprint = async (source?: Awaited<ReturnType<typeof readProjectFiles>>) => {
     let value = await fingerprint(source);
     const runtime = runtimeById.get(config.boardId);
-    const extra = runtime?.buildInputs ? await runtime.buildInputs(config, projectBuild) : [];
+    const extra = [
+      ...(runtime?.buildInputs ? await runtime.buildInputs(config, projectBuild) : []),
+      ...(await runtimePlugins.compilerInputs(config, projectBuild)),
+    ];
     for (const input of [...new Set([...(runtime?.sourceInputs ?? []), ...extra])].sort()) {
       const bytes = await fs
         .readFile(await safeWorkspacePath(projectRoot, input))
@@ -580,6 +612,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     await restoreSuccessfulBuild();
   }
   const api: CoreService = {
+    runtimePlugins,
     currentProjectRoot: () => projectRoot,
     currentConfig: () => structuredClone(config),
     async workspaceSnapshot(fresh = false) {
@@ -600,9 +633,11 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         ? [{ arduinoCli: false, esp32Core: false, python: false, esptool: false, versions: {} }, []]
         : await Promise.all([toolchainStatus(), drivers.statuses()]);
       const connections = { serial: serial.state, probes: structuredClone(probeState) };
+      const pluginState = await runtimePlugins.state();
       if (!projectRoot)
         return {
           initializing,
+          runtimePlugins: pluginState,
           projectRoot: '',
           installation: installation.snapshot(),
           workspaceOpen: false,
@@ -627,6 +662,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       const buildStale = await isBuildStale();
       return {
         initializing,
+        runtimePlugins: pluginState,
         projectRoot,
         installation: installation.snapshot(),
         workspaceOpen: true,
@@ -787,7 +823,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
           );
         if (languageDiagnostics.some((diagnostic) => diagnostic.severity === 'error'))
           throw new Error('error.languageRulesInvalid');
-        const result = await runtimeFor(config.boardId).build(config, projectBuild);
+        const result = await runtimePlugins.build(runtimeFor(config.boardId), config, projectBuild);
         if (result.success && before === (await currentFingerprint())) {
           lastBuild = result;
           builtFingerprint = before;
@@ -811,6 +847,10 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         requireHardware();
         await action();
       });
+    },
+    async runDebuggerAction(action) {
+      await pendingDeviceScan;
+      return withLock(action);
     },
     async runInstallation(tool, action) {
       await pendingDeviceScan;
@@ -879,7 +919,11 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
             ? await autoSelection(port, source)
             : {
                 runtime: runtimeFor(source.boardId),
-                selection: { port, serialNumber: source.programmer?.serialNumber },
+                selection: {
+                  port,
+                  serialNumber: source.programmer?.serialNumber,
+                  deviceId: source.runtime?.deviceId,
+                },
               };
         const result = await active.runtime.probe(source, active.selection);
         if (result.config.boardId !== active.runtime.id) throw new Error('error.invalidPlatformRegistry');
@@ -976,6 +1020,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       clearTimeout(deviceRefreshTimer);
       stopWatching();
       await serial.close();
+      await runtimePlugins.close();
     },
     async closeProject() {
       return withLock(async () => {

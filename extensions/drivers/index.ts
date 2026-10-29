@@ -1,4 +1,4 @@
-import { stlinkDriver } from '../boards/stm32/driver.js';
+import { stlinkDriver } from '../boards/STM32F103C8T6/driver.js';
 import type { DriverDefinition } from './types.js';
 
 // Explicit registration mirrors the board registry: a workspace cannot inject a driver.

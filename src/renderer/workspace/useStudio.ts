@@ -129,8 +129,18 @@ export function useStudio() {
   const longLines = lines.filter((line) => line.length > 100).length;
   const errors = logs.filter((log) => log.level === 'error');
   const warnings = logs.filter((log) => log.level === 'warning');
-  const board = state?.boards.find((item) => item.id === config?.boardId);
-  const isStm32 = config?.boardId === 'stm32';
+  const selectedBoard = state?.boards.find((item) => item.id === config?.boardId);
+  const hiddenCapabilities = new Set([
+    ...(selectedBoard?.runtimePlugin?.ui.hiddenCapabilities ?? []),
+    ...(config?.runtime?.disabledCapabilities ?? []),
+  ]);
+  const board = selectedBoard
+    ? {
+        ...selectedBoard,
+        capabilities: selectedBoard.capabilities.filter((capability) => !hiddenCapabilities.has(capability)),
+      }
+    : undefined;
+  const isStm32 = config?.boardId === 'STM32F103C8T6';
   const isAuto = config?.boardId === 'auto';
   const usesStlink = isStm32 || config?.programmer?.transport === 'stlink';
   const hasBuildEntry = !!(state?.build?.entry ?? state?.build?.sketch);

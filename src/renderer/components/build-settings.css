@@ -33,6 +33,36 @@
   gap: 6px;
   padding: 18px 14px 18px 0;
   border-right: 1px solid var(--border);
+  overflow: auto;
+}
+.build-plugin-compiler {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.build-plugin-compiler > p {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.build-plugin-compiler .build-size-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.build-plugin-compiler input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+.build-force-backend {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
 }
 .build-settings-nav button {
   text-align: left;
@@ -104,6 +134,10 @@
 .build-compiler-row input,
 .build-mode-fields select {
   width: 100%;
+  min-height: 38px;
+}
+.build-compiler-row .modern-select-trigger,
+.build-mode-fields .modern-select-trigger {
   min-height: 38px;
 }
 .build-tool-path {

@@ -84,7 +84,7 @@ test('portable package gathers external includes and Keil inputs without modifyi
   const descriptor = {
     version: 1,
     name: 'Shared',
-    boardId: 'stm32',
+    boardId: 'STM32F103C8T6',
     port: 'COM12',
     programmer: { serialNumber: 'ABC' },
     toolchain: {
@@ -161,7 +161,7 @@ test('portable build settings remove host paths at every scope and retain compil
   const marker = {
     version: 1,
     name: 'Compiler choices',
-    boardId: 'stm32',
+    boardId: 'STM32F103C8T6',
     toolchain: { arduinoCli: '', python: '' },
     build: {
       entry: 'main.c',
@@ -175,7 +175,7 @@ test('portable build settings remove host paths at every scope and retain compil
           directory: 'C:\\host\\tools\\versions\\gnu-arm\\15.2.1-1.1\\bin',
         },
         platforms: {
-          stm32: {
+          STM32F103C8T6: {
             common: { family: 'inherit', directory: '/opt/private/compiler' },
             c: {
               family: 'gnu-arm',
@@ -184,7 +184,7 @@ test('portable build settings remove host paths at every scope and retain compil
             },
             cpp: { family: 'gnu-arm', version: '13.3.1-1.1', directory: '\\\\build-host\\compiler\\bin' },
           },
-          'esp32-s3': {
+          Esp32_S3_CAM: {
             common: {
               family: 'arduino',
               version: '3.0.7',
@@ -209,23 +209,25 @@ test('portable build settings remove host paths at every scope and retain compil
     assert.equal(settings.mode, 'debug');
     assert.equal(settings.optimizeForSize, true);
     assert.deepEqual(settings.common, { family: 'gnu-arm', version: '15.2.1-1.1' });
-    assert.deepEqual(settings.platforms.stm32.common, { family: 'inherit' });
-    assert.deepEqual(settings.platforms.stm32.c, { family: 'gnu-arm', version: '14.2.1-1.1' });
-    assert.deepEqual(settings.platforms.stm32.cpp, { family: 'gnu-arm', version: '13.3.1-1.1' });
-    assert.deepEqual(settings.platforms['esp32-s3'].common, {
+    assert.deepEqual(settings.platforms.STM32F103C8T6.common, { family: 'inherit' });
+    assert.deepEqual(settings.platforms.STM32F103C8T6.c, { family: 'gnu-arm', version: '14.2.1-1.1' });
+    assert.deepEqual(settings.platforms.STM32F103C8T6.cpp, { family: 'gnu-arm', version: '13.3.1-1.1' });
+    assert.deepEqual(settings.platforms['Esp32_S3_CAM'].common, {
       family: 'arduino',
       version: '3.0.7',
     });
-    assert.deepEqual(settings.platforms['esp32-s3'].c, { family: 'auto' });
-    assert.deepEqual(settings.platforms['esp32-s3'].cpp, { family: 'inherit' });
+    assert.deepEqual(settings.platforms['Esp32_S3_CAM'].c, { family: 'auto' });
+    assert.deepEqual(settings.platforms['Esp32_S3_CAM'].cpp, { family: 'inherit' });
     const manifest = JSON.parse(archive.get('project/.blode-share/manifest.json')!.toString());
     assert.equal(manifest.portable, true);
     assert.ok(manifest.toolRequirements.includes('gnu-arm:15.2.1-1.1'));
     assert.ok(manifest.toolRequirements.includes('gnu-arm:14.2.1-1.1'));
     assert.ok(manifest.toolRequirements.includes('arduino-cli:1.3.1'));
     assert.ok(manifest.toolRequirements.includes('arduino-esp32:3.0.7'));
-    assert.ok(manifest.toolRequirements.includes('compiler:platforms.stm32.cpp:gnu-arm:13.3.1-1.1'));
-    assert.ok(manifest.toolRequirements.includes('custom:build.settings.platforms.stm32.cpp.directory'));
+    assert.ok(manifest.toolRequirements.includes('compiler:platforms.STM32F103C8T6.cpp:gnu-arm:13.3.1-1.1'));
+    assert.ok(
+      manifest.toolRequirements.includes('custom:build.settings.platforms.STM32F103C8T6.cpp.directory'),
+    );
     assert.ok(!archive.get('project/be')!.toString().includes('private'));
     assert.equal(await fs.readFile(path.join(context.project, 'be'), 'utf8'), original);
   } finally {

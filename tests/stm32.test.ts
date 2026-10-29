@@ -9,9 +9,9 @@ import {
   buildStlinkProbeArgs,
   parseStlinkProbes,
   STM32_FLASH_BASE,
-} from '../extensions/boards/stm32/protocol';
-import { stm32Adapter } from '../extensions/boards/stm32/adapter';
-import { StlinkProgrammer, STLINK_WINDOWS_RELEASE } from '../extensions/boards/stm32/programmer';
+} from '../extensions/boards/STM32F103C8T6/protocol';
+import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/adapter';
+import { StlinkProgrammer, STLINK_WINDOWS_RELEASE } from '../extensions/boards/STM32F103C8T6/programmer';
 import { runCommand } from '../src/core/process';
 
 const serialA = '0672FF485650755087074224';
@@ -114,7 +114,7 @@ test('STM32 flash addresses stay inside physical flash, including final-word pad
 
 test('generic STM32 adapter uses a relative firmware partition and supports source compilation', () => {
   const config = stm32Adapter.createConfig();
-  assert.equal(config.boardId, 'stm32');
+  assert.equal(config.boardId, 'STM32F103C8T6');
   assert.equal(config.flashSize, 65536);
   assert.equal(config.programmer?.transport, 'stlink');
   assert.deepEqual(config.partitions, [

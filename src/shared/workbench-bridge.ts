@@ -7,6 +7,7 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { RuntimePluginsApi } from './plugins';
 import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from './contracts';
 
 export function createWorkbenchBridge(
@@ -20,9 +21,19 @@ export function createWorkbenchBridge(
   HostWorkspaceApi &
   ProjectPackageApi &
   LanguageApi &
+  RuntimePluginsApi &
   TerminalApi {
   const invoke = call as <T>(method: string, args: unknown[]) => Promise<T>;
   return {
+    runtimePluginsState: () => invoke('runtimePluginsState', []),
+    runtimePluginTrust: (input) => invoke('runtimePluginTrust', [input]),
+    runtimePluginView: (id, kind) => invoke('runtimePluginView', [id, kind]),
+    runtimePluginViewDocument: (id, kind) => invoke('runtimePluginViewDocument', [id, kind]),
+    runtimePluginDebug: (id, method, args) => invoke('runtimePluginDebug', [id, method, args]),
+    runtimePluginDevice: (id, method, args, confirm) =>
+      invoke('runtimePluginDevice', [id, method, args, confirm]),
+    runtimePluginContext: (id) => invoke('runtimePluginContext', [id]),
+    runtimePluginConfigure: (id, value) => invoke('runtimePluginConfigure', [id, value]),
     languageIndex: () => invoke('languageIndex', []),
     gitStatus: () => invoke('gitStatus', []),
     gitDiff: (input) => invoke('gitDiff', [input]),

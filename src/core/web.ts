@@ -11,6 +11,7 @@ import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from '../shared/contracts';
 import type { CollaborationEvent } from '../shared/collaboration';
 import type { UiRequest } from '../shared/workbench';
 import { RecentLogs } from './recent-logs';
+import { RUNTIME_VIEW_CSP, renderRuntimeView } from '../shared/runtime-view';
 
 const defaultPort = 47821;
 const mime: Record<string, string> = {
@@ -81,7 +82,8 @@ const hostMethods = new Set([
   'firmwareFlash',
 ]);
 const isHostMethod = (method: string) =>
-  /^(?:git|toolVersion|host|projectPackage|terminal|language)/.test(method) || hostMethods.has(method);
+  /^(?:git|toolVersion|host|projectPackage|terminal|language|runtimePlugin)/.test(method) ||
+  hostMethods.has(method);
 
 function lanEndpoint(port: number): string {
   for (const entries of Object.values(networkInterfaces()))
@@ -183,6 +185,11 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     retire?: ReturnType<typeof setTimeout>;
   }
   const pages = new Map<string, PageTransport>();
+  const runtimeViews = new Map<string, { id: string; kind: 'debugger' | 'device'; expiresAt: number }>();
+  let stopped = false;
+  const pruneRuntimeViews = () => {
+    for (const [ticket, view] of runtimeViews) if (view.expiresAt <= Date.now()) runtimeViews.delete(ticket);
+  };
   const clientId = (value: unknown) =>
     typeof value === 'string' && /^[a-f0-9]{32}$/.test(value) ? value : undefined;
   const releasePeers = async (page: PageTransport) => {
@@ -282,6 +289,40 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     if (request.method === 'OPTIONS') {
       response.writeHead(validOrigin(request, url) ? 204 : 403);
       response.end();
+      return;
+    }
+    if (url.pathname.startsWith('/runtime-ui/')) {
+      if (request.method !== 'GET') {
+        response.writeHead(405, { allow: 'GET' });
+        response.end();
+        return;
+      }
+      response.setHeader('cache-control', 'no-store');
+      response.setHeader('referrer-policy', 'no-referrer');
+      response.setHeader('x-content-type-options', 'nosniff');
+      const ticket = url.pathname.slice('/runtime-ui/'.length);
+      const view = /^[a-f0-9]{48}$/.test(ticket) ? runtimeViews.get(ticket) : undefined;
+      if (view) runtimeViews.delete(ticket);
+      pruneRuntimeViews();
+      if (!view || view.expiresAt <= Date.now() || !options.hostServices) {
+        response.writeHead(404);
+        response.end('Runtime view is no longer available.');
+        return;
+      }
+      try {
+        if (!validOrigin(request, url)) throw new Error('rpc.unauthorized');
+        const html = await options.hostServices.invoke('runtimePluginView', [view.id, view.kind]);
+        if (stopped) throw new Error('rpc.methodNotFound');
+        if (typeof html !== 'string' || html.length > 1_000_000) throw new Error('error.runtimePluginResult');
+        response.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': RUNTIME_VIEW_CSP,
+        });
+        response.end(renderRuntimeView(html));
+      } catch {
+        response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end('Runtime view is no longer available.');
+      }
       return;
     }
     if (url.pathname === '/events') {
@@ -440,7 +481,31 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
         const page = id && body.method === 'collaborationPresence' ? pageTransport(id) : undefined;
         if (page?.closed && !page.streams.size) throw new Error('rpc.unauthorized');
         let result: unknown;
-        if (/^(?:aiAssistance|aiPrediction|collaboration|uiPublishState|uiCommandReply)/.test(body.method)) {
+        if (body.method === 'runtimePluginViewDocument') {
+          if (!options.hostServices) throw new Error('rpc.methodNotFound');
+          if (
+            body.args.length !== 2 ||
+            typeof body.args[0] !== 'string' ||
+            !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(body.args[0]) ||
+            !['device', 'debugger'].includes(body.args[1] as string)
+          )
+            throw new Error('rpc.invalidParams');
+          const [pluginId, kind] = body.args as [string, 'device' | 'debugger'];
+          const html = await options.hostServices.invoke('runtimePluginView', [pluginId, kind]);
+          if (stopped) throw new Error('rpc.methodNotFound');
+          if (html === null) result = null;
+          else {
+            if (typeof html !== 'string' || html.length > 1_000_000)
+              throw new Error('error.runtimePluginResult');
+            pruneRuntimeViews();
+            if (runtimeViews.size >= 64) throw new Error('rpc.limitExceeded');
+            const ticket = randomBytes(24).toString('hex');
+            runtimeViews.set(ticket, { id: pluginId, kind, expiresAt: Date.now() + 15_000 });
+            result = `${url.origin}/runtime-ui/${ticket}`;
+          }
+        } else if (
+          /^(?:aiAssistance|aiPrediction|collaboration|uiPublishState|uiCommandReply)/.test(body.method)
+        ) {
           if (!options.assistance) throw new Error('rpc.methodNotFound');
           result = await options.assistance.invoke(body.method, body.args);
           if (page && body.method === 'collaborationPresence') {
@@ -574,7 +639,9 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     publishCollaboration,
     publishUiCommand,
     close: async () => {
+      stopped = true;
       clearInterval(heartbeat);
+      runtimeViews.clear();
       for (const page of pages.values()) {
         clearTimeout(page.timer);
         clearTimeout(page.retire);

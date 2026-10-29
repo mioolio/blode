@@ -1,6 +1,7 @@
 import * as z from 'zod';
-import { getBoardAdapter } from '../../extensions/registry';
+import { canonicalBoardId, getBoardAdapter } from '../../extensions/registry';
 import type { ProjectConfig, ProjectBuildInputs } from '../shared/contracts';
+import { migrateLegacyBuildPlatforms } from '../shared/runtime-identity';
 
 const partitionSchema = z
   .object({
@@ -20,15 +21,39 @@ export const configSchema = z
   .object({
     version: z.literal(1),
     name: z.string().trim().min(1).max(80),
-    boardId: z.string().regex(/^[a-z0-9-]+$/),
+    boardId: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]+$/)
+      .transform(canonicalBoardId),
     port: z.string().max(128),
     baudRate: z.number().int().min(1_200).max(3_000_000),
     flashSize: z.number().int().nonnegative(),
     flashSizeOverride: z.boolean().optional(),
+    runtime: z
+      .object({
+        deviceId: z.string().max(1024).optional(),
+        values: z
+          .record(
+            z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+            z.union([z.string().max(4096), z.number().finite(), z.boolean()]),
+          )
+          .optional(),
+        forceCompiler: z.boolean().optional(),
+        compilerRuntime: z
+          .string()
+          .regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/)
+          .optional(),
+        disabledCapabilities: z
+          .array(z.string().regex(/^[A-Za-z0-9_-]{1,80}$/))
+          .max(64)
+          .optional(),
+      })
+      .strict()
+      .optional(),
     partitions: z.array(partitionSchema).max(32),
     programmer: z
       .object({
-        transport: z.enum(['auto', 'serial', 'stlink']),
+        transport: z.enum(['auto', 'serial', 'stlink', 'usb', 'physical', 'custom']),
         serialNumber: z.string().regex(/^[a-fA-F0-9]{0,64}$/),
         frequencyKhz: z.number().int().min(5).max(4000),
         targetChipId: z
@@ -98,7 +123,11 @@ const buildPath = z
   .refine((value) => !/[\0\r\n]/.test(value));
 const compilerChoiceSchema = z
   .object({
-    family: z.enum(['inherit', 'auto', 'gnu-arm', 'armclang', 'arduino']),
+    family: z.enum(['inherit', 'auto', 'gnu-arm', 'armclang', 'arduino', 'plugin']),
+    pluginId: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/)
+      .optional(),
     directory: buildPath.optional(),
     version: z
       .string()
@@ -124,11 +153,7 @@ const buildSettingsSchema = z
     optimizeForSize: z.boolean().optional(),
     common: compilerChoiceSchema.optional(),
     platforms: z
-      .object({
-        stm32: platformCompilerSettingsSchema.optional(),
-        'esp32-s3': platformCompilerSettingsSchema.optional(),
-      })
-      .strict()
+      .record(z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/), platformCompilerSettingsSchema)
       .optional(),
   })
   .strict();
@@ -145,7 +170,7 @@ const buildSchema = z
 
 export function parseProjectBuild(value: unknown): ProjectBuild {
   if (value === undefined || value === null) return {};
-  const result = buildSchema.safeParse(value);
+  const result = buildSchema.safeParse(migrateLegacyBuildPlatforms(value));
   if (!result.success) throw new Error('error.invalidProjectDescriptor');
   return result.data;
 }

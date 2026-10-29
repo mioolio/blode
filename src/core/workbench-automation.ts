@@ -56,6 +56,7 @@ export function createWorkbenchAutomation(options: Options) {
           'tools.installVersion',
           'terminal.run',
           'git.action',
+          'runtime.trust',
         ].includes(method),
       })),
       uiActions: [

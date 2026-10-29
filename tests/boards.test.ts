@@ -3,19 +3,19 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { getBoardAdapter, listBoards } from '../extensions/registry.js';
-import { createDefaultPartitions } from '../extensions/boards/esp32-s3/partitions.js';
-import { buildFlashArgs, buildProbeArgs } from '../extensions/boards/esp32-s3/programmer.js';
+import { createDefaultPartitions } from '../extensions/boards/Esp32_S3_CAM/partitions.js';
+import { buildFlashArgs, buildProbeArgs } from '../extensions/boards/Esp32_S3_CAM/programmer.js';
 import { parseConfig } from '../src/core/config.js';
 
 describe('board adapters', () => {
   it('returns fresh configuration, never sharing edited partition objects', () => {
-    const adapter = getBoardAdapter('esp32-s3');
+    const adapter = getBoardAdapter('Esp32_S3_CAM');
     const edited = adapter.createConfig();
     edited.partitions[0]!.size = 1;
     assert.equal(adapter.createConfig().partitions[0]!.size, 0x8000);
     const definitions = listBoards();
-    definitions.find((board) => board.id === 'esp32-s3')!.flashSizes.length = 0;
-    assert.ok(listBoards().find((board) => board.id === 'esp32-s3')!.flashSizes.length > 0);
+    definitions.find((board) => board.id === 'Esp32_S3_CAM')!.flashSizes.length = 0;
+    assert.ok(listBoards().find((board) => board.id === 'Esp32_S3_CAM')!.flashSizes.length > 0);
     assert.equal(getBoardAdapter('auto').createConfig().flashSize, 0);
     assert.deepEqual(getBoardAdapter('auto').createConfig().partitions, []);
   });
@@ -35,7 +35,7 @@ describe('board adapters', () => {
       assert.equal(partitions.find((partition) => partition.id === 'filesystem')!.offset, 0x320000);
     });
   it('synchronizes FlashSize and PSRAM while keeping runtime baud out of compiler options', () => {
-    const adapter = getBoardAdapter('esp32-s3');
+    const adapter = getBoardAdapter('Esp32_S3_CAM');
     const config = adapter.createConfig();
     config.flashSize = 16 * 1024 * 1024;
     config.toolchain.fqbn += ':PSRAM=opi,FlashSize=8M,CDCOnBoot=cdc,UploadSpeed=460800';
@@ -47,7 +47,7 @@ describe('board adapters', () => {
     assert.throws(() => getBoardAdapter('unregistered-chip'), /errors.unknownBoard/);
   });
   it('resolves managed Python automatically and preserves required system reservations', () => {
-    const adapter = getBoardAdapter('esp32-s3');
+    const adapter = getBoardAdapter('Esp32_S3_CAM');
     assert.equal(adapter.createConfig().toolchain.python, '');
     adapter.validateConfig(adapter.createConfig());
     for (const id of ['bootloader', 'partition-table']) {
@@ -63,13 +63,13 @@ describe('board adapters', () => {
     assert.throws(() => adapter.validateConfig(extraSystem), /errors.systemPartitionLocked/);
   });
   it('rejects implicit OTA layouts until subtype and boot-selection support is implemented', () => {
-    const adapter = getBoardAdapter('esp32-s3');
+    const adapter = getBoardAdapter('Esp32_S3_CAM');
     const config = adapter.createConfig();
     config.partitions.push({ id: 'ota', name: 'ota_0', type: 'app', offset: 0x400000, size: 0x100000 });
     assert.throws(() => adapter.validateConfig(config), /errors.singleAppRequired/);
   });
   it('keeps existing single-app configurations without a coredump region valid', () => {
-    const adapter = getBoardAdapter('esp32-s3');
+    const adapter = getBoardAdapter('Esp32_S3_CAM');
     const config = adapter.createConfig();
     config.partitions = config.partitions.filter((partition) => partition.id !== 'coredump');
     const filesystem = config.partitions.find((partition) => partition.id === 'filesystem')!;
@@ -97,7 +97,7 @@ describe('board catalogue', () => {
     );
   });
   it('rebuilds the layout for the physically detected Flash capacity', () => {
-    const adapter = getBoardAdapter('esp32-s3');
+    const adapter = getBoardAdapter('Esp32_S3_CAM');
     const config = adapter.createConfigForFlash!(16 * 1024 * 1024);
     assert.equal(config.flashSize, 16 * 1024 * 1024);
     assert.equal(config.partitions.at(-1)!.offset + config.partitions.at(-1)!.size, 16 * 1024 * 1024);

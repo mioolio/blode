@@ -68,7 +68,7 @@ ST-Link 报告的是芯片自述容量，克隆或改写过的芯片可能误报
 
 平台源码目录可以复制并注册到匹配宿主，但不包含编译器；分享平台代码不等于取得编译器重分发许可或转授本机工具授权。
 
-ST-Link 托管工具使用固定官方发行及 SHA-256 校验，开发位置为 `tools/stlink/`；Windows 签名驱动归档位于 `tools/STSW-LINK/`。详见 [工具链说明](TOOLCHAINS.md) 与 [平台包说明](../extensions/boards/stm32/README.md)。
+ST-Link 托管工具使用固定官方发行及 SHA-256 校验，开发位置为 `tools/stlink/`；Windows 签名驱动归档位于 `tools/STSW-LINK/`。详见 [工具链说明](TOOLCHAINS.md) 与 [平台包说明](../extensions/boards/STM32F103C8T6/README.md)。
 
 ## 自动化
 

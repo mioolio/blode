@@ -9,6 +9,7 @@ import { BuildSettingsLauncher } from '../src/renderer/components/BuildSettingsL
 import { ToolVersionSettings } from '../src/renderer/components/ToolVersionSettings';
 import { translate } from '../src/renderer/i18n';
 import type { Studio } from '../src/renderer/workspace/useStudio';
+import type { RuntimePluginManifest } from '../src/shared/plugins';
 
 function studioFor(build: ProjectBuildInputs = {}, content?: string): Studio {
   const config = getBoardAdapter('auto').createConfig();
@@ -50,8 +51,10 @@ test('compiler settings render without a connected board and default to release 
   assert.match(html, /<option value="release" selected="">/);
   assert.match(html, /type="checkbox" checked=""/);
   assert.match(html, /<option value="inherit" selected="">buildSettings.followProject/);
-  assert.match(html, />STM32<\/button>/);
-  assert.match(html, />ESP32-S3<\/button>/);
+  assert.match(html, />STM32F103C8T6<\/button>/);
+  assert.match(html, />Esp32_S3_CAM<\/button>/);
+  assert.match(html, /role="combobox"/);
+  assert.doesNotMatch(html, /buildSettings.installHint/);
   assert.doesNotMatch(html, /role="alert"/);
 });
 
@@ -87,6 +90,60 @@ test('invalid project descriptors show an error and disable save instead of open
   assert.doesNotMatch(html, /class="build-settings-body"/);
 });
 
+test('third-party compiler selection remains explicit and its override permission is restored from the project', () => {
+  const build: ProjectBuildInputs = {
+    settings: { common: { family: 'plugin', pluginId: 'USB_ThirdParty' } },
+  };
+  const studio = studioFor(build);
+  const config = {
+    ...getBoardAdapter('STM32F103C8T6').createConfig(),
+    boardId: 'USB_ThirdParty',
+    runtime: { forceCompiler: false },
+  };
+  const plugin: RuntimePluginManifest = {
+    id: config.boardId,
+    name: 'USB Third Party',
+    version: '1.0.0',
+    apiVersion: 2,
+    runtimeApiVersion: 2,
+    kind: 'board',
+    runtime: 'runtime.mjs',
+    transport: 'usb',
+    capabilities: ['compile'],
+    defaultConfig: config,
+    support: { chips: ['CustomChip'], status: 'experimental' },
+    compiler: {
+      mode: 'plugin',
+      baseRuntime: 'STM32F103C8T6',
+      forceComponent: true,
+      defaultTool: { id: 'custom-cc', executable: 'tools/compiler.mjs', runner: 'node', version: '1.2.0' },
+    },
+    debugger: { mode: 'none' },
+    layout: { recommendedFlashSizes: [65536], ramSize: 20480 },
+    constraints: {},
+    ui: { fields: [] },
+  };
+  studio.config = config;
+  studio.state!.config = config;
+  studio.state!.boards.push({
+    ...getBoardAdapter('STM32F103C8T6').definition,
+    id: plugin.id,
+    name: plugin.name,
+    defaultConfig: config,
+    runtimePlugin: plugin,
+  });
+  studio.state!.files[0].content = JSON.stringify({ ...config, build });
+  const html = render(studio);
+  assert.match(html, />USB Third Party<\/button>/);
+  assert.match(html, /<option value="plugin:USB_ThirdParty" selected="">/);
+  assert.match(html, /tools\/compiler\.mjs/);
+  assert.match(html, /type="checkbox"\/>buildSettings.forceCompiler/);
+  assert.doesNotMatch(html, /class="build-custom-tool"/);
+  config.runtime.forceCompiler = true;
+  studio.state!.files[0].content = JSON.stringify({ ...config, build });
+  assert.match(render(studio), /type="checkbox" checked=""\/>buildSettings.forceCompiler/);
+});
+
 test('closed launcher and tool preferences server-render without requiring a desktop bridge', () => {
   const studio = studioFor();
   assert.equal(renderToStaticMarkup(createElement(BuildSettingsLauncher, { studio })), '');
@@ -101,4 +158,23 @@ test('closed launcher and tool preferences server-render without requiring a des
     }),
   );
   assert.ok(html.includes(translate('zh-CN', 'settings.versions.restart')));
+});
+
+test('forced build backend restores a selected or unavailable runtime without discarding it', () => {
+  const studio = studioFor();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
+  config.runtime = { forceCompiler: true, compilerRuntime: 'Esp32_S3_CAM' };
+  studio.config = config;
+  studio.state!.config = config;
+  studio.state!.files[0].content = JSON.stringify({ ...config, build: {} });
+  const html = render(studio);
+  assert.match(html, /buildSettings.forceBackend/);
+  assert.match(html, /<option value="Esp32_S3_CAM" selected="">/);
+  assert.match(html, /<option value="">buildSettings.followRuntime/);
+  config.runtime.compilerRuntime = 'Absent_Backend';
+  studio.state!.files[0].content = JSON.stringify({ ...config, build: {} });
+  assert.match(render(studio), /<option value="Absent_Backend" selected="">Absent_Backend/);
+  config.runtime.forceCompiler = false;
+  studio.state!.files[0].content = JSON.stringify({ ...config, build: {} });
+  assert.doesNotMatch(render(studio), /buildSettings.forceBackend/);
 });

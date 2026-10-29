@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Download, GitBranch, Minus, Plus, RefreshCw, Save, Upload, X } from 'lucide-react';
 import type { GitActionRequest, GitApi, GitFileStatus } from '../../shared/git';
@@ -205,7 +206,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
       <p>{t(`git.mode.${state?.mode ?? 'disabled'}`)}</p>
       <label>
         {t('git.managementMode')}
-        <select
+        <ModernSelect
           value={managementMode}
           disabled={busy}
           onChange={(event) => setManagementMode(event.target.value as 'isolated' | 'shared')}
@@ -214,7 +215,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
           <option value="shared" disabled={!state?.sharedAvailable}>
             {t('git.mode.shared')}
           </option>
-        </select>
+        </ModernSelect>
       </label>
       <div className="git-network-actions">
         <button
@@ -422,7 +423,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
                 <div className="git-form">
                   <label>
                     {t('git.currentBranch')}
-                    <select
+                    <ModernSelect
                       value={branch}
                       disabled={busy}
                       onChange={(event) => setBranch(event.target.value)}
@@ -431,7 +432,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
                       {state.branches.map((name) => (
                         <option key={name}>{name}</option>
                       ))}
-                    </select>
+                    </ModernSelect>
                   </label>
                   <button
                     disabled={busy || !branch || branch === state.branch}
@@ -461,7 +462,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
                 <div className="git-form">
                   <label>
                     {t('git.remote')}
-                    <select
+                    <ModernSelect
                       value={remote}
                       disabled={busy}
                       onChange={(event) => chooseRemote(event.target.value)}
@@ -470,7 +471,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
                       {state.remotes.map((item) => (
                         <option key={item.name}>{item.name}</option>
                       ))}
-                    </select>
+                    </ModernSelect>
                   </label>
                   <div className="git-network-actions">
                     <button disabled={busy || !remote} onClick={() => void act({ action: 'fetch', remote })}>

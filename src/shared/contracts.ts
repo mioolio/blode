@@ -8,6 +8,12 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type {
+  RuntimePluginManifest,
+  RuntimePluginsApi,
+  RuntimePluginsState,
+  RuntimeTransport,
+} from './plugins';
 import type { BuildSettings } from './build-settings';
 export interface Partition {
   id: string;
@@ -30,10 +36,17 @@ export interface ProjectConfig {
    * replace the value with a probe report on re-identification.
    */
   flashSizeOverride?: boolean;
+  runtime?: {
+    deviceId?: string;
+    values?: Record<string, string | number | boolean>;
+    forceCompiler?: boolean;
+    compilerRuntime?: string;
+    disabledCapabilities?: string[];
+  };
   partitions: Partition[];
   /** Debug transport is separate from the COM port used by the serial monitor. */
   programmer?: {
-    transport: 'auto' | 'serial' | 'stlink';
+    transport: 'auto' | RuntimeTransport;
     serialNumber: string;
     frequencyKhz: number;
     targetChipId?: string;
@@ -95,7 +108,8 @@ export interface DebugProbeInfo {
 export interface DetectionCandidate {
   id: string;
   platformId: string;
-  transport: 'serial' | 'stlink';
+  transport: RuntimeTransport;
+  deviceId?: string;
   name: string;
   port?: string;
   serialNumber?: string;
@@ -115,6 +129,8 @@ export interface ProjectBuildInputs {
   files?: string[];
 }
 export interface BoardDefinition {
+  pluginId?: string;
+  runtimePlugin?: RuntimePluginManifest;
   id: string;
   name: string;
   family: string;
@@ -203,6 +219,7 @@ export interface InstallationState extends InstallationProgress {
   logs: LogEvent[];
 }
 export interface AppState {
+  runtimePlugins?: RuntimePluginsState;
   /** Initial desktop discovery is running; tool/driver absence is not yet known. */
   initializing?: boolean;
   recentLogs?: LogEvent[];
@@ -317,6 +334,7 @@ export interface DesktopApi
     HostWorkspaceApi,
     ProjectPackageApi,
     LanguageApi,
+    RuntimePluginsApi,
     TerminalApi {
   /** Notify the native shell after the first workspace frame has mounted. */
   rendererReady?(): void;

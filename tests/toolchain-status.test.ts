@@ -4,9 +4,9 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { RuntimeHost } from '../extensions/runtime';
-import { Stm32Compiler } from '../extensions/boards/stm32/compiler';
-import { createStm32Runtime } from '../extensions/boards/stm32/runtime';
-import { stm32Adapter } from '../extensions/boards/stm32/adapter';
+import { Stm32Compiler } from '../extensions/boards/STM32F103C8T6/compiler';
+import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime';
+import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/adapter';
 
 const executable = (name: string) => name + (process.platform === 'win32' ? '.exe' : '');
 
