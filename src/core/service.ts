@@ -44,6 +44,7 @@ import { InstallationTracker } from './installation';
 import { SnapshotCache } from './snapshot-cache';
 import { analyzeCSourceRules, validateProjectLanguageRules } from '../../extensions/completions/rules';
 import { RuntimePlugins } from './runtime-plugins';
+import type { RuntimeViewContribution } from '../shared/plugins';
 
 interface InstallationReporter {
   progress: (progress: InstallationProgress) => void;
@@ -72,6 +73,7 @@ export interface CoreOptions {
   /** A debugger owns the physical connection until its session is stopped. */
   hardwareBusy?: () => boolean;
   pluginRoots?: string[];
+  openRuntimeView?: (pluginId: string, view: RuntimeViewContribution) => Promise<void>;
 }
 export interface CoreService extends CoreApi {
   readonly runtimePlugins: RuntimePlugins;
@@ -96,6 +98,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   const runtimePlugins = new RuntimePlugins({
     roots: options.pluginRoots ?? [path.join(options.dataRoot, 'plugins')],
     dataRoot: options.dataRoot,
+    openView: options.openRuntimeView,
   });
   await runtimePlugins.discover();
   let projectRoot = '';

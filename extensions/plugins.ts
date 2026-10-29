@@ -3,6 +3,8 @@ import type { RuntimePluginManifest } from '../src/shared/plugins.js';
 
 export interface PluginRuntimeHost extends RuntimeHost {
   pluginRoot: string;
+  /** Request one of this package's declared surfaces after authorization. */
+  openView(viewId: string): Promise<void>;
   defaultTool?: {
     id: string;
     command: string;

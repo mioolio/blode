@@ -8,6 +8,7 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { DesktopLifecycleApi } from './desktop-lifecycle';
 import type {
   RuntimePluginManifest,
   RuntimePluginsApi,
@@ -334,10 +335,15 @@ export interface DesktopApi
     HostWorkspaceApi,
     ProjectPackageApi,
     LanguageApi,
+    DesktopLifecycleApi,
     RuntimePluginsApi,
     TerminalApi {
   /** Notify the native shell after the first workspace frame has mounted. */
+  setTerminalFocus?(focused: boolean): void;
   rendererReady?(): void;
+  onWindowAttention?(
+    callback: (state: { visible: boolean; focused: boolean; epoch?: number }) => void,
+  ): () => void;
   listRecentProjects(): Promise<RecentProject[]>;
   openRecentProject(path: string): Promise<ReopenProjectResult>;
   removeRecentProject(path: string): Promise<void>;

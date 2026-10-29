@@ -1,0 +1,52 @@
+.context-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  width: 26px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.context-help-trigger:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.context-help-dialog {
+  width: min(580px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+}
+.context-help-dialog::backdrop {
+  background: var(--overlay);
+}
+.context-help-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.context-help-dialog h3 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-strong);
+}
+.context-help-content {
+  padding: 18px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.context-help-content p + p {
+  margin-top: 12px;
+}

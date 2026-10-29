@@ -17,6 +17,7 @@ import { toolVersionSchemas } from './tool-version-schemas';
 import { hostParameterSchemas } from './host-service-schemas';
 import { LanguageIndexService } from './language-index';
 import type { RuntimeDebugger } from './runtime-debugger';
+import { isRuntimeViewKind, type RuntimeViewContribution, type RuntimeViewKind } from '../shared/plugins';
 
 interface Options {
   core: CoreService;
@@ -31,7 +32,11 @@ interface Options {
   reloadProject?: () => Promise<void>;
   savePackage?: (file: { path: string; name: string }) => Promise<boolean>;
   runtimeDebugger?: () => RuntimeDebugger | undefined;
-  runtimeViewDocument?: (id: string, kind: 'debugger' | 'device') => string;
+  runtimeViewDocument?: (id: string, kind: RuntimeViewKind) => string;
+  openRuntimeView?: (
+    id: string,
+    view: RuntimeViewContribution,
+  ) => Promise<{ destination: 'window' | 'browser'; url?: string }>;
 }
 const absolute = (value: string) => {
   if (!path.isAbsolute(value) || /[\0\r\n]/.test(value)) throw new Error('error.invalidPath');
@@ -70,6 +75,25 @@ export function createHostServices(options: Options) {
   const noArgs = z.tuple([]),
     nativePath = z.string().min(1).max(4096);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    runtimePluginViewInfo: {
+      args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80)]),
+      run: async (id, viewId) => {
+        await core.runtimePlugins.view(id, `view:${viewId}`);
+        const view = (await core.runtimePlugins.state()).plugins
+          .find((plugin) => plugin.id === id)
+          ?.manifest.ui.views?.find((view) => view.id === viewId);
+        if (!view) throw new Error('error.runtimePluginCapability');
+        return view;
+      },
+    },
+    runtimePluginOpenView: {
+      args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80)]),
+      run: async (id, viewId) => {
+        const view = (await routes.runtimePluginViewInfo.run(id, viewId)) as RuntimeViewContribution;
+        if (view.location === 'panel') return { destination: 'panel' };
+        return options.openRuntimeView?.(id, view) ?? { destination: 'browser' };
+      },
+    },
     runtimePluginsState: { args: noArgs, run: () => core.runtimePlugins.state() },
     runtimePluginTrust: {
       args: z.tuple([
@@ -98,11 +122,11 @@ export function createHostServices(options: Options) {
       },
     },
     runtimePluginView: {
-      args: z.tuple([z.string().min(1).max(80), z.enum(['debugger', 'device'])]),
+      args: z.tuple([z.string().min(1).max(80), z.custom<RuntimeViewKind>(isRuntimeViewKind)]),
       run: (id, kind) => core.runtimePlugins.view(id, kind),
     },
     runtimePluginViewDocument: {
-      args: z.tuple([z.string().min(1).max(80), z.enum(['debugger', 'device'])]),
+      args: z.tuple([z.string().min(1).max(80), z.custom<RuntimeViewKind>(isRuntimeViewKind)]),
       run: async (id, kind) => {
         const html = await core.runtimePlugins.view(id, kind);
         return html ? (options.runtimeViewDocument?.(id, kind) ?? null) : null;
@@ -238,7 +262,23 @@ export function createHostServices(options: Options) {
         return options.savePackage(packages.download(id));
       },
     },
-    terminalState: { args: noArgs, run: () => terminal.state() },
+    terminalState: {
+      args: z.tuple([hostParameterSchemas['terminal.state'].optional()]),
+      run: (cursor) => terminal.state(cursor),
+    },
+    terminalOpen: {
+      args: z.tuple([hostParameterSchemas['terminal.open'].omit({ confirm: true }).optional()]),
+      run: (size) => terminal.open(size),
+    },
+    terminalWrite: {
+      args: z.tuple([hostParameterSchemas['terminal.write'].omit({ confirm: true })]),
+      run: (request) => terminal.write(request),
+    },
+    terminalResize: {
+      args: z.tuple([hostParameterSchemas['terminal.resize']]),
+      run: (request) => terminal.resize(request),
+    },
+    terminalClose: { args: noArgs, run: () => terminal.close() },
     terminalRun: {
       args: z.tuple([z.object({ command: z.string().trim().min(1).max(16384) }).strict()]),
       run: (request) => terminal.run(request.command),
@@ -323,6 +363,7 @@ export function createHostServices(options: Options) {
     'runtime.device': ['runtimePluginDevice', (p) => [p.id, p.method, p.args, p.confirm]],
     'runtime.trust': ['runtimePluginTrust', (p) => [p]],
     'runtime.view': ['runtimePluginView', (p) => [p.id, p.kind]],
+    'runtime.view.info': ['runtimePluginViewInfo', (p) => [p.id, p.viewId]],
     'runtime.debug': ['runtimePluginDebug', (p) => [p.id, p.method, p.args]],
     'language.index': ['languageIndex', () => []],
     'git.status': ['gitStatus', () => []],
@@ -334,9 +375,13 @@ export function createHostServices(options: Options) {
     'host.browse': ['hostBrowse', (p) => (p.path ? [p.path] : [])],
     'project.package.preview': ['projectPackagePreview', () => []],
     'project.package.export': ['projectPackageExport', (p) => [p]],
-    'terminal.state': ['terminalState', () => []],
+    'terminal.state': ['terminalState', (p) => [{ sessionId: p.sessionId, after: p.after }]],
+    'terminal.open': ['terminalOpen', (p) => [{ cols: p.cols, rows: p.rows }]],
     'terminal.run': ['terminalRun', (p) => [{ command: p.command }]],
     'terminal.stop': ['terminalStop', () => []],
+    'terminal.write': ['terminalWrite', (p) => [{ data: p.data, sessionId: p.sessionId }]],
+    'terminal.resize': ['terminalResize', (p) => [{ cols: p.cols, rows: p.rows, sessionId: p.sessionId }]],
+    'terminal.close': ['terminalClose', () => []],
   };
   return {
     routes,

@@ -73,7 +73,7 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 
 `flash.run` 和 `toolchain.install` 的 `confirm` 必须为布尔值 `true`，不能使用字符串。客户端必须根据用户指令决定是否有权进行对应操作；它是调用者的明确声明，不代表软件另外弹出了授权窗口。
 
-源文件写入经过核心的工程根目录约束、扩展名白名单、大小限制及符号链接/目录联接检查。`terminal.run` 是独立的显式命令能力，在目标电脑运行，需 `confirm: true`，有输出与运行时长限制，不提供交互式 stdin。`config.set` 可以配置自定义工具链可执行文件；工具路径、Git 与命令调用属于可信主机操作。
+源文件写入经过核心的工程根目录约束、扩展名白名单、大小限制及符号链接/目录联接检查。命令窗口在目标电脑运行持久 PTY Shell；`terminal.open/run/write/close` 需 `confirm: true`。`run` 提交一条命令，`write` 支持后续交互输入；`stop` 发送 Ctrl+C，`close` 结束会话。`state` 支持 `sessionId`／`after` 增量游标，`resize` 设置行列；输出缓存有界。`config.set` 可以配置自定义工具链可执行文件；工具路径、Git 与命令调用属于可信主机操作。
 
 ## 扩展工作台能力
 
@@ -94,7 +94,8 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 | 工具版本   | `tools.versions`、`tools.installVersion`、`tools.selectVersion`                                                                                                                                              |
 | 工程打包   | `project.package.preview`、`project.package.export`                                                                                                                                                          |
 | 主机目录   | `host.browse`（目标电脑路径）                                                                                                                                                                                |
-| 命令窗口   | `terminal.state`、`terminal.run`、`terminal.stop`                                                                                                                                                            |
+| 命令窗口   | `terminal.state`、`terminal.open`、`terminal.run`、`terminal.write`、`terminal.resize`、`terminal.stop`、`terminal.close`                                                                                    |
+| 插件视图   | `runtime.plugins`、`runtime.view.info`、`runtime.view.open`；打开请求可指定工作台 `target`                                                                                                                   |
 
 文件树操作使用工程相对路径。`project.open`、`firmware.prepare/export`、`debugger.symbols.set` 和 `debugger.gdb.set` 使用桌面服务所在电脑的绝对路径；不通过浏览器任意访问客户端文件。`firmware.prepare` 返回不可变选择 ID，随后将 ID、配置、地址及 `confirm: true` 交给 `firmware.flash`。导出默认不覆盖已有文件，覆盖时另需 `confirmOverwrite: true`。
 

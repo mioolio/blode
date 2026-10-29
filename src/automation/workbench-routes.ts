@@ -51,6 +51,13 @@ export const workbenchRouteSchemas = {
   'debugger.gdb.set': z.object({ path }).strict(),
   'ui.state': empty,
   'ui.command': uiCommandSchema,
+  'runtime.view.open': z
+    .object({
+      id: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+      viewId: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+      target: z.string().min(1).max(128).optional(),
+    })
+    .strict(),
   'window.action': z.object({ action: z.enum(['minimize', 'maximize', 'close']), confirm }).strict(),
   'logs.latest': empty,
   'collaboration.state': collaborationSchemas.state,
@@ -76,6 +83,9 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
   'runtime.trust':
     'Approve native plugin execution after reviewing the package fingerprint. Requires confirm=true; permanent approval writes a machine-bound .uel marker.',
   'runtime.view': 'Read an approved plugin custom interface for an isolated frame.',
+  'runtime.view.info': 'Read an approved extension view declaration.',
+  'runtime.view.open':
+    'Request a declared extension view in one workbench. Browser windows require a user click.',
   'runtime.debug': 'Invoke an approved runtime debug provider method.',
   'language.index': 'Index saved C/C++ workspace symbols and export their source locations.',
   'capabilities.get': 'List all available automation capabilities and required confirmations.',
@@ -143,8 +153,15 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
   'project.package.preview': 'Inspect portable ZIP files, external dependencies and unresolved paths.',
   'project.package.export':
     'Save shared drafts and produce a portable ZIP. External dependencies require confirmExternal=true; unresolved paths require allowIncomplete=true.',
-  'terminal.state': 'Read the bounded target-machine command output and process state.',
+  'terminal.state':
+    'Read the target terminal state and ANSI output after a session cursor; does not start a shell.',
+  'terminal.open':
+    'Open or reuse a persistent interactive shell on the target machine; confirm=true is required.',
   'terminal.run':
-    'Run an explicit shell command on the target machine; confirm=true is required. Non-interactive, bounded to two minutes.',
-  'terminal.stop': 'Stop the command process owned by this host.',
+    'Submit a command to the persistent target shell, preserving its directory and variables; confirm=true is required.',
+  'terminal.stop': 'Send Ctrl+C to the host terminal without closing its shell.',
+  'terminal.write':
+    'Send raw terminal input, including interactive answers or control keys; confirm=true is required.',
+  'terminal.resize': 'Set terminal columns and rows for the current session.',
+  'terminal.close': 'Close the host terminal and its child processes; confirm=true is required.',
 };

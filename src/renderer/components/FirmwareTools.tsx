@@ -165,7 +165,6 @@ export function FirmwareTools() {
         </div>
         {!standalone ? (
           <>
-            <p>{t('firmware.exportDescription')}</p>
             <label>
               {t('firmware.format')}
               <ModernSelect
@@ -182,14 +181,12 @@ export function FirmwareTools() {
               </ModernSelect>
             </label>
             <p className="firmware-format-description">{t(`firmware.formatNote.${format}`)}</p>
-            <p className="subtle-note">{t('firmware.exportAddressNote')}</p>
             {(!state?.lastBuild?.success || state.buildStale) && (
               <p className="layout-warning">{t('firmware.buildRequired')}</p>
             )}
           </>
         ) : (
           <>
-            <p>{t('firmware.standaloneDescription')}</p>
             <label>
               {t('firmware.platform')}
               <ModernSelect

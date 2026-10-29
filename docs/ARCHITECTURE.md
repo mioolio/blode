@@ -1,21 +1,26 @@
 # 平台包与宿主架构
 
-设备实现按平台归属。`extensions/boards/<platform>/` 组合该平台的配置、检测、工具链、构建、烧录、布局和驱动描述；`src/core` 提供通用宿主能力，不按厂商拼接工具命令。当前只有检测配置 `auto` 和具体平台 `Esp32_S3_CAM`、`stm32`。
+设备实现按平台归属。`extensions/boards/<platform>/` 组合该平台的配置、检测、工具链、构建、烧录、布局和驱动描述；`src/core` 提供通用宿主能力，不按厂商拼接工具命令。当前内置检测配置 `auto` 和具体平台 `Esp32_S3_CAM`、`STM32F103C8T6`。
 
 ## 目录责任
 
-| 位置                             | 责任                                                              |
-| -------------------------------- | ----------------------------------------------------------------- |
-| `src/shared/contracts.ts`        | 跨进程数据、CoreApi、构建与检测结果类型                           |
-| `extensions/types.ts`            | 纯配置 BoardAdapter：设备事实、默认值与校验                       |
-| `extensions/runtime.ts`          | RuntimeHost、PlatformRuntime 与工厂 SDK                           |
-| `extensions/boards/<platform>/`  | 平台 adapter/runtime/toolchain/programmer/layout/driver，按需拆分 |
-| `extensions/registry.ts`         | 板卡配置和元数据的可信静态注册                                    |
-| `extensions/runtime-registry.ts` | 具体平台 runtime 工厂的可信静态注册                               |
-| `extensions/drivers/`            | 驱动类型与注册，厂商事实来自平台目录                              |
-| `src/core/`                      | 通用锁、工程路径、配置、进程宿主、哈希、缓存、串口                |
-| `src/renderer/`                  | 编辑器、设备能力显示、菜单、首选项、国际化                        |
-| `src/automation/`                | 认证传输、schema 路由、客户端与 MCP                               |
+| 位置                                  | 责任                                                              |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| `src/shared/contracts.ts`             | 跨进程数据、CoreApi、构建与检测结果类型                           |
+| `extensions/types.ts`                 | 纯配置 BoardAdapter：设备事实、默认值与校验                       |
+| `extensions/runtime.ts`               | RuntimeHost、PlatformRuntime 与工厂 SDK                           |
+| `extensions/boards/<platform>/`       | 平台 adapter/runtime/toolchain/programmer/layout/driver，按需拆分 |
+| `extensions/registry.ts`              | 板卡配置和元数据的可信静态注册                                    |
+| `extensions/runtime-registry.ts`      | 具体平台 runtime 工厂的可信静态注册                               |
+| `extensions/plugins.ts`               | API v2 原生插件的 SDK 和模块契约                                  |
+| `src/core/runtime-plugins.ts`         | 动态插件声明、包授权、编译及设备／调试路由                        |
+| `src/shared/runtime-views.ts`         | 声明式视图注册，供窗口与底部面板使用                              |
+| `src/core/desktop-lifecycle.ts`       | 退出保存事务、托盘偏好与窗口关闭策略                              |
+| `src/renderer/workspace/attention.ts` | 浏览器／桌面共用注意力来源注册                                    |
+| `extensions/drivers/`                 | 驱动类型与注册，厂商事实来自平台目录                              |
+| `src/core/`                           | 通用锁、工程路径、配置、进程宿主、哈希、缓存、串口                |
+| `src/renderer/`                       | 编辑器、设备能力显示、菜单、首选项、国际化                        |
+| `src/automation/`                     | 认证传输、schema 路由、客户端与 MCP                               |
 
 平台 runtime 不导入 core 或另一个平台实现；类型来自 shared，宿主契约来自 `extensions/runtime.ts`。平台内部使用相对导入，复制完整目录即可保留内部依赖。纯 adapter 定义配置，有状态的工具与设备操作由 runtime 组织。
 
@@ -31,7 +36,7 @@ flowchart LR
     Routes --> Core
     Core --> Registry[runtime-registry]
     Registry --> S3[Esp32_S3_CAM 平台包]
-    Registry --> STM32[stm32 平台包]
+    Registry --> STM32[STM32F103C8T6 平台包]
     S3 --> Host[RuntimeHost SDK]
     STM32 --> Host
     Host --> OS[工程路径 / 进程 / 串口 / 事件]
@@ -52,7 +57,7 @@ PlatformRuntime 包含 `status/install/discover/probe/build/flash/invalidate`；
 
 ## 复制与注册
 
-具体平台 manifest 声明 `entry`、`runtime`、`apiVersion` 和 `runtimeApiVersion`，当前运行时契约为 1。复制前必须匹配目标宿主的 SDK 与 shared 数据契约；版本字段不代表自动兼容协商。
+内置平台 manifest 声明 `entry`、`runtime`、`apiVersion` 和 `runtimeApiVersion`，静态 SDK 契约保留版本 1。内部开发分支另提供版本 2 的动态运行时插件契约，见[运行时插件指南](RUNTIME-PLUGINS.md)。
 
 1. 复制完整平台目录，包含工具链、协议、布局、驱动事实和说明。
 2. 在 `extensions/registry.ts` 显式注册 adapter。
@@ -62,7 +67,7 @@ PlatformRuntime 包含 `status/install/discover/probe/build/flash/invalidate`；
 
 S3 与 STM32 已做单目录复制后的隔离打包检查，不依赖 core 或彼此目录。检查证明源码依赖边界，不能替代工具环境、接线、链接地址和硬件烧录验证。
 
-所有平台随应用静态编译。当前不扫描工程文件夹并执行任意 JavaScript，没有目录热安装、热执行或第三方插件沙箱。修改 runtime 后需重建并重启主进程。
+内置平台随应用静态编译。API v2 插件从宿主插件目录发现声明，经过包指纹对应的用户授权后加载原生业务模块；插件变更需要重启并重新检查授权。原生模块在宿主进程中执行，HTML 视图则使用独立文档、受限消息桥和隔离 iframe。工程目录中的任意脚本不会因此自动加载。
 
 ## 构建、缓存与能力
 
@@ -74,7 +79,9 @@ STM32 源码构建仍需要匹配芯片的启动文件、链接脚本、架构�
 
 ## 前端、驱动与协议
 
-renderer 不导入 Node 或直接启动编译器，preload 只公开能力白名单。项目选择、原生日志另存为和 Windows 驱动安装属于桌面能力；网页端只报告“已发起下载”。首选项按常规、工具链和驱动定位，语言与驱动操作无需工程。
+renderer 不导入 Node 或直接启动编译器，preload 只公开能力白名单。桌面通过原生对话框选择工程和保存文件，Web 通过目标机器文件选择器与下载响应完成对应操作；Windows 驱动安装在宿主上处理提权。首选项按常规、工具链和驱动定位，语言与驱动操作无需工程。
+
+终端进程由 `HostTerminal` 统一持有，前端 xterm 按需加载并通过会话／序号游标读取原始 ANSI 增量。Windows 使用 ConPTY，其他宿主使用系统 PTY；界面销毁不结束 Shell，显式关闭终端或退出宿主才释放进程。协作、原生窗口注意力与退出控制的边界见[交互更新](internal/workbench-interaction.md)。
 
 ST-Link 的 INF、USB ID 和归档描述位于 STM32 平台 driver.ts，通用执行器完成 PnP 查询、解压与显式提权安装。驱动可用不等于命令行工具已安装，调试器也不等于 COM 串口。
 

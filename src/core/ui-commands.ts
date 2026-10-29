@@ -21,8 +21,17 @@ export const uiCommandSchema = z
       'language',
       'syncDrafts',
       'clearLogs',
+      'runtimeView',
     ]),
     target: z.string().min(1).max(128).optional(),
+    pluginId: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/)
+      .optional(),
+    viewId: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/)
+      .optional(),
     path: z.string().min(1).max(1024).optional(),
     view: z.enum(['code', 'layout', 'ai']).optional(),
     tab: z.enum(['output', 'serial', 'problems', 'warnings', 'terminal']).optional(),
@@ -30,7 +39,11 @@ export const uiCommandSchema = z
     language: z.enum(['zh-CN', 'en']).optional(),
     command: z.enum(['undo', 'redo', 'find', 'format', 'gotoLine', 'selectAll']).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((command, context) => {
+    if (command.action === 'runtimeView' && (!command.pluginId || !command.viewId))
+      context.addIssue({ code: 'custom', message: 'runtime view identifiers required' });
+  });
 export const uiStateSchema = z
   .object({
     clientId: z.string().min(1).max(128),

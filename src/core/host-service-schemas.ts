@@ -2,6 +2,7 @@ import * as z from 'zod';
 import { gitParameterSchemas } from './git-schemas';
 import { toolVersionSchemas } from './tool-version-schemas';
 import { configSchema } from './config';
+import { RUNTIME_VIEW_KIND_PATTERN } from '../shared/plugins';
 const empty = z.object({}).strict();
 export const hostParameterSchemas = {
   'runtime.plugins': empty,
@@ -30,7 +31,15 @@ export const hostParameterSchemas = {
       permanent: z.boolean(),
     })
     .strict(),
-  'runtime.view': z.object({ id: z.string().min(1).max(80), kind: z.enum(['debugger', 'device']) }).strict(),
+  'runtime.view': z
+    .object({ id: z.string().min(1).max(80), kind: z.string().regex(RUNTIME_VIEW_KIND_PATTERN) })
+    .strict(),
+  'runtime.view.info': z
+    .object({
+      id: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+      viewId: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+    })
+    .strict(),
   'runtime.debug': z
     .object({
       id: z.string().min(1).max(80),
@@ -48,9 +57,36 @@ export const hostParameterSchemas = {
   'project.package.export': z
     .object({ confirmExternal: z.literal(true).optional(), allowIncomplete: z.literal(true).optional() })
     .strict(),
-  'terminal.state': empty,
+  'terminal.state': z
+    .object({ sessionId: z.string().max(128).optional(), after: z.number().int().nonnegative().optional() })
+    .strict(),
+  'terminal.open': z
+    .object({
+      cols: z.number().int().min(20).max(500).optional(),
+      rows: z.number().int().min(5).max(300).optional(),
+      confirm: z.literal(true),
+    })
+    .strict(),
   'terminal.run': z
     .object({ command: z.string().trim().min(1).max(16384), confirm: z.literal(true) })
     .strict(),
   'terminal.stop': empty,
+  'terminal.write': z
+    .object({
+      data: z
+        .string()
+        .max(32768)
+        .refine((value) => !value.includes('\0')),
+      sessionId: z.string().max(128).optional(),
+      confirm: z.literal(true),
+    })
+    .strict(),
+  'terminal.resize': z
+    .object({
+      cols: z.number().int().min(20).max(500),
+      rows: z.number().int().min(5).max(300),
+      sessionId: z.string().max(128).optional(),
+    })
+    .strict(),
+  'terminal.close': z.object({ confirm: z.literal(true) }).strict(),
 } as const;

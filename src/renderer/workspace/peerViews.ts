@@ -7,6 +7,7 @@ export interface FilePeerView extends CollaborationPeer {
 export function peersForFile(peers: readonly CollaborationPeer[], path: string): FilePeerView[] {
   const users = new Map<string, FilePeerView>();
   for (const peer of peers) {
+    if (peer.attention === 'inactive') continue;
     if (peer.path !== path && !peer.openPaths?.includes(path)) continue;
     const candidate = { ...peer, viewing: peer.path === path, editing: peer.path === path && peer.editing };
     const previous = users.get(peer.userId);
@@ -27,6 +28,7 @@ export function peersForTool(
 ): FilePeerView[] {
   const users = new Map<string, FilePeerView>();
   for (const peer of peers) {
+    if (peer.attention === 'inactive') continue;
     if (peer.activeTool !== tool && !peer.openTools?.includes(tool)) continue;
     const candidate = { ...peer, viewing: peer.activeTool === tool, editing: false };
     const previous = users.get(peer.userId);

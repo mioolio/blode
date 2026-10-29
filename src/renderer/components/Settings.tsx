@@ -24,6 +24,8 @@ import { useI18n, type Locale } from '../i18n';
 import { InstallationOutput } from './InstallationOutput';
 import { AiCompletionSettings } from './AiCompletionSettings';
 import { ToolVersionSettings } from './ToolVersionSettings';
+import { ContextHelp } from './ContextHelp';
+import type { DesktopLifecycleState } from '../../shared/desktop-lifecycle';
 import './preferences.css';
 
 export type PreferencesSection = 'general' | 'toolchain' | 'drivers' | 'ai' | 'status' | 'installation';
@@ -71,6 +73,44 @@ export function Settings({
   initializing = false,
 }: Props) {
   const { t, locale, setLocale } = useI18n();
+  const [desktop, setDesktop] = useState<DesktopLifecycleState>();
+  const [desktopPending, setDesktopPending] = useState(false);
+  const [desktopError, setDesktopError] = useState('');
+  const desktopRevision = useRef(0);
+  useEffect(() => {
+    if (isWeb || typeof window.blode.desktopLifecycleState !== 'function') return;
+    let cancelled = false;
+    const revision = desktopRevision.current;
+    void window.blode
+      .desktopLifecycleState()
+      .then(async (state) => {
+        if (cancelled || revision !== desktopRevision.current) return;
+        const next =
+          state.locale === locale
+            ? state
+            : await window.blode.desktopLifecycleConfigure({ closeToTray: state.closeToTray, locale });
+        if (!cancelled && revision === desktopRevision.current) setDesktop(next);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setDesktopError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isWeb, locale]);
+  const configureTray = async (closeToTray: boolean) => {
+    if (desktopPending) return;
+    desktopRevision.current++;
+    setDesktopPending(true);
+    setDesktopError('');
+    try {
+      setDesktop(await window.blode.desktopLifecycleConfigure({ closeToTray, locale }));
+    } catch (error) {
+      setDesktopError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDesktopPending(false);
+    }
+  };
   const [active, setActive] = useState<PreferencesSection>(target?.section ?? 'general');
   const [visited, setVisited] = useState<ReadonlySet<PreferencesSection>>(
     () => new Set([target?.section ?? 'general']),
@@ -150,7 +190,6 @@ export function Settings({
         placeholder={'C:\\tools\\armclang\\bin'}
         onChange={(event) => tool({ armCompilerDirectory: event.target.value })}
       />
-      <span className="subtle-note">{t('settings.armCompilerNote')}</span>
     </label>
   );
   const driverState = (state: DriverStatus['state']) => {
@@ -189,15 +228,14 @@ export function Settings({
         ))}
       </nav>
       <main className="preferences-detail">
-        <div className="settings-toolbar">
-          <span className="workspace-note">{t('settings.subtitle')}</span>
-          {workspaceOpen && (
+        {workspaceOpen && (
+          <div className="settings-toolbar">
             <button className="primary" onClick={onSave} disabled={busy}>
               <Save size={13} strokeWidth={1.9} aria-hidden="true" />
               {t('action.apply')}
             </button>
-          )}
-        </div>
+          </div>
+        )}
         <div ref={installationPanel} hidden={active !== 'installation'}>
           <InstallationOutput installation={installation} pending={installPending} />
         </div>
@@ -225,7 +263,22 @@ export function Settings({
               </ModernSelect>
             </label>
           </div>
-          {!workspaceOpen && <p className="subtle-note">{t('settings.openProjectFirst')}</p>}
+          {!isWeb && desktop && (
+            <label className="preferences-tray-option">
+              <input
+                type="checkbox"
+                checked={desktop.closeToTray}
+                disabled={desktopPending}
+                onChange={(event) => void configureTray(event.target.checked)}
+              />
+              {t('settings.closeToTray')}
+            </label>
+          )}
+          {(desktopError || desktop?.error) && (
+            <p className="preferences-option-error" role="alert">
+              {t(desktopError || desktop!.error!)}
+            </p>
+          )}
         </section>
         <div hidden={active !== 'ai'}>
           {(active === 'ai' || visited.has('ai')) && <AiCompletionSettings />}
@@ -236,7 +289,21 @@ export function Settings({
           hidden={active !== 'toolchain'}
           tabIndex={-1}
         >
-          <h3>{t('settings.toolchain')}</h3>
+          <div className="settings-card-head">
+            <h3>{t('settings.toolchain')}</h3>
+            <ContextHelp title={t('settings.installHelp')}>
+              <p>
+                {t(
+                  isAutomatic
+                    ? 'settings.autoToolchainNote'
+                    : usesStlink
+                      ? 'settings.stlinkNote'
+                      : 'settings.note',
+                )}
+              </p>
+              <p>{t('settings.armCompilerNote')}</p>
+            </ContextHelp>
+          </div>
           {(active === 'toolchain' || visited.has('toolchain')) && (
             <ToolVersionSettings
               config={config}
@@ -262,15 +329,6 @@ export function Settings({
                 </button>
               </div>
             )}
-            <p className="subtle-note">
-              {t(
-                isAutomatic
-                  ? 'settings.autoToolchainNote'
-                  : usesStlink
-                    ? 'settings.stlinkNote'
-                    : 'settings.note',
-              )}
-            </p>
             {isAutomatic ? (
               <>
                 {serialToolPaths}
@@ -328,12 +386,17 @@ export function Settings({
         >
           <div className="settings-card-head">
             <h3>{t('settings.drivers')}</h3>
+            <ContextHelp title={t('settings.installHelp')}>
+              <p>{t('settings.driverNote')}</p>
+              <p>{t('driver.uacHint')}</p>
+              <p>{t('driver.unboundHint')}</p>
+              {isWeb && <p>{t('driver.desktopOnly')}</p>}
+            </ContextHelp>
             <button className="text-button" onClick={onRefreshDrivers} disabled={busy || initializing}>
               <RefreshCw size={11} strokeWidth={1.9} aria-hidden="true" />
               {t('action.refresh')}
             </button>
           </div>
-          <p className="subtle-note">{t('settings.driverNote')}</p>
           {initializing && (
             <p className="subtle-note" role="status">
               {t('device.connectionChecking')}
@@ -384,18 +447,13 @@ export function Settings({
                       : t('driver.install')}
                   </button>
                 </div>
-                {driver.state === 'device-unbound' && (
-                  <p className="subtle-note">{t('driver.unboundHint')}</p>
-                )}
                 {driver.supported && !driver.available && (
                   <p className="subtle-note">{t('driver.packageMissing')}</p>
                 )}
-                {!driver.supported && <p className="subtle-note">{t('driver.windowsOnly')}</p>}
                 {isWeb && <p className="subtle-note">{t('driver.desktopOnly')}</p>}
               </div>
             );
           })}
-          <p className="subtle-note">{t('driver.uacHint')}</p>
         </section>
         <section className="settings-card" hidden={active !== 'status'}>
           <h3>{t('settings.status')}</h3>

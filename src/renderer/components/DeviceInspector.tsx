@@ -102,7 +102,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
     </label>
   );
   return (
-    <aside className="device-panel">
+    <aside className="device-panel" tabIndex={0} aria-label={t('device.title')}>
       <div className="panel-heading">
         <span className="panel-title">
           <CircuitBoard size={14} strokeWidth={1.8} aria-hidden="true" />
@@ -409,12 +409,8 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
           )}
         </div>
       </section>
-      {workspaceOpen ? (
-        !hidden.has('layout') && (
-          <MemoryUsage state={state} config={config} drafts={drafts} stale={stale || dirty || configDirty} />
-        )
-      ) : (
-        <p className="subtle-note device-empty">{t('welcome.noWorkspace')}</p>
+      {workspaceOpen && !hidden.has('layout') && (
+        <MemoryUsage state={state} config={config} drafts={drafts} stale={stale || dirty || configDirty} />
       )}
     </aside>
   );

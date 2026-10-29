@@ -88,7 +88,6 @@ export function ToolVersionSettings({
           {t('action.refresh')}
         </button>
       </div>
-      <p className="subtle-note">{t('settings.versions.note')}</p>
       {!api.toolVersionsState ? (
         <p className="subtle-note">{t('settings.versions.restart')}</p>
       ) : (
@@ -166,7 +165,6 @@ export function ToolVersionSettings({
                           {t('settings.versions.use')}
                         </button>
                       </div>
-                      <p className="subtle-note">{t('settings.versions.applyNote')}</p>
                     </>
                   )}
                 </>
@@ -239,7 +237,6 @@ export function ToolVersionSettings({
                       {t('settings.versions.use')}
                     </button>
                   </div>
-                  <p className="subtle-note">{t('settings.versions.applyNote')}</p>
                 </>
               )}
             </div>

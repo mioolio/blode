@@ -33,6 +33,7 @@ const readOnly = new Set<RouteName>([
   'host.browse',
   'project.package.preview',
   'terminal.state',
+  'runtime.view.info',
 ]);
 const destructive = new Set<RouteName>([
   'flash.run',
@@ -49,6 +50,8 @@ const destructive = new Set<RouteName>([
   'collaboration.undo',
   'git.action',
   'terminal.run',
+  'terminal.write',
+  'terminal.close',
 ]);
 
 /** MCP is only a transport adapter: it calls the same validated pipe routes as any AI. */
@@ -78,6 +81,7 @@ export function createMcpServer(client = new PipeClient(), language = process.en
             'tools.installVersion',
             'git.action',
             'terminal.run',
+            'terminal.write',
           ].includes(method),
         },
       },

@@ -46,6 +46,8 @@ export const collaborationSchemas = {
         .optional(),
       activeTool: z.enum(['layout', 'ai']).optional(),
       clientKind: z.enum(['desktop', 'web']).optional(),
+      attention: z.enum(['active', 'inactive']).optional(),
+      attentionEpoch: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     })
     .strict()
     .refine((input) => input.endLine >= input.startLine),

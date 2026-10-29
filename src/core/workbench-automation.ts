@@ -55,6 +55,9 @@ export function createWorkbenchAutomation(options: Options) {
           'window.action',
           'tools.installVersion',
           'terminal.run',
+          'terminal.open',
+          'terminal.write',
+          'terminal.close',
           'git.action',
           'runtime.trust',
         ].includes(method),
@@ -71,6 +74,7 @@ export function createWorkbenchAutomation(options: Options) {
         'console',
         'consolePanel',
         'devicePanel',
+        'runtimeView',
         'editor',
         'splitEditor',
         'language',
@@ -138,6 +142,11 @@ export function createWorkbenchAutomation(options: Options) {
     'debugger.gdb.set': (p) => debug.selectGdb(absolute(p.path)),
     'ui.state': () => ui.state(),
     'ui.command': (p) => ui.command(p),
+    'runtime.view.open': async (p) => {
+      if (!options.hostServices) throw new Error('rpc.methodNotFound');
+      await options.hostServices.invoke('runtimePluginViewInfo', [p.id, p.viewId]);
+      return ui.command({ action: 'runtimeView', pluginId: p.id, viewId: p.viewId, target: p.target });
+    },
     'window.action': (p) => options.windowAction(p.action),
     'logs.latest': () => logs.snapshot(),
     'collaboration.state': () => collaboration.state(),

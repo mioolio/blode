@@ -1,4 +1,15 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  net,
+  powerMonitor,
+  protocol,
+  session,
+  shell,
+} from 'electron';
 import { appendFileSync, mkdirSync, promises as fs, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import * as z from 'zod';
@@ -23,6 +34,9 @@ import { RecentProjects } from './recent-projects';
 import { FirmwareStore, prepareBuildExport } from './firmware';
 import { HardwareDebugger } from './hardware-debugger';
 import { RuntimeDebugger } from './runtime-debugger';
+import { RuntimeWindows } from './runtime-windows';
+import { DesktopLifecycle } from './desktop-lifecycle';
+import { isRuntimeViewKind } from '../shared/plugins';
 import { createWebDebugger } from './web-debugger';
 import { AiAssistance } from './ai-assistance';
 import { CollaborationService } from './collaboration';
@@ -118,6 +132,10 @@ let hardwareDebugger: HardwareDebugger | null = null;
 let collaboration: CollaborationService | undefined;
 let uiCommands: UiCommands | undefined;
 let hostServices: HostServices | undefined;
+let runtimeWindows: RuntimeWindows | undefined;
+let desktopLifecycle: DesktopLifecycle | undefined;
+let rendererMounted = false;
+const terminalFocus = new Set<number>();
 const allowReleaseLink = ({ url }: { url: string }) => {
   try {
     const link = new URL(url);
@@ -163,6 +181,7 @@ app.on('child-process-gone', (_event, details) => {
 });
 app.on('second-instance', () => {
   if (window?.isMinimized()) window.restore();
+  window?.show();
   window?.focus();
 });
 
@@ -190,6 +209,28 @@ async function bootstrap(): Promise<void> {
   // Begin rendering while local services initialize. RPC calls wait for the same
   // validated route table, so an early frame cannot observe a half-created core.
   let nativePresence: NativePresenceOwner | undefined;
+  let screenLocked = false;
+  let suspended = false;
+  const windowAttention = async () => {
+    const visible =
+      !!window &&
+      !window.isDestroyed() &&
+      window.isVisible() &&
+      !window.isMinimized() &&
+      !screenLocked &&
+      !suspended;
+    const focused = visible && !!window?.isFocused();
+    const epoch = await nativePresence?.setAttention(focused);
+    return { visible, focused, epoch };
+  };
+  const publishAttention = () => {
+    void windowAttention()
+      .then((value) => {
+        if (window && !window.isDestroyed() && !window.webContents.isDestroyed())
+          window.webContents.send('blode:window-attention', value);
+      })
+      .catch((error) => logBoot(`window-attention ${String(error)}`));
+  };
   type RendererRoutes = Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }>;
   let resolveRendererRoutes!: (routes: RendererRoutes | null) => void;
   const rendererRoutes = new Promise<RendererRoutes | null>((resolve) => {
@@ -216,6 +257,34 @@ async function bootstrap(): Promise<void> {
     },
   });
   window.removeMenu();
+  for (const name of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore'] as const)
+    window.on(name as 'focus', publishAttention);
+  const lock = () => {
+    screenLocked = true;
+    publishAttention();
+  };
+  const unlock = () => {
+    screenLocked = false;
+    publishAttention();
+  };
+  const suspend = () => {
+    suspended = true;
+    publishAttention();
+  };
+  const resume = () => {
+    suspended = false;
+    publishAttention();
+  };
+  powerMonitor.on('lock-screen', lock);
+  powerMonitor.on('unlock-screen', unlock);
+  powerMonitor.on('suspend', suspend);
+  powerMonitor.on('resume', resume);
+  window.once('closed', () => {
+    powerMonitor.removeListener('lock-screen', lock);
+    powerMonitor.removeListener('unlock-screen', unlock);
+    powerMonitor.removeListener('suspend', suspend);
+    powerMonitor.removeListener('resume', resume);
+  });
   if (process.platform === 'win32') {
     // Windows broadcasts topology changes to top-level windows. No polling of USB/SWD is needed.
     window.hookWindowMessage(0x0219, (wParam) => {
@@ -226,13 +295,15 @@ async function bootstrap(): Promise<void> {
   }
   const onRendererReady = (event: Electron.IpcMainEvent) => {
     if (
-      windowShown ||
       !window ||
       window.isDestroyed() ||
       event.sender !== window.webContents ||
       event.senderFrame !== event.sender.mainFrame
     )
       return;
+    rendererMounted = true;
+    publishAttention();
+    if (windowShown) return;
     windowShown = true;
     window.show();
     logBoot('window ready interface=mounted');
@@ -260,6 +331,8 @@ async function bootstrap(): Promise<void> {
     logBoot(`did-fail-load ${code} ${description} ${url}`);
   });
   window.webContents.on('render-process-gone', (_event, details) => {
+    rendererMounted = false;
+    terminalFocus.clear();
     void nativePresence?.clear();
     logBoot(`render-process-gone ${details.reason} exit=${details.exitCode}`);
     if (closing || !windowShown || window?.isDestroyed()) return;
@@ -269,17 +342,25 @@ async function bootstrap(): Promise<void> {
       window?.webContents.reloadIgnoringCache();
     } else app.quit();
   });
-  const disposeDebugControls = installDebugControls(window, {
-    ...applicationConfig.debug,
-    enabled: !app.isPackaged && applicationConfig.debug.enabled,
-  });
+  const disposeDebugControls = installDebugControls(
+    window,
+    {
+      ...applicationConfig.debug,
+      enabled: !app.isPackaged && applicationConfig.debug.enabled,
+    },
+    () => closing || terminalFocus.has(window!.webContents.id) || !!desktopLifecycle?.state().pendingClose,
+  );
   window.on('closed', disposeDebugControls);
   const syncWindowBackground = () => window?.setBackgroundColor(windowBackground());
   nativeTheme.on('updated', syncWindowBackground);
   window.on('closed', () => nativeTheme.off('updated', syncWindowBackground));
   window.webContents.setWindowOpenHandler(allowReleaseLink);
   window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) void nativePresence?.clear();
+    if (isMainFrame && !isInPlace) {
+      rendererMounted = false;
+      terminalFocus.clear();
+      void nativePresence?.clear();
+    }
   });
   window.webContents.once('destroyed', () => {
     void nativePresence?.clear();
@@ -291,8 +372,42 @@ async function bootstrap(): Promise<void> {
 
   ipcMain.handle(IPC_CHANNEL, async (event, method: unknown, args: unknown) => {
     const secondary = event.sender === debuggerWindow?.webContents;
-    if ((event.sender !== window?.webContents && !secondary) || event.senderFrame !== event.sender.mainFrame)
+    const runtimeOwner = runtimeWindows?.owner(event.sender);
+    if (
+      (event.sender !== window?.webContents && !secondary && !runtimeOwner) ||
+      event.senderFrame !== event.sender.mainFrame
+    )
       throw new Error('error.unauthorized');
+    if (
+      runtimeOwner &&
+      method !== 'windowAction' &&
+      method !== 'runtimePluginsState' &&
+      !(
+        typeof method === 'string' &&
+        method.startsWith('runtimePlugin') &&
+        Array.isArray(args) &&
+        (args[0] === runtimeOwner.pluginId ||
+          (method === 'runtimePluginTrust' && args[0]?.id === runtimeOwner.pluginId))
+      )
+    )
+      throw new Error('error.unauthorized');
+    if (method === 'terminalFocus') {
+      if (
+        event.sender !== window?.webContents ||
+        !Array.isArray(args) ||
+        args.length !== 1 ||
+        typeof args[0] !== 'boolean'
+      )
+        throw new Error('error.unauthorized');
+      if (args[0]) terminalFocus.add(event.sender.id);
+      else terminalFocus.delete(event.sender.id);
+      return;
+    }
+    if (method === 'windowAttention') {
+      if (event.sender !== window?.webContents || !Array.isArray(args) || args.length)
+        throw new Error('error.unauthorized');
+      return windowAttention();
+    }
     if (
       secondary &&
       method !== 'getState' &&
@@ -307,7 +422,7 @@ async function bootstrap(): Promise<void> {
     if (method === 'windowAction') {
       const parsed = windowActionArgs.safeParse(args);
       if (!parsed.success) throw new Error('error.invalidArguments');
-      controlWindow(secondary ? debuggerWindow : window, parsed.data[0]);
+      controlWindow(runtimeOwner?.window ?? (secondary ? debuggerWindow : window), parsed.data[0]);
       return;
     }
     const routes = await rendererRoutes;
@@ -338,6 +453,12 @@ async function bootstrap(): Promise<void> {
     (error: unknown) => ({ ok: false as const, error }),
   );
   const dataRoot = process.env.BLODE_DATA_ROOT || app.getPath('userData');
+  runtimeWindows = new RuntimeWindows({
+    preload: path.join(__dirname, 'preload.cjs'),
+    rendererFile: path.join(__dirname, 'renderer', 'index.html'),
+    rendererUrl: developmentUrl,
+    background: windowBackground,
+  });
   logBoot(`dataRoot=${dataRoot}`);
   const recentProjectFile = path.join(dataRoot, 'recent-project.json');
   const recentHistory = new RecentProjects(recentProjectFile);
@@ -405,6 +526,14 @@ async function bootstrap(): Promise<void> {
     .catch(() => false);
   logBoot(`bundledTools=${bundledToolsReady} ${bundledTools}`);
   core = await createCore({
+    openRuntimeView: async (pluginId, view) => {
+      if (closing) throw new Error('error.operationCancelled');
+      if (view.location === 'window') await runtimeWindows!.open(pluginId, view);
+      else {
+        if (!uiCommands) throw new Error('error.uiUnavailable');
+        await uiCommands.command({ action: 'runtimeView', pluginId, viewId: view.id });
+      }
+    },
     pluginRoots: [path.join(app.getAppPath(), 'extensions', 'boards'), path.join(dataRoot, 'plugins')],
     projectRoot,
     dataRoot,
@@ -430,15 +559,9 @@ async function bootstrap(): Promise<void> {
     try {
       const url = new URL(request.url);
       const [id, kind, ...rest] = url.pathname.slice(1).split('/').map(decodeURIComponent);
-      if (
-        url.hostname !== 'view' ||
-        rest.length ||
-        !['debugger', 'device'].includes(kind) ||
-        !core ||
-        closing
-      )
+      if (url.hostname !== 'view' || rest.length || !isRuntimeViewKind(kind) || !core || closing)
         return new Response('Not found', { status: 404 });
-      const html = await core.runtimePlugins.view(id, kind as 'debugger' | 'device');
+      const html = await core.runtimePlugins.view(id, kind);
       if (!html) return new Response('Not found', { status: 404 });
       return new Response(renderRuntimeView(html), {
         headers: {
@@ -469,11 +592,29 @@ async function bootstrap(): Promise<void> {
   });
   const assistance = createAssistanceRoutes(ai, collaboration, uiCommands, true);
   nativePresence = new NativePresenceOwner(collaboration);
+  publishAttention();
+  desktopLifecycle = new DesktopLifecycle({
+    window,
+    dataRoot,
+    rendererCommit: true,
+    rendererReady: () => rendererMounted,
+    sharedDirty: async () => (await collaboration!.state()).documents.some((document) => document.dirty),
+    prepareShutdown: async (decision) => {
+      await collaboration!.prepareShutdown(decision);
+    },
+    cancelShutdown: () => collaboration!.cancelShutdown(),
+    exit: shutdownApplication,
+  });
+  await desktopLifecycle.initialize();
   assistance.routes.collaborationPresence.run = (input) => nativePresence!.presence(input);
   assistance.routes.collaborationLeave.run = (input) => nativePresence!.leave(input);
   const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
   const protection = protectSharedWorkspace(core, collaboration);
   hostServices = createHostServices({
+    openRuntimeView: async (id, view) => {
+      await runtimeWindows!.open(id, view);
+      return { destination: 'window' };
+    },
     runtimeViewDocument: (id, kind) => `blode-runtime-ui://view/${encodeURIComponent(id)}/${kind}`,
     runtimeDebugger: () => (hardwareDebugger instanceof RuntimeDebugger ? hardwareDebugger : undefined),
     core,
@@ -539,7 +680,7 @@ async function bootstrap(): Promise<void> {
       return;
     }
     debuggerWindow = new BrowserWindow({
-      title: 'Blode Studio · 硬件仿真',
+      title: 'Blode Studio · 硬件调试',
       frame: false,
       width: 1280,
       height: 850,
@@ -623,6 +764,25 @@ async function bootstrap(): Promise<void> {
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
     ...assistance.routes,
     ...hostServices.routes,
+    desktopLifecycleState: { args: noArgs, run: () => desktopLifecycle!.state() },
+    desktopLifecycleConfigure: {
+      args: z.tuple([
+        z.object({ closeToTray: z.boolean(), locale: z.enum(['zh-CN', 'en']).optional() }).strict(),
+      ]),
+      run: (request) => desktopLifecycle!.configure(request),
+    },
+    desktopCloseReply: {
+      args: z.tuple([
+        z
+          .object({
+            id: z.string().uuid(),
+            decision: z.enum(['clean', 'saved', 'discard', 'cancel', 'committed', 'commitFailed']),
+            error: z.string().max(512).optional(),
+          })
+          .strict(),
+      ]),
+      run: (request) => desktopLifecycle!.reply(request),
+    },
     listRecentProjects: { args: noArgs, run: () => recentHistory.list() },
     openRecentProject: {
       args: z.tuple([z.string().min(1).max(4096)]),
@@ -907,10 +1067,11 @@ if (ownLock)
       app.quit();
     });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', (event) => {
+async function shutdownApplication() {
   if (closing) return;
-  event.preventDefault();
   closing = true;
+  desktopLifecycle?.dispose();
+  runtimeWindows?.close();
   collaboration?.dispose();
   uiCommands?.dispose();
   const deadline = setTimeout(() => {
@@ -918,14 +1079,14 @@ app.on('before-quit', (event) => {
     app.exit(0);
   }, 5000);
   deadline.unref();
-  void Promise.allSettled([
-    pipe?.close(),
-    web?.close(),
-    core?.shutdown(),
-    hardwareDebugger?.disconnect(),
-    hostServices?.close(),
-  ]).then(() => {
-    clearTimeout(deadline);
-    app.quit();
-  });
+  await hardwareDebugger?.disconnect().catch((error) => logBoot(`debugger shutdown ${String(error)}`));
+  await Promise.allSettled([pipe?.close(), web?.close(), core?.shutdown(), hostServices?.close()]);
+  clearTimeout(deadline);
+  app.quit();
+}
+app.on('before-quit', (event) => {
+  if (closing) return;
+  event.preventDefault();
+  const quit = desktopLifecycle ? desktopLifecycle.requestQuit() : shutdownApplication();
+  void quit.catch((error) => logBoot(`quit cancelled ${String(error)}`));
 });

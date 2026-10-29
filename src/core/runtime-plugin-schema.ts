@@ -116,6 +116,21 @@ export const runtimePluginManifestSchema = z
       .strict(),
     ui: z
       .object({
+        views: z
+          .array(
+            z
+              .object({
+                id,
+                label: z.string().min(1).max(80),
+                file: relative.refine((value) => /\.html?$/.test(value)),
+                location: z.enum(['window', 'panel']),
+                width: z.number().int().min(320).max(3840).optional(),
+                height: z.number().int().min(240).max(2160).optional(),
+              })
+              .strict(),
+          )
+          .max(32)
+          .optional(),
         fields: z.array(fieldSchema).max(64),
         actions: z
           .array(
@@ -130,6 +145,8 @@ export const runtimePluginManifestSchema = z
   })
   .strict()
   .superRefine((manifest, context) => {
+    if (new Set(manifest.ui.views?.map((view) => view.id)).size !== (manifest.ui.views?.length ?? 0))
+      context.addIssue({ code: 'custom', message: 'duplicate view ids' });
     if (manifest.defaultConfig.boardId !== manifest.id)
       context.addIssue({ code: 'custom', message: 'boardId must match id' });
     if (manifest.compiler.mode === 'host' && !manifest.compiler.baseRuntime)

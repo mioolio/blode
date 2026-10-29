@@ -172,6 +172,42 @@ USB 或物理设备用 `DetectionCandidate.deviceId` 和 `config.runtime.deviceI
 
 `ui.fields` 支持 `text`、`number`、`boolean`、`select`，用于目标设备面板中的动态设置。选择字段需要不重复的选项，数值边界应与协议一致。`ui.hiddenCapabilities` 控制被隐藏的设备能力区域。
 
+### 独立窗口与底部功能区
+
+内部开发分支通过 `ui.views` 统一注册额外视图。每个 `id` 在插件内唯一，HTML 必须位于插件目录：
+
+```json
+{
+  "ui": {
+    "fields": [],
+    "views": [
+      {
+        "id": "logic",
+        "label": "逻辑分析",
+        "file": "views/logic.html",
+        "location": "window",
+        "width": 1100,
+        "height": 760
+      },
+      {
+        "id": "trace",
+        "label": "跟踪输出",
+        "file": "views/trace.html",
+        "location": "panel"
+      }
+    ]
+  }
+}
+```
+
+`location` 只接受 `window` 或 `panel`。每包最多 32 个视图，ID 为字母开头的字母、数字、下划线或连字符，最长 80 字符。宽度允许 320–3840、高度允许 240–2160，单位为像素。界面中的 **视图 → 扩展视图** 列出已发现的声明；打开时检查包授权。
+
+原生业务代码可调用 `await host.openView('logic')`，HTML 使用 `await window.blodeRuntime.openView('logic')`。两个入口都只允许打开所属包已经声明的视图。原生 SDK 请求由宿主递交到一个工作台；Web 窗口请求会显示打开按钮，用户点击后创建标签。Promise 完成表示请求已递交，不表示浏览器标签已经打开。
+
+桌面创建无边框独立窗口，同一插件／视图重复打开会恢复已有窗口，最多同时八个扩展窗口。Web 打开服务宿主的浏览器页面，仍通过受限票据加载包 HTML。`panel` 在底部组件注册自定义标签，随整个底部面板显示和隐藏。视图内容由 HTML 自行绘制；宿主进程、配置和调试调用通过既有消息桥。
+
+### HTML 消息桥
+
 用户禁用的能力保存在 `config.runtime.disabledCapabilities`；宿主相应操作会检查该配置，隐藏界面本身不构成权限限制。
 
 `ui.view` 和 `debugger.view` 指向包内 HTML。宿主以 `sandbox="allow-scripts"` 的不透明来源 iframe 加载**独立文档 URL**，不使用继承主页面脚本策略的 `srcdoc`。桌面端使用 `blode-runtime-ui:` 协议，Web 端通过认证接口申请有效期 15 秒、只可消费一次的随机视图票据；视图 URL 不携带宿主访问 token，取文档时再次核验插件授权。

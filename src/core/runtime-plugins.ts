@@ -14,6 +14,7 @@ import type {
   RuntimePluginManifest,
   RuntimePluginsState,
   RuntimePluginTrustRequest,
+  RuntimeViewContribution,
 } from '../shared/plugins';
 import { parseRuntimePluginManifest } from './runtime-plugin-schema';
 import { configSchema } from './config';
@@ -21,6 +22,7 @@ import { configSchema } from './config';
 interface Options {
   roots: string[];
   dataRoot: string;
+  openView?: (pluginId: string, view: RuntimeViewContribution) => Promise<void>;
 }
 interface PackageRecord {
   directory: string;
@@ -338,6 +340,7 @@ export class RuntimePlugins {
             await this.packageFile(record, manifest.compiler.defaultTool.executable);
           if (manifest.debugger.view) await this.packageFile(record, manifest.debugger.view);
           if (manifest.ui.view) await this.packageFile(record, manifest.ui.view);
+          for (const view of manifest.ui.views ?? []) await this.packageFile(record, view.file);
           await this.fingerprint(record, true);
           const config = structuredClone(manifest.defaultConfig);
           const defaults = Object.fromEntries(
@@ -517,6 +520,14 @@ export class RuntimePlugins {
       const host: PluginRuntimeHost = {
         ...this.host!,
         pluginRoot: record.directory,
+        openView: async (viewId) => {
+          if (!idSchema.safeParse(viewId).success) fail('error.runtimePluginCapability');
+          await this.view(record.manifest.id, `view:${viewId}`);
+          const declaration = record.manifest.ui.views?.find((view) => view.id === viewId);
+          if (!declaration) fail('error.runtimePluginCapability');
+          if (!this.options.openView) fail('error.uiUnavailable');
+          await this.options.openView(record.manifest.id, structuredClone(declaration));
+        },
         defaultTool,
         runDefaultTool: async (extra = []) => {
           if (!defaultTool) fail('error.runtimePluginCompiler');
@@ -775,10 +786,16 @@ export class RuntimePlugins {
     if (typeof handler !== 'function') fail('error.runtimePluginCapability');
     return handler.apply(runtime.device, args);
   }
-  async view(id: string, kind: 'debugger' | 'device'): Promise<string | null> {
+  async view(id: string, kind: import('../shared/plugins').RuntimeViewKind): Promise<string | null> {
     const record = this.record(id);
     await this.trusted(record);
-    const relative = kind === 'debugger' ? record.manifest.debugger.view : record.manifest.ui.view;
+    const relative =
+      kind === 'debugger'
+        ? record.manifest.debugger.view
+        : kind === 'device'
+          ? record.manifest.ui.view
+          : record.manifest.ui.views?.find((view) => `view:${view.id}` === kind)?.file;
+    if (kind.startsWith('view:') && !relative) fail('error.runtimePluginCapability');
     if (!relative) return null;
     const file = await this.packageFile(record, relative);
     const stat = await fs.stat(file);

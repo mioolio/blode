@@ -141,7 +141,12 @@ test('a delayed old renderer response cannot remove a newer lease created after 
   const old = owner.presence(f.native(1));
   await accepted.promise;
   await owner.clear();
-  await owner.presence({ ...f.native(3), openTools: ['ai'], activeTool: 'ai' });
+  await owner.presence({
+    ...f.native(3),
+    attentionEpoch: await owner.setAttention(true),
+    openTools: ['ai'],
+    activeTool: 'ai',
+  });
   release.resolve();
   await old;
   const peers = (await f.service.state()).peers;
@@ -149,4 +154,21 @@ test('a delayed old renderer response cannot remove a newer lease created after 
   assert.equal(peers[0].activeTool, 'ai');
   await owner.clear();
   assert.equal((await f.service.state()).peers.length, 0);
+});
+
+test('navigation rejects a queued former-renderer presence before fresh handshake restores its own tabs', async (t) => {
+  const f = fixture();
+  t.after(() => f.service.dispose());
+  const owner = new NativePresenceOwner(f.service);
+  await owner.presence(f.native(1));
+  await owner.clear();
+  await owner.presence(f.native(2));
+  assert.equal(
+    (await f.service.state()).peers.length,
+    0,
+    'an IPC queued by the former renderer owns no tabs',
+  );
+  const epoch = await owner.setAttention(true);
+  await owner.presence({ ...f.native(3), attentionEpoch: epoch });
+  assert.deepEqual((await f.service.state()).peers[0].openTools, ['layout']);
 });

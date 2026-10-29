@@ -13,7 +13,7 @@ const result = await build({
   platform: 'node',
   target: 'node24',
   format: 'cjs',
-  external: ['serialport'],
+  external: ['serialport', 'node-pty'],
   minify: true,
   keepNames: true,
   sourcemap: false,

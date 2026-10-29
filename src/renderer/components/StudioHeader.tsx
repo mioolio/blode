@@ -261,6 +261,7 @@ export function StudioHeader({ studio }: { studio: Studio }) {
       id: 'view',
       label: 'menu.view',
       items: [
+        { label: 'runtime.views', run: () => window.dispatchEvent(new CustomEvent('blode:runtime-views')) },
         { label: 'workspace.code', run: () => setView('code') },
         {
           label: 'workspace.layout',

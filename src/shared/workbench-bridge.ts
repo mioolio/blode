@@ -7,6 +7,7 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import { APP_CLOSE_REQUEST_CHANNEL, type DesktopLifecycleApi } from './desktop-lifecycle';
 import type { RuntimePluginsApi } from './plugins';
 import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from './contracts';
 
@@ -21,10 +22,17 @@ export function createWorkbenchBridge(
   HostWorkspaceApi &
   ProjectPackageApi &
   LanguageApi &
+  DesktopLifecycleApi &
   RuntimePluginsApi &
   TerminalApi {
   const invoke = call as <T>(method: string, args: unknown[]) => Promise<T>;
   return {
+    desktopLifecycleState: () => invoke('desktopLifecycleState', []),
+    desktopLifecycleConfigure: (request) => invoke('desktopLifecycleConfigure', [request]),
+    desktopCloseReply: (request) => invoke('desktopCloseReply', [request]),
+    onAppCloseRequest: (callback) => subscribe(APP_CLOSE_REQUEST_CHANNEL, callback),
+    runtimePluginViewInfo: (id, viewId) => invoke('runtimePluginViewInfo', [id, viewId]),
+    runtimePluginOpenView: (id, viewId) => invoke('runtimePluginOpenView', [id, viewId]),
     runtimePluginsState: () => invoke('runtimePluginsState', []),
     runtimePluginTrust: (input) => invoke('runtimePluginTrust', [input]),
     runtimePluginView: (id, kind) => invoke('runtimePluginView', [id, kind]),
@@ -46,7 +54,11 @@ export function createWorkbenchBridge(
     projectPackagePreview: () => invoke('projectPackagePreview', []),
     projectPackageExport: (input) => invoke('projectPackageExport', [input]),
     projectPackageSave: (id) => invoke('projectPackageSave', [id]),
-    terminalState: () => invoke('terminalState', []),
+    terminalState: (cursor) => invoke('terminalState', cursor ? [cursor] : []),
+    terminalOpen: (size) => invoke('terminalOpen', size ? [size] : []),
+    terminalWrite: (request) => invoke('terminalWrite', [request]),
+    terminalResize: (request) => invoke('terminalResize', [request]),
+    terminalClose: () => invoke('terminalClose', []),
     terminalRun: (input) => invoke('terminalRun', [input]),
     terminalStop: () => invoke('terminalStop', []),
     aiAssistanceState: () => invoke('aiAssistanceState', []),

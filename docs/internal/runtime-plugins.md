@@ -2,6 +2,21 @@
 
 Status: development preview based on 0.2.3.6. The display version is `0.2.3.6-internal`, with `developmentChannel: internal-runtime-plugins`; the base release/package versions remain `0.2.3.6`/`0.2.3-6`. This is not a stable release. The integration branch is `codex/runtime-plugins-internal`; `main` remains the stable source at `193cda2ea5b2705732755f25b8a621d860b52101`.
 
+## Workbench follow-up — 2026-10-30
+
+The branch now includes a real PowerShell/ConPTY terminal, declared plugin windows and bottom-panel views, attention-aware collaboration recovery, transactional save/discard on exit, an optional system tray, and a compact UI/copy pass. Setup, behavior and manual acceptance steps are in the [workbench interaction update](workbench-interaction.md).
+
+| Check                                       | Result                                      | Scope                                                                                                                                                                                                                          |
+| ------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm test`                                  | 430 passed; zero failures or skips          | Includes real PowerShell 7/5.1 PTYs, stream ordering, immediate interruption, encoding, clipboard fallback, attention epochs, close/commit recovery, declaration/authorization boundaries, UI models and existing regressions. |
+| `npm run build`                             | Passed                                      | TypeScript, desktop main/preload/automation and renderer production assets.                                                                                                                                                    |
+| `npm run web:build`                         | Passed                                      | Node host, renderer and Electron-import exclusion check.                                                                                                                                                                       |
+| `node dist/web-server.cjs --help`           | Passed                                      | Displays `0.2.3.6-internal` without starting hardware services.                                                                                                                                                                |
+| `npm run format:check` / `git diff --check` | Passed                                      | Repository style and whitespace checks.                                                                                                                                                                                        |
+| Native PTY binary                           | Passed under Electron 45.1.0's Node runtime | Actual Chinese output and process cleanup; no GUI launched.                                                                                                                                                                    |
+
+Vite retains its advisory for large shared/editor chunks; both builds complete successfully. Live tray interaction, browser popup/focus behavior, physical hardware and Linux acceptance remain pending. The prior browser-tool rejection described below still prevents claiming a passing interactive browser run. No stable release or installer is produced by this follow-up.
+
 ## Delivery plan
 
 1. Migrate the built-in packages to `Esp32_S3_CAM` and `STM32F103C8T6`, retain legacy project configuration migration, and remove the deleted demonstration projects from this branch.

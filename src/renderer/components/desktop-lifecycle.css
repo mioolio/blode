@@ -1,0 +1,35 @@
+.app-close-dialog {
+  width: min(520px, calc(100vw - 32px));
+  box-sizing: border-box;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+}
+.app-close-dialog::backdrop {
+  background: var(--overlay);
+}
+.app-close-dialog p {
+  line-height: 1.65;
+}
+.app-close-shared {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.app-close-error {
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+.app-close-dialog .modal-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .app-close-dialog .modal-actions > button {
+    flex: 1 1 auto;
+  }
+}

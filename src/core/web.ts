@@ -12,6 +12,7 @@ import type { CollaborationEvent } from '../shared/collaboration';
 import type { UiRequest } from '../shared/workbench';
 import { RecentLogs } from './recent-logs';
 import { RUNTIME_VIEW_CSP, renderRuntimeView } from '../shared/runtime-view';
+import { isRuntimeViewKind, type RuntimeViewKind, type RuntimeViewContribution } from '../shared/plugins';
 
 const defaultPort = 47821;
 const mime: Record<string, string> = {
@@ -185,7 +186,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     retire?: ReturnType<typeof setTimeout>;
   }
   const pages = new Map<string, PageTransport>();
-  const runtimeViews = new Map<string, { id: string; kind: 'debugger' | 'device'; expiresAt: number }>();
+  const runtimeViews = new Map<string, { id: string; kind: RuntimeViewKind; expiresAt: number }>();
   let stopped = false;
   const pruneRuntimeViews = () => {
     for (const [ticket, view] of runtimeViews) if (view.expiresAt <= Date.now()) runtimeViews.delete(ticket);
@@ -481,16 +482,35 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
         const page = id && body.method === 'collaborationPresence' ? pageTransport(id) : undefined;
         if (page?.closed && !page.streams.size) throw new Error('rpc.unauthorized');
         let result: unknown;
-        if (body.method === 'runtimePluginViewDocument') {
+        if (body.method === 'runtimePluginOpenView') {
+          if (
+            !options.hostServices ||
+            body.args.length !== 2 ||
+            !body.args.every((value) => typeof value === 'string')
+          )
+            throw new Error('rpc.invalidParams');
+          const [pluginId, viewId] = body.args as [string, string];
+          const view = (await options.hostServices.invoke('runtimePluginViewInfo', [
+            pluginId,
+            viewId,
+          ])) as RuntimeViewContribution;
+          result =
+            view.location === 'panel'
+              ? { destination: 'panel' }
+              : {
+                  destination: 'browser',
+                  url: `${url.origin}/#/runtime-view/${encodeURIComponent(pluginId)}/${encodeURIComponent(viewId)}`,
+                };
+        } else if (body.method === 'runtimePluginViewDocument') {
           if (!options.hostServices) throw new Error('rpc.methodNotFound');
           if (
             body.args.length !== 2 ||
             typeof body.args[0] !== 'string' ||
             !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(body.args[0]) ||
-            !['device', 'debugger'].includes(body.args[1] as string)
+            !isRuntimeViewKind(body.args[1])
           )
             throw new Error('rpc.invalidParams');
-          const [pluginId, kind] = body.args as [string, 'device' | 'debugger'];
+          const [pluginId, kind] = body.args as [string, RuntimeViewKind];
           const html = await options.hostServices.invoke('runtimePluginView', [pluginId, kind]);
           if (stopped) throw new Error('rpc.methodNotFound');
           if (html === null) result = null;

@@ -127,8 +127,15 @@ export function createRuntime(host, manifest) {
     },
   };
   const managers: RuntimePlugins[] = [];
-  const makeManager = (customDataRoot = dataRoot) => {
-    const manager = new RuntimePlugins({ roots: [path.join(root, 'plugins')], dataRoot: customDataRoot });
+  const makeManager = (
+    customDataRoot = dataRoot,
+    openView?: ConstructorParameters<typeof RuntimePlugins>[0]['openView'],
+  ) => {
+    const manager = new RuntimePlugins({
+      roots: [path.join(root, 'plugins')],
+      dataRoot: customDataRoot,
+      openView,
+    });
     managers.push(manager);
     return manager;
   };
@@ -161,6 +168,68 @@ async function authorize(manager: RuntimePlugins, id: string, permanent = false)
   const plugin = state.plugins.find((plugin) => plugin.id === id)!;
   await manager.trust({ id, fingerprint: plugin.fingerprint, confirm: true, permanent });
 }
+
+test('declared view paths, ids, sizes and locations stay within the package schema', async (t) => {
+  const context = await fixture(t);
+  const valid = {
+    id: 'inspect',
+    label: 'Inspect',
+    file: 'device.html',
+    location: 'window' as const,
+    width: 900,
+    height: 600,
+  };
+  const manifest = (views: unknown[]) => ({ ...context.manifest, ui: { ...context.manifest.ui, views } });
+  assert.equal(parseRuntimePluginManifest(manifest([valid])).ui.views?.[0].id, 'inspect');
+  for (const value of [
+    { ...valid, file: '../outside.html' },
+    { ...valid, file: 'C:/outside.html' },
+    { ...valid, file: 'nested\\outside.html' },
+    { ...valid, file: 'https://example.invalid/ui.html' },
+    { ...valid, id: '../inspect' },
+    { ...valid, width: 10 },
+    { ...valid, location: 'iframe' },
+  ])
+    assert.throws(() => parseRuntimePluginManifest(manifest([value])), /Manifest/);
+  assert.throws(() => parseRuntimePluginManifest(manifest([valid, valid])), /Manifest/);
+});
+
+test('business SDK can request only its own declared approved view and passes immutable metadata', async (t) => {
+  const context = await fixture(t, (manifest) => {
+    manifest.ui.views = [{ id: 'inspect', label: 'Inspect', file: 'device.html', location: 'panel' }];
+    manifest.ui.actions!.push({ id: 'openSurface', label: 'Open surface' });
+  });
+  const runtime = path.join(context.directory, 'runtime.mjs');
+  await fs.writeFile(
+    runtime,
+    (await fs.readFile(runtime, 'utf8')).replace(
+      'device:{async identify',
+      'device:{async openSurface(viewId){await host.openView(viewId);return true;},async identify',
+    ),
+  );
+  const opened: { id: string; viewId: string; location: string }[] = [];
+  const manager = context.makeManager(context.dataRoot, async (id, declaration) => {
+    opened.push({ id, viewId: declaration.id, location: declaration.location });
+    declaration.label = 'Changed by callback';
+  });
+  await manager.discover();
+  manager.attach(context.host, []);
+  await assert.rejects(() => manager.invokeDevice(context.id, 'openSurface', ['inspect']), /TrustRequired/);
+  assert.equal(opened.length, 0);
+  await authorize(manager, context.id);
+  assert.equal(await manager.invokeDevice(context.id, 'openSurface', ['inspect']), true);
+  assert.deepEqual(opened, [{ id: context.id, viewId: 'inspect', location: 'panel' }]);
+  assert.equal((await manager.state()).plugins[0].manifest.ui.views?.[0].label, 'Inspect');
+  for (const id of ['missing', '../inspect', 'another/inspect'])
+    await assert.rejects(() => manager.invokeDevice(context.id, 'openSurface', [id]), /Capability/);
+  assert.equal(opened.length, 1);
+  await fs.writeFile(path.join(context.directory, 'device.html'), '<main>Changed after approval</main>');
+  await assert.rejects(
+    () => manager.invokeDevice(context.id, 'openSurface', ['inspect']),
+    /RestartRequired|TrustRequired/,
+  );
+  assert.equal(opened.length, 1);
+});
 
 test('declarative discovery registers USB capabilities without importing code; explicit trust runs package code and default tool', async (t) => {
   const context = await fixture(t);

@@ -20,6 +20,7 @@ test('debugger first paint exposes resizeable disassembly, registers and memory 
     assert.match(html, /class="debug-card debug-stack"/);
     assert.match(html, /class="debug-card debug-breakpoints"/);
     assert.doesNotMatch(html, /class="debug-cpu-flow"|ALU · R0/);
+    assert.doesNotMatch(html, /数据来源|debug-summary-grid/);
   } finally {
     if (previous) Object.defineProperty(globalThis, 'window', previous);
     else Reflect.deleteProperty(globalThis, 'window');

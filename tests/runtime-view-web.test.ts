@@ -14,6 +14,12 @@ async function fixture(t: TestContext) {
   await fs.writeFile(path.join(directory, 'dist', 'renderer', 'index.html'), '<main>Strict workbench</main>');
   const source = {
     approved: true,
+    view: {
+      id: 'inspect',
+      label: 'Inspect',
+      file: 'views/inspect.html',
+      location: 'window' as 'window' | 'panel',
+    },
     html: '<button id="device">Device</button><script>window.pluginRan = true;</script>' as string | null,
   };
   const calls: { method: string; args: unknown[] }[] = [];
@@ -28,8 +34,12 @@ async function fixture(t: TestContext) {
     hostServices: {
       invoke: async (method, args) => {
         calls.push({ method, args });
-        if (method !== 'runtimePluginView') throw Error('unexpected delegated method');
         if (!source.approved) throw Error('error.runtimePluginTrustRequired');
+        if (method === 'runtimePluginViewInfo') {
+          if (args[0] !== 'Fixture' || args[1] !== 'inspect') throw Error('error.runtimePluginCapability');
+          return structuredClone(source.view);
+        }
+        if (method !== 'runtimePluginView') throw Error('unexpected delegated method');
         return source.html;
       },
     },
@@ -104,6 +114,37 @@ test('revoked authorization and expired tickets cannot deliver plugin scripts', 
   const now = Date.now();
   t.mock.method(Date, 'now', () => now + 15_001);
   assert.equal((await fetch(second)).status, 404);
+});
+
+test('Web opens declared browser views without invoking the desktop window callback', async (t) => {
+  const context = await fixture(t);
+  const open = (authenticate = true, viewId = 'inspect') =>
+    fetch(context.server.endpoint + '/rpc', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(authenticate ? { 'x-blode-token': context.token } : {}),
+      },
+      body: JSON.stringify({ method: 'runtimePluginOpenView', args: ['Fixture', viewId] }),
+    });
+  assert.equal((await open(false)).status, 401);
+  assert.equal(context.calls.length, 0);
+  const browser = await (await open()).json();
+  assert.deepEqual(browser, {
+    destination: 'browser',
+    url: context.server.endpoint + '/#/runtime-view/Fixture/inspect',
+  });
+  assert.ok(!browser.url.includes(context.token));
+  assert.deepEqual(
+    context.calls.map((call) => call.method),
+    ['runtimePluginViewInfo'],
+  );
+  context.source.view.location = 'panel';
+  assert.deepEqual(await (await open()).json(), { destination: 'panel' });
+  assert.equal((await open(true, 'missing')).status, 400);
+  context.source.approved = false;
+  assert.equal((await open()).status, 400);
+  assert.ok(context.calls.every((call) => call.method === 'runtimePluginViewInfo'));
 });
 
 test('view ticket storage is bounded, unavailable views allocate nothing, and one consumed ticket frees capacity', async (t) => {

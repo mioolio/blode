@@ -95,6 +95,7 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
     pipe?.publish(event);
   };
   let core: CoreService;
+  const ui = new UiCommands((request) => web?.publishUiCommand(request));
   const hardware = new RuntimeDebugger(
     toolchainRoot,
     path.join(dataRoot, 'debugger'),
@@ -103,6 +104,9 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
     () => core?.currentConfig(),
   );
   core = await createCore({
+    openRuntimeView: async (pluginId, view) => {
+      await ui.command({ action: 'runtimeView', pluginId, viewId: view.id });
+    },
     pluginRoots: [path.join(appRoot, 'extensions', 'boards'), path.join(dataRoot, 'plugins')],
     projectRoot: options.project ? path.resolve(options.project) : '',
     dataRoot,
@@ -122,7 +126,6 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
   });
   const protection = protectSharedWorkspace(core, collaboration);
   const ai = new AiAssistance({ dataRoot, projectRoot: () => core.currentProjectRoot(), emit });
-  const ui = new UiCommands((request) => web?.publishUiCommand(request));
   // Browser peers cannot claim the trusted local client's global undo permission.
   const assistance = createAssistanceRoutes(ai, collaboration, ui, false);
   const services = createHostServices({

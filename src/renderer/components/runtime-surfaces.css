@@ -1,0 +1,99 @@
+.runtime-contributions {
+  width: min(680px, calc(100vw - 40px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+}
+.runtime-contributions .modal-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.runtime-contribution-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 20px;
+}
+.runtime-contribution-group strong {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 4px 8px;
+}
+.runtime-contribution-group button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: 0;
+  background: var(--surface-2);
+  padding: 12px;
+  border-radius: 6px;
+}
+.runtime-contribution-group button span {
+  flex: 1;
+}
+.runtime-contribution-group button small {
+  color: var(--text-dim);
+}
+.runtime-window {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+}
+.runtime-window-bar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-left: 12px;
+  -webkit-app-region: drag;
+  font-size: 13px;
+}
+.runtime-window-bar div {
+  height: 100%;
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+.runtime-window-bar button {
+  height: 100%;
+  width: 42px;
+  background: transparent;
+  border: 0;
+  display: grid;
+  place-items: center;
+}
+.runtime-window-bar button:hover {
+  background: var(--surface-2);
+}
+.runtime-window-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.runtime-window-content .runtime-plugin-view,
+.console-plugin-view .runtime-plugin-view {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+.console-plugin-view {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+.runtime-contributions {
+  color: var(--text);
+}
+.runtime-contributions::backdrop {
+  background: var(--overlay);
+}
+.runtime-open-error {
+  color: var(--red);
+  margin: 6px 0;
+}

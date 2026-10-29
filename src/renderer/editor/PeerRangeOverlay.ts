@@ -54,7 +54,7 @@ export class PeerRangeOverlay implements monaco.editor.IOverlayWidget {
     if (this.disposed) return;
     if (this.expectedUri !== modelUri) this.clear();
     this.expectedUri = modelUri;
-    this.peers = path ? peers.filter((peer) => peer.path === path) : [];
+    this.peers = path ? peers.filter((peer) => peer.attention !== 'inactive' && peer.path === path) : [];
     this.paint(animate);
   }
 

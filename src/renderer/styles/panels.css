@@ -237,10 +237,19 @@
   min-height: 0;
   min-width: 0;
   overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
+}
+.device-panel::-webkit-scrollbar {
+  display: none;
+}
+.device-panel:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: -2px;
 }
 .inspector-section {
   padding: 14px;

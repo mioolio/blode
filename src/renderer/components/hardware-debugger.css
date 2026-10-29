@@ -183,6 +183,21 @@
   font-size: 11px;
   margin-left: 5px;
 }
+.debug-symbol-control {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.debug-symbol-control > span {
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-dim);
+}
 .debug-page-content {
   display: grid;
   gap: 10px;

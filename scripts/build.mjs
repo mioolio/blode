@@ -23,7 +23,7 @@ await build({
   entryPoints: ['src/core/main.ts'],
   outfile: 'dist/main.cjs',
   format: 'cjs',
-  external: ['electron', 'serialport'],
+  external: ['electron', 'serialport', 'node-pty'],
 });
 await build({
   ...common,

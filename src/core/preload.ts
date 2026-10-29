@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { createWorkbenchBridge } from '../shared/workbench-bridge';
+import { createWindowAttentionChannel, type WindowAttention } from './window-attention';
 import {
   DRAFTS_CHANNEL,
   EVENT_CHANNEL,
@@ -11,8 +12,20 @@ import {
 
 // Only this typed, explicit surface crosses the sandbox boundary.
 const call = (method: string, ...args: unknown[]) => ipcRenderer.invoke(IPC_CHANNEL, method, args);
+const windowAttention = createWindowAttentionChannel({
+  listen: (callback) => {
+    const listener = (_: unknown, value: WindowAttention) => callback(value);
+    ipcRenderer.on('blode:window-attention', listener);
+    return () => ipcRenderer.removeListener('blode:window-attention', listener);
+  },
+  snapshot: () => call('windowAttention'),
+});
 const bridge: DesktopApi = {
+  setTerminalFocus: (focused) => {
+    void call('terminalFocus', focused);
+  },
   rendererReady: () => ipcRenderer.send(RENDERER_READY_CHANNEL),
+  onWindowAttention: windowAttention.subscribe,
   ...createWorkbenchBridge(
     (method, args) => call(method, ...args),
     (channel, callback) => {

@@ -1,6 +1,18 @@
 import type { ProjectConfig } from './contracts';
 
 export type RuntimeTransport = 'serial' | 'stlink' | 'usb' | 'physical' | 'custom';
+export type RuntimeViewKind = 'debugger' | 'device' | `view:${string}`;
+export const RUNTIME_VIEW_KIND_PATTERN = /^(?:debugger|device|view:[A-Za-z][A-Za-z0-9_-]{0,79})$/;
+export interface RuntimeViewContribution {
+  id: string;
+  label: string;
+  file: string;
+  location: 'window' | 'panel';
+  width?: number;
+  height?: number;
+}
+export const isRuntimeViewKind = (value: unknown): value is RuntimeViewKind =>
+  typeof value === 'string' && RUNTIME_VIEW_KIND_PATTERN.test(value);
 export interface RuntimePluginTool {
   id: string;
   executable: string;
@@ -59,6 +71,7 @@ export interface RuntimePluginManifest {
     hiddenCapabilities?: string[];
     view?: string;
     actions?: { id: string; label: string; confirm?: boolean }[];
+    views?: RuntimeViewContribution[];
   };
 }
 export interface RuntimePluginInfo {
@@ -81,7 +94,12 @@ export interface RuntimePluginTrustRequest {
   permanent: boolean;
 }
 export interface RuntimePluginsApi {
-  runtimePluginViewDocument(id: string, kind: 'debugger' | 'device'): Promise<string | null>;
+  runtimePluginViewInfo(id: string, viewId: string): Promise<RuntimeViewContribution>;
+  runtimePluginOpenView(
+    id: string,
+    viewId: string,
+  ): Promise<{ destination: 'window' | 'browser' | 'panel'; url?: string }>;
+  runtimePluginViewDocument(id: string, kind: RuntimeViewKind): Promise<string | null>;
   runtimePluginContext(id: string): Promise<{
     deviceId: string;
     values: Record<string, string | number | boolean>;
@@ -95,7 +113,7 @@ export interface RuntimePluginsApi {
   ): Promise<void>;
   runtimePluginsState(): Promise<RuntimePluginsState>;
   runtimePluginTrust(request: RuntimePluginTrustRequest): Promise<RuntimePluginsState>;
-  runtimePluginView(id: string, kind: 'debugger' | 'device'): Promise<string | null>;
+  runtimePluginView(id: string, kind: RuntimeViewKind): Promise<string | null>;
   runtimePluginDebug(id: string, method: string, args: unknown[]): Promise<unknown>;
   runtimePluginDevice(id: string, method: string, args: unknown[], confirm?: true): Promise<unknown>;
 }

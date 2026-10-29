@@ -14,9 +14,12 @@ export type UiAction =
   | 'splitEditor'
   | 'language'
   | 'syncDrafts'
-  | 'clearLogs';
+  | 'clearLogs'
+  | 'runtimeView';
 export interface UiCommand {
   action: UiAction;
+  pluginId?: string;
+  viewId?: string;
   target?: string;
   path?: string;
   view?: 'code' | 'layout' | 'ai';

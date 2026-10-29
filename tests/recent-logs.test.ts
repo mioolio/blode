@@ -34,6 +34,23 @@ test('reconnect replay and live events merge without duplicates', () => {
   );
 });
 
+test('PTY notifications stay live without displacing compiler output or creating blank console rows', () => {
+  const logs = new RecentLogs();
+  logs.publish(event(1, 'compiler output'));
+  for (let index = 2; index < 600; index++) {
+    const notification = logs.publish(event(index, '', 'terminal'));
+    assert.equal(notification.kind, 'terminal', 'the live channel must still notify terminal renderers');
+  }
+  assert.deepEqual(
+    logs.snapshot().map((entry) => entry.message),
+    ['compiler output'],
+  );
+  assert.deepEqual(
+    mergeRecentLogs([], [event(4, '', 'terminal'), event(5, 'output')]).map((entry) => entry.message),
+    ['output'],
+  );
+});
+
 test('a delayed snapshot of an older build cannot resurrect discarded output', () => {
   const current = [event(10, 'status.buildStarted'), event(11, 'latest compiler output')];
   const stale = [event(1, 'status.buildStarted'), event(2, 'obsolete compiler output')];

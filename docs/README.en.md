@@ -10,6 +10,8 @@ Blode Studio is a modular embedded development workbench for editing, collaborat
 
 `codex/runtime-plugins-internal` is a development branch based on 0.2.3.6. It introduces runtime identity migration, API v2 package declarations, execution consent, replaceable compilers, and custom device/debug views. This update does not create a new stable release; `main` keeps the stable code. See the [internal update and acceptance checklist](internal/runtime-plugins.md) for validation status.
 
+The latest internal update adds an interactive PowerShell terminal, extension windows and bottom-panel views, save-on-exit decisions and an optional system tray. Collaboration follows foreground attention and refreshes on return. Hardware debugging, Preferences and device controls share more compact wording and controls. See the [workbench interaction update](internal/workbench-interaction.md) for setup and validation details.
+
 To try the source build:
 
 ```sh

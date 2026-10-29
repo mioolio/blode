@@ -6,13 +6,15 @@ The Web edition runs a Node.js service on the computer that owns the projects an
 
 | Requirement                               | Purpose                                                                          |
 | ----------------------------------------- | -------------------------------------------------------------------------------- |
-| Node.js 24 or newer, with npm             | Run the host and install its serialport runtime dependency                       |
+| Node.js 24 or newer, with npm             | Run the host and install serialport and node-pty runtime dependencies            |
 | A current browser                         | Render the editor and collaboration interface                                    |
 | Git on the host's PATH                    | Use the integrated Git interface; existing host credentials handle remote access |
 | A suitable installed/downloaded toolchain | Compile the selected platform; a physical device is unnecessary for compilation  |
 | Host USB drivers and permissions          | Use serial ports, flash firmware or attach a hardware debugger                   |
 
 Windows is the current development environment. Linux downloads and platform paths are prepared, but actual Linux installation, compilation, packaging and hardware access have **not been verified**. See [platform support](PLATFORM-SUPPORT.md).
+
+The internal development branch includes an interactive terminal. Linux installation requires Python 3, make and a C/C++ compiler to build `node-pty`; Windows uses its ConPTY runtime. See the [workbench interaction update](internal/workbench-interaction.md).
 
 ## Start a Web ZIP release
 
@@ -31,7 +33,7 @@ Windows is the current development environment. Linux downloads and platform pat
 
 4. Open the private launch link printed once in the terminal. Keep that link private: its token authorizes access to this host's workspace and hardware functions.
 
-The release contains the bundled Node server, browser assets, a small runtime package manifest and lockfile, and documentation. Compiler binaries, Electron, Chromium, project source, Git credentials and application credentials are excluded. Native serialport dependencies are installed for the recipient's operating system by `npm ci`.
+The release contains the bundled Node server, browser assets, a small runtime package manifest and lockfile, and documentation. Compiler binaries, Electron, Chromium, project source, Git credentials and application credentials are excluded. Native runtime dependencies are installed for the recipient's operating system by `npm ci`.
 
 ## Start from source
 

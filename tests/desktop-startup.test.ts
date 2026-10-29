@@ -39,6 +39,7 @@ test('desktop renders before proxy/services finish and queues early RPC behind i
       let desktop;
       const handlers = new Map();
       const ipcMain = new EventEmitter();
+      const powerMonitor = new EventEmitter();
       ipcMain.handle = (name, handler) => handlers.set(name, handler);
       const app = Object.assign(new EventEmitter(), {
         isPackaged: false,
@@ -55,16 +56,25 @@ test('desktop renders before proxy/services finish and queues early RPC behind i
           super();
           desktop = this;
           this.shows = 0;
+          this.visible = false;
+          this.focused = true;
+          this.minimized = false;
+          this.attentionEvents = [];
+          const owner = this;
           this.webContents = Object.assign(new EventEmitter(), {
             mainFrame: {},
             session: { setPermissionRequestHandler() {} },
             setWindowOpenHandler() {},
             isDestroyed() { return false; },
+            send(channel, value) { if(channel === 'blode:window-attention') owner.attentionEvents.push(value); },
           });
         }
         removeMenu() {} hookWindowMessage() {} isDestroyed() { return false; }
-        show() { this.shows++; }
-        minimize() { this.minimized = true; }
+        isVisible() { return this.visible; }
+        isFocused() { return this.focused; }
+        isMinimized() { return this.minimized; }
+        show() { this.shows++; this.visible = true; this.minimized = false; this.emit('show'); }
+        minimize() { this.minimized = true; this.emit('minimize'); }
         close() { this.emit('closed'); }
         loadFile() { return this.startLoad(); }
         loadURL() { return this.startLoad(); }
@@ -80,10 +90,30 @@ test('desktop renders before proxy/services finish and queues early RPC behind i
               ipcMain.emit('blode:renderer-ready', { sender: {}, senderFrame: {} });
               assert.equal(this.shows, 1, 'foreign contents cannot signal readiness');
               const event = { sender: this.webContents, senderFrame: this.webContents.mainFrame };
+              const invoke = (method, args = [], sender = event) => handlers.get('blode:request')(sender, method, args);
+              assert.deepEqual(await invoke('windowAttention'), {visible:true,focused:true,epoch:undefined}, 'private snapshot works while services are pending');
+              await assert.rejects(invoke('windowAttention', [], {sender:{},senderFrame:{}}), /error.unauthorized/);
+              await assert.rejects(invoke('windowAttention', [], {sender:this.webContents,senderFrame:{}}), /error.unauthorized/);
+              await assert.rejects(invoke('windowAttention', [true]), /error.unauthorized/);
               await handlers.get('blode:request')(event, 'windowAction', ['minimize']);
               assert.equal(this.minimized, true, 'frameless controls must work before core is ready');
+              assert.deepEqual(await invoke('windowAttention'), {visible:false,focused:false,epoch:undefined});
               ipcMain.emit('blode:renderer-ready', event);
               assert.equal(this.shows, 2, 'mounted renderer signals readiness without polling');
+              this.focused = false;
+              this.emit('blur');
+              assert.equal((await invoke('windowAttention')).focused, false);
+              this.focused = true;
+              this.emit('focus');
+              powerMonitor.emit('lock-screen');
+              assert.deepEqual(await invoke('windowAttention'), {visible:false,focused:false,epoch:undefined});
+              powerMonitor.emit('unlock-screen');
+              assert.equal((await invoke('windowAttention')).focused, true);
+              powerMonitor.emit('suspend');
+              assert.equal((await invoke('windowAttention')).focused, false);
+              powerMonitor.emit('resume');
+              assert.equal((await invoke('windowAttention')).focused, true);
+              assert.ok(this.attentionEvents.length > 0, 'window lifecycle publishes private snapshots');
               let settled = false;
               const early = handlers.get('blode:request')(event, 'getState', []);
               early.then(
@@ -92,6 +122,8 @@ test('desktop renders before proxy/services finish and queues early RPC behind i
               await new Promise((resolve) => setTimeout(resolve, 10));
               assert.equal(settled, false, 'RPC must not enter a partially created core');
               this.close();
+              for(const name of ['lock-screen','unlock-screen','suspend','resume'])
+                assert.equal(powerMonitor.listenerCount(name), 0, 'a closed window releases power listeners');
               await assert.rejects(early, /error.operationCancelled/);
               console.log('startup-order-ok');
               process.exit(0);
@@ -101,7 +133,7 @@ test('desktop renders before proxy/services finish and queues early RPC behind i
         }
       }
       const electron = {
-        app, BrowserWindow, ipcMain,
+        app, BrowserWindow, ipcMain, powerMonitor,
         protocol: { registerSchemesAsPrivileged(schemes) {
           assert.equal(schemes[0].scheme, 'blode-runtime-ui');
           assert.equal(schemes[0].privileges.secure, true);

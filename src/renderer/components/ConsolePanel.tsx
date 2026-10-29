@@ -1,5 +1,5 @@
 import { ModernSelect } from './ModernSelect';
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import {
   CircleAlert,
   CircleCheck,
@@ -17,6 +17,9 @@ import type { Studio } from '../workspace/useStudio';
 import type { SerialOptions } from '../../shared/contracts';
 import { iconButton } from './IconButton';
 import { TerminalPanel } from './TerminalPanel';
+import { RuntimePluginView } from './RuntimePluginView';
+import { registeredRuntimeViews } from '../../shared/runtime-views';
+import './runtime-surfaces.css';
 
 /** ConsolePanel renders one workspace surface; application actions stay in useStudio. */
 export function ConsolePanel({ studio }: { studio: Studio }) {
@@ -25,7 +28,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     locale,
     tab,
     setTab,
-    logs,
+    logs: allLogs,
     setLogs,
     busy,
     errors,
@@ -44,10 +47,26 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     serialInput,
     setSerialInput,
   } = studio;
+  const logs = allLogs.filter((log) => log.kind !== 'terminal' && !!log.message);
   const logRef = useRef<HTMLDivElement>(null);
   const baudRatesId = useId();
   const [encoding, setEncoding] = useState<'utf8' | 'hex'>('utf8');
   const [lineEnding, setLineEnding] = useState<'none' | 'lf' | 'cr' | 'crlf'>('lf');
+  const pluginViews = registeredRuntimeViews(state?.runtimePlugins?.plugins ?? []).filter(
+    (view) => view.location === 'panel',
+  );
+  const pluginView = pluginViews.find((view) => view.key === tab);
+  useEffect(() => {
+    const open = (event: Event) => {
+      const key = (event as CustomEvent<string>).detail;
+      if (pluginViews.some((view) => view.key === key)) setTab(key as `plugin:${string}`);
+    };
+    window.addEventListener('blode:runtime-panel', open);
+    return () => window.removeEventListener('blode:runtime-panel', open);
+  }, [pluginViews.map((view) => view.key).join('|')]);
+  useEffect(() => {
+    if (tab.startsWith('plugin:') && !pluginView) setTab('output');
+  }, [tab, !!pluginView]);
   // Ctrl+A inside the console selects the visible log text, never the whole window.
   const selectLogText = (event: KeyboardEvent<HTMLElement>) => {
     const target = event.target as HTMLElement | null;
@@ -90,6 +109,15 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               {id === 'warnings' && <span className="count-badge">{warnings.length}</span>}
             </button>
           ))}
+          {pluginViews.map((view) => (
+            <button
+              key={view.key}
+              className={tab === view.key ? 'active' : ''}
+              onClick={() => setTab(view.key as `plugin:${string}`)}
+            >
+              {view.label}
+            </button>
+          ))}
         </div>
         <div className="console-tools">
           {busy && (
@@ -99,6 +127,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
             </span>
           )}
           {tab !== 'terminal' &&
+            !pluginView &&
             iconButton(
               'action.clear',
               () =>
@@ -114,7 +143,12 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           )}
         </div>
       </div>
-      <TerminalPanel visible={tab === 'terminal'} />
+      <TerminalPanel visible={tab === 'terminal' && studio.consolePanelVisible} />
+      {pluginView && (
+        <div className="console-plugin-view">
+          <RuntimePluginView key={pluginView.key} id={pluginView.pluginId} kind={`view:${pluginView.id}`} />
+        </div>
+      )}
       {tab === 'serial' && (
         <>
           <div className="serial-toolbar" style={{ flexWrap: 'wrap' }}>
@@ -282,7 +316,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           </details>
         </>
       )}
-      {tab !== 'terminal' && (
+      {tab !== 'terminal' && !pluginView && (
         <div
           className="log-scroll"
           ref={logRef}

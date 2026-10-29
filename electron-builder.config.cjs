@@ -55,7 +55,7 @@ module.exports = {
     { from: 'tools/STSW-LINK', to: 'drivers/STSW-LINK' },
     ...bundledTools,
   ],
-  asarUnpack: ['**/*.node'],
+  asarUnpack: ['**/*.node', 'node_modules/node-pty/**/*'],
   artifactName: `Blode.Studio-${releaseVersion}-desktop${full ? '-full' : ''}-win-x64.\${ext}`,
   publish: null,
   win: {

@@ -17,9 +17,11 @@ import { usePanelVisibility } from './usePanelVisibility';
 import { flushCollaboration } from './collaborationFlush';
 import { mergeRecentLogs } from '../../shared/recent-logs';
 import { useFileTabClose } from './useFileTabClose';
+import { closeRecoveryKey, recoverCloseDrafts, workspaceCloseGate } from './workspaceCloseGate';
+import { refreshedConfig } from './unsavedChanges';
 
 type View = 'code' | 'layout' | 'ai';
-type ConsoleTab = 'output' | 'serial' | 'problems' | 'warnings' | 'terminal';
+type ConsoleTab = 'output' | 'serial' | 'problems' | 'warnings' | 'terminal' | `plugin:${string}`;
 
 const toolTabViews: Record<ToolTab, View> = { layout: 'layout', ai: 'ai' };
 
@@ -70,6 +72,8 @@ export function useStudio() {
   if (!route.current) route.current = parseWorkspaceRoute();
   const initial = route.current;
   const [state, setState] = useState<AppState | null>(null);
+  const canonicalState = useRef(state);
+  canonicalState.current = state;
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [activePath, setActivePath] = useState(initial.kind === 'editor' ? (initial.file ?? '') : '');
@@ -156,8 +160,19 @@ export function useStudio() {
     (message: string, error = false, warning = false) => setToast({ message, error, warning }),
     [],
   );
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (submittedConfig?: ProjectConfig) => {
     const next = await window.blode.getState();
+    if (!window.__blodeWeb && next.projectRoot) {
+      try {
+        if (localStorage.getItem(closeRecoveryKey(next.projectRoot))) {
+          const lifecycle = await window.blode.desktopLifecycleState();
+          recoverCloseDrafts(next.projectRoot, lifecycle.lifecycleId ?? '', localStorage);
+        }
+      } catch {
+        /* Retain the recovery record if the host is still starting. */
+      }
+    }
+    const previous = canonicalState.current;
     setState(next);
     if (next.recentLogs)
       setLogs((current) =>
@@ -170,7 +185,10 @@ export function useStudio() {
       );
     setInstallation(next.installation);
     setSerialConnected(!!next.connections?.serial.open);
-    setConfig(next.config);
+    setConfig((current) => {
+      const retained = refreshedConfig(current, previous, next, submittedConfig);
+      return retained === current ? retainDraftConfig(retained, next) : retained;
+    });
     setStale(next.buildStale ?? false);
     const exists = (path: string) => next.files.some((file) => file.path === path);
     if (restoredFolder.current !== next.projectRoot) {
@@ -261,6 +279,7 @@ export function useStudio() {
   }, [installation?.id, installation?.status, busy, refresh, notify]);
   useEffect(() => {
     if (!state?.projectRoot || restoredFolder.current !== state.projectRoot) return;
+    if (!workspaceCloseGate.canPersistDrafts(state.projectRoot)) return;
     try {
       localStorage.setItem(`blode.drafts:${state.projectRoot}`, JSON.stringify(drafts));
     } catch {
@@ -340,6 +359,7 @@ export function useStudio() {
         }));
       }
       if (event.progressOnly) return;
+      if (event.kind === 'terminal' && !event.message) return;
       if (event.message === 'status.buildStarted') {
         setConsolePanelVisible(true);
         setTab('output');
@@ -444,7 +464,7 @@ export function useStudio() {
         await window.blode.saveConfig(config);
         setStale(true);
       }
-      await refresh();
+      await refresh(config && configDirty ? config : undefined);
       notify(t('toast.saved'));
     });
   const saveConfig = () =>
@@ -452,7 +472,7 @@ export function useStudio() {
       if (config) {
         await window.blode.saveConfig(config);
         setStale(true);
-        await refresh();
+        await refresh(config);
         notify(t('toast.configSaved'));
       }
     });
@@ -789,6 +809,9 @@ export function useStudio() {
     activePathRef.current = path;
     setActivePath(path);
     setView('code');
+    window.dispatchEvent(
+      new CustomEvent('blode:file-opened', { detail: { root: state?.projectRoot ?? '', path } }),
+    );
   };
   const fileTabClose = useFileTabClose({
     state,
@@ -857,6 +880,7 @@ export function useStudio() {
   };
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (workspaceCloseGate.isFrozen()) return;
       if (fileTabClose.closeFilePrompt) {
         if ((event.ctrlKey || event.metaKey) && ['s', 'w', 'b', 'f4'].includes(event.key.toLowerCase())) {
           event.preventDefault();
@@ -891,9 +915,22 @@ export function useStudio() {
     state,
     setState,
     config,
-    setConfig,
+    setConfig: (value: React.SetStateAction<ProjectConfig | null>) => {
+      if (!workspaceCloseGate.isFrozen()) setConfig(value);
+    },
     drafts,
-    setDrafts,
+    setDrafts: (value: React.SetStateAction<Record<string, string>>) => {
+      if (!workspaceCloseGate.isFrozen()) setDrafts(value);
+    },
+    setSharedDrafts: (value: React.SetStateAction<Record<string, string>>) => {
+      setDrafts((current) =>
+        workspaceCloseGate.canApplySharedDrafts()
+          ? typeof value === 'function'
+            ? value(current)
+            : value
+          : current,
+      );
+    },
     activePath,
     setActivePath,
     openFiles,

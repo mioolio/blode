@@ -60,8 +60,16 @@
   padding: 20px;
 }
 .preferences-detail .settings-toolbar {
+  justify-content: flex-end;
   min-height: 32px;
   margin-bottom: 16px;
+}
+.preferences-tray-option {
+  margin-top: 18px;
+}
+.preferences-option-error {
+  color: var(--red);
+  overflow-wrap: anywhere;
 }
 .tool-versions {
   padding: 0 0 18px;

@@ -411,6 +411,11 @@ export class HardwareDebugger {
     this.gdb = null;
     this.server = null;
     this.snapshot.connection = state;
+    this.snapshot.registers = [];
+    this.snapshot.instructions = [];
+    this.snapshot.stack = [];
+    delete this.snapshot.programCounter;
+    delete this.snapshot.updatedAt;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error('error.debuggerDisconnected'));
