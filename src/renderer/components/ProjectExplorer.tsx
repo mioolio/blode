@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { ChevronDown, ChevronRight, FilePlus, FolderOpen, FolderTree, Play, RefreshCw } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  FilePlus,
+  FolderOpen,
+  FolderTree,
+  GitBranch,
+  Play,
+  RefreshCw,
+} from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { buildFileTree, type FileTreeNode } from '../workspace/fileTree';
 import { bytes } from '../utils';
 import { FileIcon, FolderIcon } from './FileIcon';
 import { ContextMenu } from './ContextMenu';
 import type { MenuTarget } from '../../../extensions/menus/types';
+import { useGitStatus } from '../workspace/useGitStatus';
+import './git-panel.css';
 
 /** Workspace inventory is independent of which files the code editor can open. */
 export function ProjectExplorer({ studio }: { studio: Studio }) {
@@ -45,6 +56,11 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
   const renamingSubmit = useRef(false);
   const [menu, setMenu] = useState<{ x: number; y: number; node: FileTreeNode | null } | null>(null);
   const rootPath = state?.projectRoot ?? '';
+  const { state: gitStatus } = useGitStatus(rootPath);
+  const gitFiles = useMemo(
+    () => new Map(gitStatus?.files.map((file) => [file.path, file]) ?? []),
+    [gitStatus],
+  );
   const rootName = rootPath.replaceAll('\\', '/').split('/').filter(Boolean).at(-1) ?? '';
   const nodes = useMemo(() => buildFileTree(state?.inventory?.entries ?? []), [state?.inventory?.entries]);
   const editableFiles = useMemo(() => new Set(state?.files.map((file) => file.path) ?? []), [state?.files]);
@@ -193,6 +209,9 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
     const node = menu?.node ?? null;
     const path = node?.path ?? '';
     switch (command) {
+      case 'explorer.projectSettings':
+        window.dispatchEvent(new CustomEvent('blode:project-settings'));
+        break;
       case 'explorer.newFile':
         startCreate(parentPrefix(node));
         break;
@@ -351,6 +370,14 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
               </span>
               {isDirectory ? <FolderIcon open={open} /> : <FileIcon name={node.name} />}
               <span className="tree-name">{node.name}</span>
+              {!isDirectory && gitFiles.has(node.path) && (
+                <span
+                  className={`git-file-code code-${gitFiles.get(node.path)!.code}`}
+                  title={`${t('git.fileStatus')} ${gitFiles.get(node.path)!.code}`}
+                >
+                  {gitFiles.get(node.path)!.code}
+                </span>
+              )}
               {isBuildEntry && entryMarker}
               {!isDirectory &&
                 (drafts[node.path] !== undefined ? (
@@ -377,7 +404,17 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
           <FolderTree size={14} strokeWidth={1.8} aria-hidden="true" />
           {t('project.title')}
         </span>
-        {state && <span className="panel-badge">{state.inventory.fileCount}</span>}
+        <span className="git-explorer-actions">
+          <button
+            className="icon-button"
+            title={t('git.title')}
+            aria-label={t('git.title')}
+            onClick={() => window.dispatchEvent(new CustomEvent('blode:git'))}
+          >
+            <GitBranch size={13} />
+          </button>
+          {state && <span className="panel-badge">{state.inventory.fileCount}</span>}
+        </span>
       </div>
       <div className="explorer-actions">
         <button
@@ -454,6 +491,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
           x={menu.x}
           y={menu.y}
           target={menu.node ? (menu.node.kind === 'directory' ? 'folder' : 'file') : 'root'}
+          path={menu.node?.path}
           onCommand={runMenuCommand}
           onClose={() => setMenu(null)}
           checkedCommands={menuIsBuildEntry ? ['explorer.setBuildEntry'] : []}

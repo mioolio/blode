@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c99",
+  "snippets": [
+    {
+      "name": "include",
+      "kind": "snippet",
+      "detail": "#include \"header.h\"",
+      "insertText": "#include \"${1:header.h}\""
+    },
+    {
+      "name": "define",
+      "kind": "snippet",
+      "detail": "#define NAME value",
+      "insertText": "#define ${1:NAME} ${2:value}"
+    },
+    {
+      "name": "if",
+      "kind": "snippet",
+      "detail": "if (condition) { ... }",
+      "insertText": "if (${1:condition}) {\n\t${2}\n}"
+    },
+    {
+      "name": "ifelse",
+      "kind": "snippet",
+      "detail": "if / else",
+      "insertText": "if (${1:condition}) {\n\t${2}\n} else {\n\t${3}\n}"
+    },
+    {
+      "name": "for",
+      "kind": "snippet",
+      "detail": "for (init; condition; step)",
+      "insertText": "for (int ${1:i} = 0; ${1:i} < ${2:count}; ${1:i}++) {\n\t${3}\n}"
+    },
+    {
+      "name": "while",
+      "kind": "snippet",
+      "detail": "while (condition) { ... }",
+      "insertText": "while (${1:condition}) {\n\t${2}\n}"
+    },
+    {
+      "name": "do while",
+      "kind": "snippet",
+      "detail": "do { ... } while (condition)",
+      "insertText": "do {\n\t${1}\n} while (${2:condition});"
+    },
+    {
+      "name": "switch",
+      "kind": "snippet",
+      "detail": "switch / case / default",
+      "insertText": "switch (${1:value}) {\n\tcase ${2:0}:\n\t\t${3:break;}\n\tdefault:\n\t\tbreak;\n}"
+    },
+    {
+      "name": "typedef struct",
+      "kind": "snippet",
+      "detail": "typedef struct { ... } Name;",
+      "insertText": "typedef struct {\n\t${1:fields}\n} ${2:Name};"
+    },
+    {
+      "name": "typedef enum",
+      "kind": "snippet",
+      "detail": "typedef enum { ... } Name;",
+      "insertText": "typedef enum {\n\t${1:VALUE} = 0,\n} ${2:Name};"
+    }
+  ]
+}

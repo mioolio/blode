@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c23",
+  "symbols": [
+    {
+      "name": "printf",
+      "kind": "function",
+      "detail": "int printf(const char *format, ...)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "printf(${1:})"
+    },
+    {
+      "name": "putchar",
+      "kind": "function",
+      "detail": "int putchar(int ch)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "putchar(${1:})"
+    },
+    {
+      "name": "puts",
+      "kind": "function",
+      "detail": "int puts(const char *text)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "puts(${1:})"
+    },
+    {
+      "name": "perror",
+      "kind": "function",
+      "detail": "void perror(const char *text)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "perror(${1:})"
+    },
+    {
+      "name": "pow",
+      "kind": "function",
+      "detail": "double pow(double base, double exponent)",
+      "documentation": "`<math.h>` · C23",
+      "insertText": "pow(${1:})"
+    }
+  ]
+}

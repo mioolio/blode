@@ -1,0 +1,199 @@
+.project-package-dialog {
+  width: min(980px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(820px, calc(100dvh - 40px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.package-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.package-heading h2 {
+  margin: 0 auto 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.package-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+  scrollbar-gutter: stable;
+}
+.package-intro {
+  margin: 0 0 18px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.package-stats {
+  display: grid;
+  grid-template-columns: 2fr repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.package-stats > div {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.package-stats span {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.package-stats strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.package-section {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.package-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.package-dependencies {
+  overflow: auto;
+  max-height: 240px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.package-dependencies > div {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 16px minmax(150px, 1fr) 72px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10.5px;
+}
+.package-dependencies > div:last-child {
+  border-bottom: 0;
+}
+.package-dependencies code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: var(--text-dim);
+}
+.package-dependencies small {
+  text-align: right;
+  color: var(--text-faint);
+}
+.package-consent {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--text);
+}
+.package-consent input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+.package-warnings h3 {
+  color: var(--amber);
+}
+.package-warnings p {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.package-warnings ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  max-height: 180px;
+  overflow: auto;
+}
+.package-warnings li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 10px;
+  padding: 7px 0;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+.package-warnings li code,
+.package-warnings li small {
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+}
+.package-tool-note {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  margin-top: 18px;
+}
+.package-notice {
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.package-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--green);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.package-result span {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.package-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
+.package-footer button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+@media (max-width: 620px) {
+  .package-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .package-dependencies > div {
+    grid-template-columns: minmax(100px, 1fr) 12px minmax(100px, 1fr);
+  }
+  .package-dependencies small {
+    display: none;
+  }
+  .package-content {
+    padding: 12px;
+  }
+}

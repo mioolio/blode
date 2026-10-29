@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c11",
+  "rules": [
+    {
+      "id": "removed-gets",
+      "kind": "call",
+      "names": ["gets"],
+      "severity": "warning",
+      "message": "gets 已从 C11 标准库移除，请使用 fgets。",
+      "enabled": true
+    },
+    {
+      "id": "c23-syntax",
+      "kind": "call",
+      "names": ["typeof", "typeof_unqual", "_BitInt", "static_assert", "alignof", "alignas"],
+      "severity": "warning",
+      "message": "此标准语法需要 C23；编译器扩展可另行支持。",
+      "enabled": true
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
+import { FileCloseDialog } from './FileCloseDialog';
 
 /** StudioDialogs renders one workspace surface; application actions stay in useStudio. */
 export function StudioDialogs({ studio }: { studio: Studio }) {
@@ -56,6 +57,7 @@ export function StudioDialogs({ studio }: { studio: Studio }) {
   const resourceWarning = !!appRegion && (firmwareUsed > appRegion.size || overlappedRegions.length > 0);
   return (
     <>
+      <FileCloseDialog studio={studio} />
       {toast && (
         <div className={`toast ${toast.error ? 'error' : toast.warning ? 'warning' : ''}`} role="status">
           <span className={`toast-icon ${toast.error ? 'error' : toast.warning ? 'warning' : 'success'}`}>

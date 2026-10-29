@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  hasFatalStartupError,
   findStaleElectronProcesses,
   findStaleVite,
   recoverStaleElectron,
   recoverStaleVite,
+  recoverStaleDevProcesses,
   stopProcessTree,
   type ProcessInventoryEntry,
 } from '../scripts/dev-runtime.mjs';
@@ -23,6 +25,25 @@ const entry = (
   ParentProcessId: parentPid,
   ExecutablePath: executable,
   CommandLine: command,
+});
+
+test('a mounted interface does not mask a later fatal service initialization error', () => {
+  const mounted = '2026-10-29T00:00:00.000Z window ready interface=mounted elapsed=240ms';
+  assert.equal(hasFatalStartupError(mounted), false);
+  assert.equal(
+    hasFatalStartupError(`${mounted}\n2026-10-29T00:00:00.100Z fatal Error: pipe startup failed\nstack`),
+    true,
+  );
+  assert.equal(hasFatalStartupError('2026-10-29T00:00:00.000Z fatal userData is not writable'), true);
+  assert.equal(
+    hasFatalStartupError(`${mounted}\n2026-10-29T00:00:00.100Z renderer-console fatal message`),
+    false,
+  );
+  // An ordinary user exit immediately after mounting needs no services-ready marker.
+  assert.equal(
+    hasFatalStartupError(`${mounted}\n2026-10-29T00:00:00.100Z development launcher disconnected`),
+    false,
+  );
 });
 
 test('Electron recovery matches exact executable/profile across quoted Windows argument forms', async () => {
@@ -157,4 +178,29 @@ test('process inventory command is fixed and caller paths remain outside PowerSh
   assert.deepEqual(found, [{ pid: 301, parentPid: 1 }]);
   assert.ok(captured.at(-1)?.includes('Get-CimInstance Win32_Process'));
   assert.ok(!captured.join(' ').includes(maliciousProfile));
+});
+
+test('startup recovers Electron and legacy Vite from one fresh process inventory', async () => {
+  let reads = 0;
+  const killed: number[] = [];
+  const stopped = await recoverStaleDevProcesses(electron, profile, vite, node, {
+    inventory: async () => {
+      reads++;
+      return [
+        entry(701, `"${electron}" --user-data-dir="${profile}" .`, electron, 999),
+        entry(702, `"${electron}" --type=gpu-process --user-data-dir="${profile}"`, electron, 701),
+        entry(703, `"${node}" "${vite}" --host 127.0.0.1`, node, 999),
+        entry(704, 'active parent', node, 1),
+        entry(705, `"${electron}" --user-data-dir="${profile}" .`, electron, 704),
+        entry(706, `"${node}" "${vite}"`, node, 704),
+      ];
+    },
+    stopProcessTree: async (pid) => {
+      killed.push(pid);
+      return true;
+    },
+  });
+  assert.equal(reads, 1);
+  assert.equal(stopped, 2);
+  assert.deepEqual(killed, [701, 703]);
 });

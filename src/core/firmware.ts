@@ -174,12 +174,11 @@ export async function prepareBuildExport(
     if (boardId !== 'stm32') throw new Error('firmware.elfUnavailable');
     const elfPath = await safeWorkspacePath(root, '.blode/build/firmware.elf', { internal: true });
     const info = await fs.lstat(elfPath).catch(() => null);
-    if (!info?.isFile() || info.isSymbolicLink() || info.size > MAX_FIRMWARE_BYTES) throw new Error('firmware.elfUnavailable');
-    const bytes = await fs
-      .readFile(elfPath)
-      .catch(() => {
-        throw new Error('firmware.elfUnavailable');
-      });
+    if (!info?.isFile() || info.isSymbolicLink() || info.size > MAX_FIRMWARE_BYTES)
+      throw new Error('firmware.elfUnavailable');
+    const bytes = await fs.readFile(elfPath).catch(() => {
+      throw new Error('firmware.elfUnavailable');
+    });
     verifyElfAgainstImage(bytes, merged);
     return { data: bytes, defaultName: name + '.elf', filterExtension: 'elf' };
   }

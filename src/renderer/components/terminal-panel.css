@@ -1,0 +1,83 @@
+.host-terminal[hidden] {
+  display: none;
+}
+.host-terminal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+.terminal-location {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.terminal-location > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-location > span:last-child {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.terminal-output {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  font:
+    11.5px/1.75 'Cascadia Code',
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.terminal-output:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: -2px;
+}
+.terminal-command {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+}
+.terminal-command > span {
+  color: var(--accent);
+}
+.terminal-command input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font:
+    11.5px/1.6 'Cascadia Code',
+    Consolas,
+    monospace;
+}
+.terminal-command button {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+.terminal-error {
+  margin: 0;
+  padding: 5px 12px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c23",
+  "symbols": [
+    {
+      "name": "exit",
+      "kind": "function",
+      "detail": "void exit(int status)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "exit(${1:})"
+    },
+    {
+      "name": "exp",
+      "kind": "function",
+      "detail": "double exp(double value)",
+      "documentation": "`<math.h>` · C23",
+      "insertText": "exp(${1:})"
+    }
+  ]
+}

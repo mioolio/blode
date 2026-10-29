@@ -1,0 +1,61 @@
+import type { AiAssistanceApi } from './ai';
+import type { CollaborationApi } from './collaboration';
+import type { WorkbenchApi } from './workbench';
+import type { GitApi } from './git';
+import type { ToolVersionsApi } from './tool-versions';
+import type { HostWorkspaceApi } from './host-workspace';
+import type { ProjectPackageApi } from './project-package';
+import type { TerminalApi } from './terminal';
+import type { LanguageApi } from './language';
+import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from './contracts';
+
+export function createWorkbenchBridge(
+  call: (method: string, args: unknown[]) => Promise<unknown>,
+  subscribe: <T>(channel: string, callback: (event: T) => void) => () => void,
+): AiAssistanceApi &
+  CollaborationApi &
+  WorkbenchApi &
+  GitApi &
+  ToolVersionsApi &
+  HostWorkspaceApi &
+  ProjectPackageApi &
+  LanguageApi &
+  TerminalApi {
+  const invoke = call as <T>(method: string, args: unknown[]) => Promise<T>;
+  return {
+    languageIndex: () => invoke('languageIndex', []),
+    gitStatus: () => invoke('gitStatus', []),
+    gitDiff: (input) => invoke('gitDiff', [input]),
+    gitAction: (input) => invoke('gitAction', [input]),
+    toolVersionsState: () => invoke('toolVersionsState', []),
+    toolVersionInstall: (input) => invoke('toolVersionInstall', [input]),
+    toolVersionSelect: (input) => invoke('toolVersionSelect', [input]),
+    hostBrowse: (path) => invoke('hostBrowse', path ? [path] : []),
+    hostOpenProject: (path) => invoke('hostOpenProject', [path]),
+    projectPackagePreview: () => invoke('projectPackagePreview', []),
+    projectPackageExport: (input) => invoke('projectPackageExport', [input]),
+    projectPackageSave: (id) => invoke('projectPackageSave', [id]),
+    terminalState: () => invoke('terminalState', []),
+    terminalRun: (input) => invoke('terminalRun', [input]),
+    terminalStop: () => invoke('terminalStop', []),
+    aiAssistanceState: () => invoke('aiAssistanceState', []),
+    aiAssistanceConfigure: (config) => invoke('aiAssistanceConfigure', [config]),
+    aiPredictionRequest: (context) => invoke('aiPredictionRequest', [context]),
+    aiPredictionCancel: (request) => invoke('aiPredictionCancel', [request]),
+    aiPredictionPoll: (request = {}) => invoke('aiPredictionPoll', [request]),
+    aiPredictionSubmit: (request) => invoke('aiPredictionSubmit', [request]),
+    aiPredictionRead: (request) => invoke('aiPredictionRead', [request]),
+    collaborationState: () => invoke('collaborationState', []),
+    collaborationOpen: (projectRoot, path) => invoke('collaborationOpen', [projectRoot, path]),
+    collaborationPresence: (input) => invoke('collaborationPresence', [input]),
+    collaborationEdit: (request) => invoke('collaborationEdit', [request]),
+    collaborationUndo: (request) => invoke('collaborationUndo', [request]),
+    collaborationSave: (request) => invoke('collaborationSave', [request]),
+    collaborationResolve: (request) => invoke('collaborationResolve', [request]),
+    collaborationLeave: (peerId) => invoke('collaborationLeave', [peerId]),
+    onCollaboration: (callback) => subscribe(COLLABORATION_CHANNEL, callback),
+    uiPublishState: (state) => invoke('uiPublishState', [state]),
+    uiCommandReply: (reply) => invoke('uiCommandReply', [reply]),
+    onUiCommand: (callback) => subscribe(UI_COMMAND_CHANNEL, callback),
+  };
+}

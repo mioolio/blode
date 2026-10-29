@@ -1,0 +1,114 @@
+.collaboration-avatars {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+}
+.collaboration-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface-1) 88%, currentColor);
+  border: 2px solid var(--surface-1);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent);
+  position: relative;
+  transition: margin 180ms ease;
+}
+.collaboration-avatar + .collaboration-avatar {
+  margin-left: -7px;
+}
+.collaboration-avatars:hover .collaboration-avatar + .collaboration-avatar {
+  margin-left: -3px;
+}
+.collaboration-overflow {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.remote-only-tab {
+  border-top-color: var(--accent);
+  animation: shared-tab-appear 180ms ease-out;
+}
+@keyframes shared-tab-appear {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.collaboration-avatar.editing {
+  border-style: solid;
+  box-shadow: 0 0 0 1px currentColor;
+}
+.collaboration-notices {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.collaboration-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 12px;
+  color: var(--amber);
+  font-size: 11px;
+}
+.collaboration-notice > svg {
+  flex-shrink: 0;
+}
+.collaboration-notice > span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.collaboration-notice button {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 8px;
+}
+.collaboration-merge {
+  width: min(1100px, calc(100vw - 32px));
+  max-width: none;
+}
+.collaboration-merge p {
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.collaboration-merge-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.collaboration-merge-columns label {
+  min-width: 0;
+}
+.collaboration-merge-columns textarea {
+  height: 50vh;
+  resize: vertical;
+  white-space: pre;
+  font:
+    12px/1.6 Consolas,
+    monospace;
+}
+@media (max-width: 760px) {
+  .collaboration-merge-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .collaboration-merge-columns textarea {
+    height: 24vh;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .remote-only-tab {
+    animation: none;
+  }
+  .collaboration-avatar {
+    transition: none;
+  }
+}

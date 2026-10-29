@@ -52,4 +52,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     </I18nContext.Provider>
   );
 }
-export const useI18n = () => useContext(I18nContext) ?? { locale: 'zh-CN' as Locale, setLocale: (_:Locale) => {}, t: (key:string) => translate('zh-CN',key) };
+export const useI18n = () =>
+  useContext(I18nContext) ?? {
+    locale: 'zh-CN' as Locale,
+    setLocale: (_: Locale) => {},
+    t: (key: string) => translate('zh-CN', key),
+  };

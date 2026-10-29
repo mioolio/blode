@@ -1,6 +1,6 @@
 # AI 与 Blode Studio 通信
 
-Blode Studio 将同一套核心方法映射为 Electron IPC、系统管道 JSON-RPC 和 MCP 工具。AI 不需要操作界面，也不需要获得 shell 接口。程序必须先启动，当前打开的工程就是调用的目标工程。
+Blode Studio 将同一套核心方法映射为 Electron IPC、系统管道 JSON-RPC 和 MCP 工具。AI 可使用具名接口管理工程；显式命令接口 `terminal.run` 另需 `confirm: true`。桌面程序或独立 Node Web 服务必须先启动，当前打开的工程就是调用目标。
 
 ## 连接与身份验证
 
@@ -73,7 +73,50 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 
 `flash.run` 和 `toolchain.install` 的 `confirm` 必须为布尔值 `true`，不能使用字符串。客户端必须根据用户指令决定是否有权进行对应操作；它是调用者的明确声明，不代表软件另外弹出了授权窗口。
 
-源文件写入经过核心的工程根目录约束、扩展名白名单、大小限制及符号链接/目录联接检查。无法通过本协议直接运行任意 shell 命令。`config.set` 可以配置自定义工具链可执行文件；这些文件属于与 IDE 插件相同的信任边界，必须来自用户信任的来源。
+源文件写入经过核心的工程根目录约束、扩展名白名单、大小限制及符号链接/目录联接检查。`terminal.run` 是独立的显式命令能力，在目标电脑运行，需 `confirm: true`，有输出与运行时长限制，不提供交互式 stdin。`config.set` 可以配置自定义工具链可执行文件；工具路径、Git 与命令调用属于可信主机操作。
+
+## 扩展工作台能力
+
+连接后先调用 `capabilities.get` 查询当前方法、说明及确认要求；MCP 工具目录使用同一份参数校验清单。新增能力覆盖文件／目录管理、工程与最近记录、驱动、固件导出与独立烧录、硬件调试、补全配置、协作草稿以及界面操作。
+
+| 能力       | 方法                                                                                                                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 文件与目录 | `file.create`、`directory.create`、`file.rename`、`file.delete`                                                                                                                                              |
+| 工程与历史 | `project.open`、`project.close`、`recent.list`、`recent.remove`                                                                                                                                              |
+| 驱动       | `drivers.status`、`drivers.install`                                                                                                                                                                          |
+| 固件       | `firmware.prepare`、`firmware.export`、`firmware.flash`                                                                                                                                                      |
+| 独立调试   | `debugger.open`、`debugger.state`、`debugger.symbols.set`、`debugger.connect`、`debugger.action`、`debugger.breakpoint`、`debugger.memory`、`debugger.storage`、`debugger.tools.install`、`debugger.gdb.set` |
+| 界面与日志 | `ui.state`、`ui.command`、`window.action`、`logs.latest`                                                                                                                                                     |
+| 补全与预测 | `ai.state`、`ai.configure`、`ai.predictions.poll`、`ai.prediction.submit`、`ai.prediction.read`、`ai.prediction.request`、`ai.prediction.cancel`                                                             |
+| 多人协作   | `collaboration.state`、`collaboration.open`、`collaboration.presence`、`collaboration.edit`、`collaboration.save`、`collaboration.resolve`、`collaboration.leave`                                            |
+| 撤销与重做 | `collaboration.undo`（`direction: undo/redo`，`scope: own/global`；全局仅可信本地传输）                                                                                                                      |
+| 本地 Git   | `git.status`、`git.diff`、`git.action`                                                                                                                                                                       |
+| 工具版本   | `tools.versions`、`tools.installVersion`、`tools.selectVersion`                                                                                                                                              |
+| 工程打包   | `project.package.preview`、`project.package.export`                                                                                                                                                          |
+| 主机目录   | `host.browse`（目标电脑路径）                                                                                                                                                                                |
+| 命令窗口   | `terminal.state`、`terminal.run`、`terminal.stop`                                                                                                                                                            |
+
+文件树操作使用工程相对路径。`project.open`、`firmware.prepare/export`、`debugger.symbols.set` 和 `debugger.gdb.set` 使用桌面服务所在电脑的绝对路径；不通过浏览器任意访问客户端文件。`firmware.prepare` 返回不可变选择 ID，随后将 ID、配置、地址及 `confirm: true` 交给 `firmware.flash`。导出默认不覆盖已有文件，覆盖时另需 `confirmOverwrite: true`。
+
+`flash.run`、`toolchain.install`、`file.delete`、`project.close`、`drivers.install`、`firmware.flash`、`debugger.tools.install` 和 `window.action` 都必须传布尔值 `confirm: true`。软件允许已授权 AI 直接执行这些动作，不额外弹出确认流程；参数校验、设备互斥、构建指纹和目标边界检查仍然生效。
+
+`ui.state` 列出已连接界面的 `clientId`、当前文件、标签、未保存文件及面板状态。`ui.command` 默认作用于桌面端，无桌面端时选择一个活跃网页客户端；也可用 `target` 指定 ID。命令会等待该界面回执。例如：
+
+```json
+{ "method": "ui.command", "params": { "action": "preferences" } }
+```
+
+```json
+{ "method": "ui.command", "params": { "action": "consolePanel", "visible": false } }
+```
+
+支持的 `action` 为 `home`、`project`、`view`（附 `view: code/layout/ai`）、`openFile/closeFile/pinFile`（附 `path`）、`preferences`、`save`、`console`（附 `tab: output/serial/problems/warnings/terminal`）、`consolePanel/devicePanel`（附 `visible`）、`editor`（附 `command: undo/redo/find/format/gotoLine/selectAll`）、`splitEditor`、`language`（附 `language: zh-CN/en`）、`syncDrafts`（附 `visible`）及 `clearLogs`。它是命名操作接口，不接受任意 JavaScript。
+
+工具示例：`tools.installVersion({"id":"gnu-arm:14.2.1-1.1","confirm":true})`；`tools.selectVersion` 返回要合入 `config.toolchain` 的字段，再通过 `config.set` 保存。Git 的提交、拉取、推送和删除远端均需显式确认；禁止强推，拉取仅快进。工程 ZIP 导出需要先预览，外部依赖另需 `confirmExternal: true`，未解决警告另需 `allowIncomplete: true`。所有接口以 `capabilities.get` 返回的参数模式为准。
+
+`project.readFile` 读取磁盘索引；读取含未保存修改的当前共享版本请使用 `collaboration.open`。编辑时提交其 `session`、`revision` 与 UTF-16 偏移变化，收到冲突后先核对合并，再以准确版本保存。旧 `file.write` 无法静默替换其他用户的共享草稿。工程切换会先保存已同步的共享修改；未同步的本地编辑应先经目标界面的 `save` 命令保存。
+
+手动及 AI 修改补全、预测请求示例见 [补全与外部 AI 预测](AI-COMPLETIONS.md)；协作者颜色、版本合并与稳定阅读位置见 [网页多人协作](COLLABORATION.md)。
 
 ## Node.js 直接调用示例
 

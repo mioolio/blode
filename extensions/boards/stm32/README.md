@@ -2,14 +2,14 @@
 
 此目录拥有 STM32 / ST-Link 的配置、运行时、协议、工具和驱动事实。它使用 ../../runtime.ts 的 RuntimeHost，不导入 core 或 ESP32-S3 平台实现。
 
-| 文件                       | 责任                                                                 |
-| -------------------------- | -------------------------------------------------------------------- |
-| adapter.ts、manifest.json  | STM32 配置、平台能力和边界校验                                       |
-| layout.ts                  | 从 ProjectConfig 读取应用区大小，供链接、ELF 与二进制边界共用        |
-| runtime.ts                 | 探针扫描、目标识别、构建/固件验证与烧录分派                          |
+| 文件                              | 责任                                                                 |
+| --------------------------------- | -------------------------------------------------------------------- |
+| adapter.ts、manifest.json         | STM32 配置、平台能力和边界校验                                       |
+| layout.ts                         | 从 ProjectConfig 读取应用区大小，供链接、ELF 与二进制边界共用        |
+| runtime.ts                        | 探针扫描、目标识别、构建/固件验证与烧录分派                          |
 | compiler.ts、templates.ts、gnu.ts | Arm Compiler 6 或 GNU Arm GCC 编译、ELF/向量验证、目标模板、GCC 安装 |
-| programmer.ts、protocol.ts | st-info/st-flash 工具、输出解析、参数和物理范围校验                  |
-| driver.ts                  | 官方驱动归档、INF、USB ID 和驱动库事实                               |
+| programmer.ts、protocol.ts        | st-info/st-flash 工具、输出解析、参数和物理范围校验                  |
+| driver.ts                         | 官方驱动归档、INF、USB ID 和驱动库事实                               |
 
 SWD 调试与 UART 串口分开；ST-Link 不需要出现在 COM 列表。平台识别必须确认选定探针、芯片 ID 和物理容量，不能从一个 COM 号或默认容量推断 STM32 型号。
 

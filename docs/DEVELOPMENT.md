@@ -4,7 +4,34 @@
 
 执行 npm ci 后使用 npm run dev。启动脚本先构建 main、preload 与 MCP 桥，再启动 Vite 和 Electron。renderer 可热更新；core、shared、automation、preload、平台包或构建脚本修改后需重启开发进程，当前没有主进程自动重启 watch。
 
+启动准备阶段合并 Electron 与旧 Vite 孤儿进程查询。进程恢复与关键运行时权限检查并行；权限检查完成后再并行构建和创建 Vite，避免低完整性 esbuild 在修复完成前执行。开发启动只检查实际使用的 Electron 与 esbuild 可执行文件，不递归 SDK/tools；`postinstall` 和 `npm run repair:permissions` 仍执行完整工具目录检查，并覆盖 esbuild。全部准备成功后才启动 Electron，原有孤儿进程恢复与单实例保护保持有效。
+
+Vite 依赖扫描入口固定为 `index.html`，文件监听忽略 `.tools/`、`tools/`、`dist/`、`release/` 和 `.git/`。工具目录里的 HTML 文档不属于前端入口，新增工具链不应增加开发服务器的扫描范围。
+
+终端逐项显示权限检查、进程恢复、构建、Vite 初始化与监听、Electron 尝试的耗时；超过 5 秒会继续报告等待阶段。启动器记录位于 `.tools/dev-launcher.log`，每次 Electron 尝试退出后另存主进程日志为 `.tools/dev-main.log.attempt-N.log`，重试不会覆盖前次失败证据。GPU overlay 警告本身不代表窗口启动失败，仍以界面就绪及退出状态判定。
+
+可运行 `npm run dev -- --diagnose-startup` 检查实际启动准备路径。诊断使用独立 profile、临时端口和全新依赖缓存，不启动 Electron，也不结束已有进程；结果保存在 `.tools/startup-diagnostics/`。该结果包含首个 HTML 响应，不代表完整桌面冷启动时间。权限检查仍可修复开发运行时的 Low 标签。
+
+桌面窗口提前加载静态主题首屏，同时初始化服务；业务 IPC 等待路由准备完成，窗口控制无需等待后台服务。React 首次挂载通过专用 IPC 报告就绪，不再每 250 毫秒执行 DOM 查询。`.tools/dev-main.log` 记录各阶段累计耗时，`window first paint`、`window ready interface=mounted` 和 `bootstrap services ready` 分别代表首次绘制、界面挂载和服务就绪，不能把三者当作同一个指标。服务初始化的 fatal 错误仍使启动器以失败退出。
+
+桌面使用 `progressiveStartup` 返回首份界面快照，工具链与设备在后台检查一次，期间 `AppState.initializing` 为 true；界面显示“正在检查”，不根据尚为空的结果提示未安装或清除用户选择。完成后通过设备状态事件更新，不新增周期轮询。编辑器及首选项、布局、AI、硬件调试等界面按需载入；Monaco 初始化期间显示当前文件的真实源码预览。首次安装依赖后仍可能需要 Vite 预构建；资源体积和局部耗时测试不能代替桌面端冷启动测量。
+
 开发模式用户数据位于 .tools/dev-user-data，与安装版和其他 checkout 分开；该目录已被 Git 和 Vite 忽略。主进程在申请单实例锁前验证目录写入与删除，启动日志写入 .tools/dev-main.log。开发工具链默认使用仓库 tools/，不与项目 .blode/ 混放。
+
+### 独立 Node.js Web 版
+
+Web 宿主不导入 Electron，与桌面版共用工程、协作、Git、工具版本、串口和硬件调试服务。要求 Node.js 24 或以上版本；打开工程与文件时选择服务所在电脑上的路径。
+
+| 命令                  | 用途                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `npm run web:dev`     | 用 tsx 启动 TypeScript Web 宿主；前端需先构建，UI 修改后重新构建                   |
+| `npm run web:build`   | 构建独立 Node 服务与 renderer，并检查宿主 bundle 不含 Electron 导入                |
+| `npm run web:start`   | 运行 `dist/web-server.cjs`，默认仅监听 `127.0.0.1:47821`                           |
+| `npm run package:web` | 构建并生成 Web 发行 ZIP；只包含宿主、前端、serialport 运行时清单与锁文件、说明文档 |
+
+例如 `npm run web:start -- --host 0.0.0.0 --port 47821 --project "D:\\firmware\\my-device" --data-root ".tools/web-data"`。启动后打开终端一次性输出的私密链接；本机回环 API 同样需要令牌。Web 的默认数据目录独立于桌面开发版，可使用 `--data-root` 覆盖；不把该目录、令牌或用户工程加入发行 ZIP。`package:web -- --skip-build --output "release/review.zip"` 可归档刚刚构建的 Web 产物，已有 ZIP 不会被覆盖。
+
+Web ZIP 解压后执行 `npm ci --omit=dev` 安装目标平台的 serialport 依赖，再执行 `npm start`。生成发行锁文件只发生在临时目录，使用 `--package-lock-only --ignore-scripts`；不在打包时下载大型编译工具，也不内置 Electron、Chromium 或本机凭据。详细部署说明见 [WEB-HOST.md](WEB-HOST.md)。
 
 | 环境变量             | 用途                                           |
 | -------------------- | ---------------------------------------------- |
@@ -20,6 +47,14 @@ Windows 工作区文件可能继承 Low 完整性标签，使可执行文件以�
 开发服务器现在通过 Vite API 在启动器进程内运行。按 profile 获取操作系统级独占会话后，启动器只回收精确匹配本机 Electron 路径和 user-data-dir 的孤儿进程树；仍有活启动器的窗口和其他 profile 不被清理。旧 Vite 子进程也仅在 Node 路径、脚本路径精确匹配且父进程已消失时回收，不全局终止 Electron 或 Node。
 
 每次 Electron 尝试有独立启动日志和 30 秒可见窗口期限；重试前停止本次拥有的进程树。主进程通过 IPC/父进程存活检查随开发启动器退出，关闭资源有 5 秒期限，避免不可见实例长期占用 profile。开发模式禁用有争用风险的 GPU 持久缓存/Graphite 路径，必要时再尝试软件渲染；不删除用户数据、Local Storage 或工程。AMD 视频处理器等 GPU 警告不能单独视为启动失败，最终以窗口就绪和进程状态验证。
+
+## 主进程打包体积
+
+普通 `Ctrl+R` 继续使用缓存刷新，强制刷新仍可用 `Ctrl+Shift+R`。Monaco 与其语言 worker 按需加载；主进程保留工程资源索引和工具状态，合并并行读取，文件／配置变化时失效。构建新鲜度及保存前磁盘冲突检查仍读取真实输入，不依赖界面索引的防抖缓存。打包网页对静态资源提供 ETag，带内容哈希的资源启用长期缓存；HTML 每次重新验证。
+
+主进程中的 Zod 使用 `import * as z from 'zod'`，让打包器按实际调用裁剪导出，避免引入未使用的语言包和 JSON Schema 转换功能。不要为缩小单个文件而把 Zod 整体外置；发布包应继续包含所需校验逻辑。
+
+`npm run dev` 压缩空白和语法、保留标识符及函数名，并生成引用本地源码的 `.map`，不重复嵌入源码内容。`npm run build` 或直接运行 `node scripts/build.mjs` 默认生成完整压缩的主进程、preload 和 MCP 桥，保留函数／类名用于诊断；发布模式不生成这三个文件的源码映射，并清理上次开发构建遗留的对应 `.map`。需要单独构建可调试产物时，可先设置 `BLODE_BUILD_MODE=development`；显式设置为 `production` 可强制发布模式。这些设置不改变 Vite 的前端打包配置。
 
 ## 平台边界
 
@@ -45,7 +80,7 @@ STM32 的 build.entry 可为文件、目录或点号；有入口才请求 Arm Co
 
 ## 界面与能力
 
-文件、布局和自动化以可关闭编辑页签呈现，按工程保存会话；首选项由“文件 → 首选项”打开“常规/工具链/驱动”二级菜单并以弹窗呈现，不再占用编辑页签。语言和驱动操作无需打开工程。
+文件、布局和自动化以可关闭编辑页签呈现，按工程保存会话；点击“文件 → 首选项”直接打开宽矩形弹窗，左侧导航切换常规、工具链、驱动、AI、状态与安装输出，右侧显示详细配置。语言和驱动状态查看无需打开工程。
 
 构建/固件验证、布局与烧录按平台 capabilities 开放。`layout` 提供布局页，`partitions` 允许任意分区编辑；auto 不显示布局，STM32 在固定布局中调整容量与应用区，剩余 Flash 保留。旧会话中的不可用布局页只显示说明，不产生可编辑的 ESP 默认分区。
 
@@ -56,6 +91,19 @@ Monaco 本地打包。补全位于 extensions/completions，当前有 Arduino AP
 ## 构建与验证
 
 npm run typecheck 检查跨模块契约，npm test 覆盖协议与边界，npm run build 完成类型与生产构建。平台目录还需做复制后隔离 bundle 检查；这只验证不依赖 core/其他平台，不能当作真实板卡测试。
+
+本轮轻量验证可分别执行：
+
+```sh
+npm run typecheck
+npx tsx --test tests/tool-versions.test.ts tests/git.test.ts tests/project-package.test.ts tests/web-host.test.ts
+npm run web:build
+node dist/web-server.cjs --help
+```
+
+测试使用小型下载响应、临时工程和临时 Git 仓库。Git 推送／拉取在本地临时 bare 远端中验证，不向当前源码仓库或真实远端提交；Web 测试使用临时端口、替换平台运行时，覆盖令牌鉴权、目标机目录打开、工程 ZIP 下载、工具版本清单与临时目录内的终端输出。测试不连接／烧录单片机；宿主初次读取状态仍可枚举只读串口／驱动信息。
+
+这些结果证明服务与协议路径能运行，不等同于跨电脑工程编译、完整工具链下载、长时间多人浏览器操作或 Linux 认证。Linux x64／ARM64 的下载与路径适配尚未实机安装、编译或连接硬件验证。验收范围见 [PLATFORM-SUPPORT.md](PLATFORM-SUPPORT.md)，后续计划见 [ROADMAP.md](ROADMAP.md)。
 
 构建容量来自编译工具或实际二进制。Flash 总容量、可写区域、链接后的 RAM 预算与运行时空闲内存分别显示，不能以源码字符数推算固件大小。STM32 默认模板的 RAM 占用包含静态数据及链接器保留的 1 KiB 栈，不代表运行时峰值；启动使用 AC6 标准 __main 完成运行库初始化。成功记录位于 .blode/build-state.json，输入或产物改动使 buildStale，失败构建不伪造成功数据。
 

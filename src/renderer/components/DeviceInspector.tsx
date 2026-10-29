@@ -27,6 +27,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
     drafts,
   } = studio;
   const workspaceOpen = !!state?.workspaceOpen;
+  const initializing = !state || state.initializing === true;
   const debugProbes = state?.debugProbes ?? [];
   const selectedProbe = debugProbes.find(
     (probe) => probe.serialNumber.toLowerCase() === config?.programmer?.serialNumber.toLowerCase(),
@@ -48,8 +49,9 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
   );
   const autoDeviceValue = automaticChoice ? '' : (selectedCandidate?.id ?? '');
   const canProbe =
-    isAuto ||
-    (usesStlink ? !!selectedProbe || (probeUncertain && !!config?.programmer?.serialNumber) : hasPort);
+    !initializing &&
+    (isAuto ||
+      (usesStlink ? !!selectedProbe || (probeUncertain && !!config?.programmer?.serialNumber) : hasPort));
   const portField = (
     <label>
       <span className="field-label label-with-action">
@@ -57,17 +59,22 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
           <Usb size={12} strokeWidth={1.8} aria-hidden="true" />
           {t(isAuto || usesStlink ? 'device.serialMonitorPort' : 'device.port')}
         </span>
-        <button className="text-button" onClick={refreshPorts} disabled={!!busy}>
+        <button className="text-button" onClick={refreshPorts} disabled={!!busy || initializing}>
           <RefreshCw size={11} strokeWidth={1.9} aria-hidden="true" />
           {t('action.refresh')}
         </button>
       </span>
       <select
-        value={hasPort ? (config?.port ?? '') : ''}
-        disabled={!config || !!busy}
+        value={hasPort || initializing ? (config?.port ?? '') : ''}
+        disabled={!config || !!busy || initializing}
         onChange={(event) => config && setConfig({ ...config, port: event.target.value })}
       >
-        <option value="">{t('device.portPlaceholder')}</option>
+        <option value="">{t(initializing ? 'device.connectionChecking' : 'device.portPlaceholder')}</option>
+        {initializing && config?.port && !hasPort && (
+          <option value={config.port}>
+            {config.port} · {t('device.connectionChecking')}
+          </option>
+        )}
         {openSerial?.open && !selectedPort && openSerial.port === config?.port && (
           <option value={openSerial.port}>
             {openSerial.port} · {t('status.serialConnected')}
@@ -136,15 +143,6 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
               </option>
             ))}
           </select>
-          {config?.boardId === 'auto' && <span className="subtle-note">{t('device.autoHint')}</span>}
-          {isAuto && hasBuildEntry && <span className="subtle-note">{t('device.buildDetectFirst')}</span>}
-          {isStm32 && (
-            <span className="subtle-note">
-              {hasBuildEntry
-                ? `${t('project.buildEntry')}: ${state?.build?.entry ?? state?.build?.sketch}`
-                : t('device.stm32EntryHint')}
-            </span>
-          )}
         </label>
         {isAuto && (
           <label>
@@ -153,14 +151,14 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 <Usb size={12} strokeWidth={1.8} aria-hidden="true" />
                 {t('device.detectDevice')}
               </span>
-              <button className="text-button" onClick={refreshAutoDevices} disabled={!!busy}>
+              <button className="text-button" onClick={refreshAutoDevices} disabled={!!busy || initializing}>
                 <RefreshCw size={11} strokeWidth={1.9} aria-hidden="true" />
                 {t('action.refresh')}
               </button>
             </span>
             <select
               value={autoDeviceValue}
-              disabled={!config || !!busy}
+              disabled={!config || !!busy || initializing}
               onChange={(event) => {
                 if (!config) return;
                 const selected = candidates.find((candidate) => candidate.id === event.target.value);
@@ -177,15 +175,16 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 setStale(true);
               }}
             >
-              <option value="">{t('device.autoSelection')}</option>
+              <option value="">
+                {t(initializing ? 'device.connectionChecking' : 'device.autoSelection')}
+              </option>
               {candidates.map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
                   {candidate.name}
                 </option>
               ))}
             </select>
-            <span className="subtle-note">{t('device.autoDeviceHint')}</span>
-            {!!state?.detection?.unavailablePlatforms.length && (
+            {!initializing && !!state?.detection?.unavailablePlatforms.length && (
               <span className="subtle-note">
                 {t('device.detectionToolsMissing')}{' '}
                 {state.detection.unavailablePlatforms
@@ -206,14 +205,20 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                   <Usb size={12} strokeWidth={1.8} aria-hidden="true" />
                   {t('device.debugProbe')}
                 </span>
-                <button className="text-button" onClick={refreshDebugProbes} disabled={!!busy}>
+                <button
+                  className="text-button"
+                  onClick={refreshDebugProbes}
+                  disabled={!!busy || initializing}
+                >
                   <RefreshCw size={11} strokeWidth={1.9} aria-hidden="true" />
                   {t('action.refresh')}
                 </button>
               </span>
               <select
-                value={selectedProbe?.serialNumber ?? ''}
-                disabled={!config || !!busy}
+                value={
+                  selectedProbe?.serialNumber ?? (initializing ? config?.programmer?.serialNumber : '') ?? ''
+                }
+                disabled={!config || !!busy || initializing}
                 onChange={(event) => {
                   if (!config) return;
                   setConfig({
@@ -227,14 +232,25 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                   setStale(true);
                 }}
               >
-                <option value="">{t('device.debugProbePlaceholder')}</option>
+                <option value="">
+                  {t(initializing ? 'device.connectionChecking' : 'device.debugProbePlaceholder')}
+                </option>
+                {initializing && !selectedProbe && config?.programmer?.serialNumber && (
+                  <option value={config.programmer.serialNumber}>
+                    {config.programmer.serialNumber} · {t('device.connectionChecking')}
+                  </option>
+                )}
                 {debugProbes.map((probe) => (
                   <option key={probe.serialNumber} value={probe.serialNumber}>
                     {probe.name}
                   </option>
                 ))}
               </select>
-              {!state?.toolchain.stlink ? (
+              {initializing ? (
+                <span className="subtle-note" role="status">
+                  {t('device.connectionChecking')}
+                </span>
+              ) : !state?.toolchain.stlink ? (
                 <span className="subtle-note">{t('device.stlinkToolsMissing')}</span>
               ) : probeUncertain ? (
                 <span className="subtle-note">
@@ -283,7 +299,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 }}
               />
             </label>
-            {!state?.toolchain.stlink && (
+            {!initializing && !state?.toolchain.stlink && (
               <button className="secondary" onClick={install} disabled={!!busy}>
                 {t('action.install')}
               </button>

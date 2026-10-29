@@ -1,0 +1,111 @@
+.studio.web-studio {
+  min-width: 0;
+}
+.web-workspace-switcher {
+  display: none;
+}
+@media (max-width: 1020px) {
+  .studio.web-studio {
+    grid-template-rows: 42px 34px minmax(0, 1fr) 24px;
+  }
+  .web-studio .web-workspace-switcher {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .web-workspace-switcher button {
+    flex: 1;
+    max-width: 180px;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+  }
+  .web-workspace-switcher button.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .web-studio .workspace {
+    grid-template-columns: minmax(0, 1fr) !important;
+    padding: 5px;
+  }
+  .web-studio .workspace > .splitter {
+    display: none;
+  }
+  .web-studio .workspace > .project-panel,
+  .web-studio .workspace > .center-panel,
+  .web-studio .workspace > .device-panel {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .web-studio:not([data-mobile-panel='files']) .workspace > .project-panel,
+  .web-studio:not([data-mobile-panel='editor']) .workspace > .center-panel,
+  .web-studio:not([data-mobile-panel='device']) .workspace > .device-panel {
+    display: none;
+  }
+  .web-studio .center-panel.with-console {
+    grid-template-rows: minmax(80px, 1fr) 4px minmax(80px, 38%) !important;
+  }
+  .web-studio .center-panel:not(.with-console) {
+    grid-template-rows: minmax(80px, 1fr) !important;
+  }
+  .web-studio .device-panel {
+    width: auto;
+    max-width: none;
+  }
+  .web-studio .statusbar {
+    overflow: hidden;
+  }
+  .web-studio .ide-menu-popup {
+    max-height: calc(100dvh - 80px);
+    overflow-y: auto;
+  }
+}
+@media (max-width: 620px) {
+  .web-studio .topbar {
+    gap: 2px;
+    padding: 0 4px;
+  }
+  .web-studio .brand {
+    display: none;
+  }
+  .web-studio .topbar-spacer {
+    min-width: 0;
+  }
+  .web-studio .ide-menu-trigger {
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 11px;
+  }
+  .web-studio .ide-menu:nth-last-child(-n + 4) > .ide-menu-popup {
+    left: auto;
+    right: 0;
+  }
+  .web-studio .console-header {
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+  .web-studio .console-tabs button {
+    padding: 0 7px;
+  }
+  .web-studio .console-tools .busy-label {
+    display: none;
+  }
+  .web-studio .serial-toolbar select {
+    max-width: min(230px, 100%);
+  }
+  .web-studio .modal {
+    max-width: calc(100vw - 16px);
+  }
+}
+@media (max-width: 420px) {
+  .web-studio .ide-menu-trigger {
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 10.5px;
+  }
+}

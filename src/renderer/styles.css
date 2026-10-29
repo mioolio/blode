@@ -1,4 +1,3 @@
-@import url('monaco-editor/min/vs/editor/editor.main.css');
 @import './styles/base.css';
 @import './styles/workspace.css';
 @import './styles/panels.css';

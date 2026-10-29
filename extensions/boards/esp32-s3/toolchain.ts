@@ -55,10 +55,13 @@ export class Toolchains {
   }
 
   private async ensureConfig(config: ProjectConfig): Promise<void> {
+    const store = config.toolchain.packageDirectory
+      ? path.resolve(config.toolchain.packageDirectory)
+      : this.root;
     const directories = {
-      data: path.join(this.root, 'arduino-data'),
-      downloads: path.join(this.root, 'downloads'),
-      user: path.join(this.root, 'libraries'),
+      data: path.join(store, 'arduino-data'),
+      downloads: path.join(store, 'downloads'),
+      user: path.join(store, 'libraries'),
     };
     // A bundled tool root may be read-only; the CLI still needs its cache paths named.
     for (const directory of Object.values(directories))
@@ -76,7 +79,8 @@ export class Toolchains {
       2,
     );
     try {
-      await fs.mkdir(this.root, { recursive: true });
+      await fs.mkdir(store, { recursive: true });
+      this.configFile = path.join(store, 'arduino-cli.yaml');
       await fs.writeFile(this.configFile, contents);
     } catch {
       // The bundled tools folder cannot be written; keep configuration in user data.
@@ -113,7 +117,7 @@ export class Toolchains {
     if (await this.commandExists(python, ['-m', 'esptool', 'version']))
       return this.runCommand(python, args, settings);
     // Both callers build args as `-m esptool <rest>`; a standalone binary takes `<rest>` directly.
-    const bundled = args[0] === '-m' && args[1] === 'esptool' ? await this.bundledEsptool() : null;
+    const bundled = args[0] === '-m' && args[1] === 'esptool' ? await this.bundledEsptool(config) : null;
     if (!bundled) return this.runCommand(python, args, settings);
     return this.runCommand(bundled, args.slice(2), settings);
   }
@@ -122,7 +126,7 @@ export class Toolchains {
     if (this.cached && !refresh) return structuredClone(this.cached);
     const cli = await this.cliPath(config);
     const python = await this.pythonPath(config);
-    const bundledEsptool = await this.bundledEsptool();
+    const bundledEsptool = await this.bundledEsptool(config);
     const [cliVersion, pythonVersion, moduleEsptool, bundledVersion] = await Promise.all([
       this.commandExists(cli, ['version']),
       this.commandExists(python, ['--version']),
@@ -171,9 +175,16 @@ export class Toolchains {
   }
 
   /** The ESP32 core bundle contains a standalone esptool; it keeps flashing usable without Python. */
-  private async bundledEsptool(): Promise<string | null> {
+  private async bundledEsptool(config: ProjectConfig): Promise<string | null> {
     const executable = process.platform === 'win32' ? 'esptool.exe' : 'esptool';
-    const root = path.join(this.root, 'arduino-data', 'packages', 'esp32', 'tools', 'esptool_py');
+    const root = path.join(
+      config.toolchain.packageDirectory ?? this.root,
+      'arduino-data',
+      'packages',
+      'esp32',
+      'tools',
+      'esptool_py',
+    );
     const versions = await fs.readdir(root).catch(() => [] as string[]);
     for (const version of versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))) {
       const file = path.join(root, version, executable);
@@ -202,6 +213,18 @@ export class Toolchains {
 
   /** Only official stable releases are managed. A lock records the exact resolved versions. */
   async install(config: ProjectConfig): Promise<ToolchainStatus> {
+    let coreTarget = 'esp32:esp32';
+    if (config.toolchain.packageDirectory) {
+      try {
+        const selected = JSON.parse(
+          await fs.readFile(path.join(config.toolchain.packageDirectory, 'installed.json'), 'utf8'),
+        ) as { version?: string };
+        if (typeof selected.version === 'string' && /^\d+\.\d+\.\d+$/.test(selected.version))
+          coreTarget += `@${selected.version}`;
+      } catch {
+        /* A custom empty package store uses the normal stable release. */
+      }
+    }
     const progress = (tool: string, phase: InstallationProgress['phase']) =>
       this.network.onProgress?.({ tool, phase });
     if (config.toolchain.mode === 'custom') {
@@ -213,7 +236,7 @@ export class Toolchains {
       const update = await this.runCli(config, ['core', 'update-index'], 300_000);
       if (update.code !== 0) throw new Error(update.output || 'error.toolchainIndex');
       progress('Arduino-ESP32', 'installing');
-      const install = await this.runCli(config, ['core', 'install', 'esp32:esp32'], 1_200_000);
+      const install = await this.runCli(config, ['core', 'install', coreTarget], 1_200_000);
       if (install.code !== 0) throw new Error(install.output || 'error.toolchainCore');
       progress('Arduino-ESP32', 'verifying');
       const status = await this.status(config, true);
@@ -287,7 +310,7 @@ export class Toolchains {
     if (update.code !== 0) throw new Error(update.output || 'error.toolchainIndex');
     this.log('status.installingEsp32');
     progress('Arduino-ESP32', 'installing');
-    const install = await this.runCli(config, ['core', 'install', 'esp32:esp32'], 1_200_000);
+    const install = await this.runCli(config, ['core', 'install', coreTarget], 1_200_000);
     if (install.code !== 0) throw new Error(install.output || 'error.toolchainCore');
     progress('Arduino-ESP32', 'completed');
     let python = await this.pythonPath(config);

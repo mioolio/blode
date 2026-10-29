@@ -32,6 +32,11 @@ test('ESP32 file/folder entries preserve local includes and refuse declared file
   t.mock.method(Toolchains.prototype, 'runCli', async (_config: ProjectConfig, args: string[]) => {
     compileCalls++;
     assert.equal(args[0], 'compile');
+    const optimization = compileCalls === 1 ? '-Os' : compileCalls === 2 ? '-O0' : '-O2';
+    assert.ok(args.includes(`compiler.c.extra_flags=${optimization} -g`));
+    assert.ok(args.includes(`compiler.cpp.extra_flags=${optimization} -g`));
+    assert.ok(args.includes('compiler.c.elf.extra_flags=-Wl,--gc-sections'));
+    assert.ok(args.every((value) => !value.includes('-flto')));
     const stage = args.at(-1)!;
     assert.match(await fs.readFile(path.join(stage, `${path.basename(stage)}.ino`), 'utf8'), /local.h/);
     assert.equal(await fs.readFile(path.join(stage, 'local.h'), 'utf8'), '#pragma once');
@@ -70,12 +75,16 @@ test('ESP32 file/folder entries preserve local includes and refuse declared file
   };
   const runtime = createEsp32S3Runtime(host);
   const config = esp32S3Adapter.createConfig();
-  for (const entry of ['nested/deep/app/main.ino', 'nested/deep/app'])
-    assert.equal((await runtime.build(config, { entry })).success, true);
+  for (const input of [
+    { entry: 'nested/deep/app/main.ino' },
+    { entry: 'nested/deep/app', settings: { mode: 'debug' as const, optimizeForSize: true } },
+    { entry: 'nested/deep/app', settings: { mode: 'release' as const, optimizeForSize: false } },
+  ])
+    assert.equal((await runtime.build(config, input)).success, true);
   await assert.rejects(
     runtime.build(config, { entry: 'nested/deep/app/main.ino', files: ['outside.h'] }),
     /buildFileOutsideEntry/,
   );
-  assert.equal(compileCalls, 2);
+  assert.equal(compileCalls, 3);
   assert.equal(await fs.readFile(path.join(root, 'outside.h'), 'utf8'), 'must stay untouched');
 });

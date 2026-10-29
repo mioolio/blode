@@ -63,7 +63,7 @@ async function fixture(t: TestContext) {
   await fs.writeFile(path.join(project, 'src/main.c'), '#include "helper.h"\nint main(void){for(;;){} }');
   await fs.writeFile(path.join(project, 'src/helper.c'), 'int helper(void){return 1;}');
   await fs.writeFile(path.join(project, 'src/helper.h'), 'int helper(void);');
-  const calls: { tool: string; args: string[] }[] = [];
+  const calls: { tool: string; args: string[]; command: string }[] = [];
   let failing = false;
   const host: RuntimeHost = {
     dataRoot: path.join(root, 'data'),
@@ -87,19 +87,21 @@ async function fixture(t: TestContext) {
     closeSerial: async () => {},
     async runCommand(command, args) {
       const tool = path.basename(command).replace(/\.exe$/i, '');
-      calls.push({ tool, args });
+      calls.push({ tool, args, command });
       if (args.includes('--version'))
         return {
           code: 0,
-          output: tool === 'arm-none-eabi-gcc' ? 'arm-none-eabi-gcc (GNU) 15.2.1' : 'Arm Compiler for Embedded 6.22',
+          output:
+            tool === 'arm-none-eabi-gcc'
+              ? 'arm-none-eabi-gcc (GNU) 15.2.1'
+              : 'Arm Compiler for Embedded 6.22',
         };
       if (failing) return { code: 1, output: 'main.c:3: error: expected expression' };
       if (tool === 'armclang' || tool === 'armasm')
         await fs.writeFile(args[args.indexOf('-o') + 1], 'object');
-      if (tool === 'arm-none-eabi-gcc') {
+      if (tool === 'arm-none-eabi-gcc' || tool === 'arm-none-eabi-g++') {
         const output = args.indexOf('-o');
-        if (output >= 0)
-          await fs.writeFile(args[output + 1], args.includes('-c') ? 'object' : elfFixture());
+        if (output >= 0) await fs.writeFile(args[output + 1], args.includes('-c') ? 'object' : elfFixture());
       }
       if (tool === 'arm-none-eabi-objcopy') await fs.writeFile(args.at(-1)!, binaryFixture());
       if (tool === 'armlink') await fs.writeFile(args[args.indexOf('-o') + 1], elfFixture());
@@ -127,7 +129,7 @@ async function fixture(t: TestContext) {
 
 test('STM32 C entry invokes compiler, linker and binary conversion, returning actual ELF usage', async (t) => {
   const { compiler, config, calls, project } = await fixture(t);
-  const result = await compiler.build(config, { entry: 'src/main.c' });
+  const result = await compiler.build(config, { entry: 'src/main.c', cStandard: 'c99' });
   assert.equal(result.success, true);
   assert.equal(result.flashUsed, 32);
   assert.equal(result.ramUsed, 16 + 1024);
@@ -141,6 +143,7 @@ test('STM32 C entry invokes compiler, linker and binary conversion, returning ac
   const main = calls.find((call) => call.args.includes(path.join(project, 'src/main.c')))!;
   assert.ok(main.args.includes('--target=arm-arm-none-eabi'));
   assert.ok(main.args.includes('-mcpu=cortex-m3'));
+  assert.ok(main.args.includes('-std=gnu99'));
   assert.ok(calls.some((call) => call.tool === 'armlink'));
   assert.ok(calls.some((call) => call.tool === 'fromelf' && call.args.includes('--bin')));
   const startup = await fs.readFile(path.join(project, '.blode/build/startup_f1_md.c'), 'utf8');
@@ -366,6 +369,140 @@ test('GNU startup and linker templates keep the partition boundary and stack bud
   assert.match(startup, /__libc_init_array/);
   assert.match(startup, /\.isr_vector/);
   assert.match(startup, /Reset_Handler/);
+});
+
+test('per-language GNU pins select distinct installed versions and C++ links with its selected driver', async (t) => {
+  const { compiler, config, root, project, calls } = await fixture(t);
+  await fs.writeFile(path.join(project, 'src/extra.cpp'), 'int extra(){return 1;}');
+  const c = path.join(root, 'tools/versions/gnu-arm/15.2.1-1.1');
+  const cpp = path.join(root, 'tools/custom-cpp');
+  for (const directory of [c, cpp]) {
+    await fs.mkdir(path.join(directory, 'bin'), { recursive: true });
+    for (const name of ['arm-none-eabi-gcc', 'arm-none-eabi-g++', 'arm-none-eabi-objcopy'])
+      await fs.writeFile(path.join(directory, 'bin', executable(name)), 'fixture');
+  }
+  const result = await compiler.build(config, {
+    entry: 'src',
+    settings: {
+      common: { family: 'gnu-arm', version: '15.2.1-1.1' },
+      platforms: { stm32: { cpp: { family: 'gnu-arm', directory: cpp } } },
+      mode: 'debug',
+      optimizeForSize: true,
+    },
+  });
+  assert.equal(result.success, true);
+  const cCall = calls.find((call) => call.args.includes(path.join(project, 'src/main.c')))!;
+  const cppCall = calls.find((call) => call.args.includes(path.join(project, 'src/extra.cpp')))!;
+  const linkCall = calls.find((call) => call.args.includes('-T'))!;
+  assert.equal(path.dirname(cCall.command), path.join(c, 'bin'));
+  assert.equal(path.dirname(cppCall.command), path.join(cpp, 'bin'));
+  assert.equal(linkCall.command, path.join(cpp, 'bin', executable('arm-none-eabi-g++')));
+  for (const call of [cCall, cppCall]) {
+    assert.ok(call.args.includes('-O0'));
+    assert.ok(call.args.includes('-g'));
+    assert.ok(!call.args.includes('-Os'));
+    assert.ok(!call.args.includes('-flto'));
+  }
+  assert.ok(linkCall.args.includes('-Wl,--gc-sections'));
+});
+
+test('explicit missing compiler pins fail instead of switching to installed AC6 or GNU', async (t) => {
+  const { compiler, config, root, calls } = await fixture(t);
+  for (const family of ['gnu-arm', 'armclang'] as const) {
+    await assert.rejects(
+      compiler.build(config, {
+        entry: 'src',
+        settings: { common: { family, directory: path.join(root, 'missing') } },
+      }),
+      /stm32CompilerMissing/,
+    );
+    await assert.rejects(
+      compiler.build(config, { entry: 'src', settings: { common: { family, version: '0.0.0' } } }),
+      /buildCompilerVersion/,
+    );
+  }
+  assert.ok(
+    calls.every((call) => call.args.includes('--version')),
+    'version resolution never compiles with the wrong installed compiler',
+  );
+  await assert.rejects(
+    compiler.build(config, {
+      entry: 'src',
+      settings: {
+        common: { family: 'armclang', directory: path.join(root, 'tools/armclang'), version: '6.21' },
+      },
+    }),
+    /buildCompilerVersion/,
+  );
+});
+
+test('mixed compiler families are rejected and size mode can be disabled in release builds', async (t) => {
+  const { compiler, config, root, project, calls } = await fixture(t);
+  const gnu = path.join(root, 'tools/gnu');
+  await fs.mkdir(gnu, { recursive: true });
+  for (const name of ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'])
+    await fs.writeFile(path.join(gnu, executable(name)), 'fixture');
+  await fs.writeFile(path.join(project, 'src/extra.cpp'), 'int extra(){return 1;}');
+  await assert.rejects(
+    compiler.build(config, {
+      entry: 'src',
+      settings: {
+        platforms: { stm32: { c: { family: 'gnu-arm', directory: gnu }, cpp: { family: 'armclang' } } },
+      },
+    }),
+    /buildCompilerMixedFamilies/,
+  );
+  await compiler.build(config, { entry: 'src', settings: { mode: 'release', optimizeForSize: false } });
+  const compilation = calls.filter((call) => call.tool === 'armclang' && call.args.includes('-c'));
+  assert.ok(compilation.length > 0);
+  assert.ok(compilation.every((call) => call.args.includes('-O2') && !call.args.includes('-Os')));
+});
+
+test('portable version pins match managed/PATH versions and package-suffixed version stores', async (t) => {
+  const { compiler, config, root, calls, host } = await fixture(t);
+  const gnu = path.join(root, 'tools/armgcc/bin');
+  await fs.mkdir(gnu, { recursive: true });
+  for (const name of ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'])
+    await fs.writeFile(path.join(gnu, executable(name)), 'fixture');
+  const build = { entry: 'src', settings: { common: { family: 'gnu-arm' as const, version: '15.2.1' } } };
+  assert.equal((await compiler.build(config, build)).success, true);
+  assert.equal(
+    path.dirname(
+      calls.find((call) => call.tool === 'arm-none-eabi-gcc' && call.args.includes('-c'))!.command,
+    ),
+    gnu,
+  );
+  assert.equal(
+    (
+      await compiler.build(config, {
+        entry: 'src',
+        settings: { common: { family: 'armclang', version: '6.22' } },
+      })
+    ).success,
+    true,
+  );
+  const versioned = path.join(root, 'tools/versions/gnu-arm/15.2.1-1.1/bin');
+  await fs.mkdir(path.dirname(path.dirname(versioned)), { recursive: true });
+  await fs.rename(path.dirname(gnu), path.dirname(versioned));
+  calls.length = 0;
+  assert.equal((await compiler.build(config, build)).success, true);
+  assert.equal(
+    path.dirname(
+      calls.find((call) => call.tool === 'arm-none-eabi-gcc' && call.args.includes('-c'))!.command,
+    ),
+    versioned,
+  );
+  const pathBin = path.join(root, 'path-gnu');
+  await fs.rename(versioned, pathBin);
+  host.env = { PATH: pathBin };
+  calls.length = 0;
+  assert.equal((await compiler.build(config, build)).success, true);
+  assert.equal(
+    path.dirname(
+      calls.find((call) => call.tool === 'arm-none-eabi-gcc' && call.args.includes('-c'))!.command,
+    ),
+    pathBin,
+  );
 });
 
 test('managed GNU Arm rejects a release whose digest does not match', async (t) => {

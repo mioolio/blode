@@ -1,0 +1,32 @@
+.modal.firmware-tools-modal {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.firmware-tools-modal .modal-heading {
+  align-items: center;
+  margin-bottom: 18px;
+}
+.firmware-tools-modal label {
+  margin-top: 16px;
+}
+.firmware-tools-modal select {
+  min-height: 36px;
+}
+.firmware-format-description {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  margin: -4px 0 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+@media (max-width: 600px) {
+  .modal.firmware-tools-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 24px);
+    padding: 18px;
+  }
+}

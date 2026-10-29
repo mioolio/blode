@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { z } from 'zod';
+import * as z from 'zod';
 import type { BrowserWindow, Event, Input } from 'electron';
 
 const debugSchema = z

@@ -13,6 +13,8 @@ import { appRegionSize } from './layout.js';
 import { STM32_FLASH_BASE } from './protocol.js';
 import { parseKeilProject, type KeilInputs } from './keil.js';
 import { migrateLegacyCmsis } from './cmsis.js';
+import { compilerChoice, installedCompilerRoots, optimizationFlags } from './build-settings.js';
+import type { BuildSettings, CompilerChoice } from '../../../src/shared/build-settings.js';
 
 const sourceExtensions = new Set(['.c', '.cpp', '.cc', '.cxx']);
 const inputExtensions = new Set([
@@ -30,12 +32,24 @@ const inputExtensions = new Set([
 const ignored = new Set(['node_modules', 'build', 'dist', 'out', 'objects', 'listings']);
 
 interface CompilationInputs {
+  settings?: BuildSettings;
+  tools?: { c: SelectedCompiler; cpp: SelectedCompiler; link: SelectedCompiler };
+  cStandard?: ProjectBuildInputs['cStandard'];
   sources: string[];
   headers: string[];
   assembly: string[];
   scatter: string[];
   all: string[];
   keil?: KeilInputs;
+}
+
+interface CompilerInstallation {
+  installed: boolean;
+  version: string;
+}
+interface SelectedCompiler {
+  kind: 'ac6' | 'gnu';
+  directory: string;
 }
 
 /** Arm Compiler 6 host integration; no project script or shell command is executed. */
@@ -60,8 +74,8 @@ export class Stm32Compiler {
     for (const directory of new Set([path.join(root, 'bin'), root, ...pathDirectories])) {
       const found = await Promise.all(
         ['armclang', 'armlink', 'fromelf'].map(async (name) => {
-          const stat = await fs.lstat(path.join(directory, name + suffix)).catch(() => null);
-          return !!stat?.isFile() && !stat.isSymbolicLink();
+          const stat = await fs.stat(path.join(directory, name + suffix)).catch(() => null);
+          return !!stat?.isFile();
         }),
       );
       if (found.every(Boolean)) return directory;
@@ -94,8 +108,8 @@ export class Stm32Compiler {
     ])) {
       const found = await Promise.all(
         ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'].map(async (name) => {
-          const stat = await fs.lstat(path.join(directory, name + suffix)).catch(() => null);
-          return !!stat?.isFile() && !stat.isSymbolicLink();
+          const stat = await fs.stat(path.join(directory, name + suffix)).catch(() => null);
+          return !!stat?.isFile();
         }),
       );
       if (found.every(Boolean)) return directory;
@@ -112,6 +126,173 @@ export class Stm32Compiler {
     const gnu = await this.gnuDirectory(config);
     if (gnu) return { kind: 'gnu', directory: gnu };
     return null;
+  }
+
+  private async chooseCompiler(config: ProjectConfig, choice: CompilerChoice): Promise<SelectedCompiler> {
+    if (choice.arduinoCli || choice.packageDirectory || choice.family === 'arduino')
+      throw new Error('error.buildCompilerPlatform');
+    if (choice.directory && (!path.isAbsolute(choice.directory) || /[\0\r\n]/.test(choice.directory)))
+      throw new Error('error.buildCompilerPath');
+    if (choice.version && !/^[a-zA-Z0-9][a-zA-Z0-9.+_-]{0,79}$/.test(choice.version))
+      throw new Error('error.buildCompilerVersion');
+    const directory = choice.directory;
+    if (!directory && choice.version) {
+      if (choice.family !== 'gnu-arm' && choice.family !== 'armclang')
+        throw new Error('error.buildCompilerVersion');
+      const kind = choice.family === 'gnu-arm' ? 'gnu' : 'ac6';
+      for (const root of await installedCompilerRoots(this.host, config, choice.family, choice.version)) {
+        const found = await this.completeDirectory(root, kind);
+        if (found && (await this.matchesVersion({ kind, directory: found }, choice.version)))
+          return { kind, directory: found };
+      }
+      throw new Error('error.buildCompilerVersion');
+    }
+    const selectedConfig = {
+      ...config,
+      toolchain: {
+        ...config.toolchain,
+        ...(directory
+          ? { armCompilerDirectory: directory }
+          : choice.family === 'auto'
+            ? { armCompilerDirectory: undefined }
+            : {}),
+      },
+    };
+    let selected: SelectedCompiler | null;
+    if (choice.family === 'armclang') {
+      const found = directory
+        ? await this.completeDirectory(directory, 'ac6')
+        : await this.directory(selectedConfig);
+      selected = found ? { kind: 'ac6', directory: found } : null;
+    } else if (choice.family === 'gnu-arm') {
+      // A pin must not fall through to managed/PATH when its directory is missing.
+      const found = directory
+        ? await this.completeDirectory(directory, 'gnu')
+        : await this.gnuDirectory(selectedConfig);
+      selected = found ? { kind: 'gnu', directory: found } : null;
+    } else if (directory) {
+      const ac6 = await this.completeDirectory(directory, 'ac6');
+      const gnu = ac6 ? null : await this.completeDirectory(directory, 'gnu');
+      selected = ac6 ? { kind: 'ac6', directory: ac6 } : gnu ? { kind: 'gnu', directory: gnu } : null;
+    } else selected = await this.resolveToolchain(selectedConfig);
+    if (!selected)
+      throw new Error(choice.version ? 'error.buildCompilerVersion' : 'errors.stm32CompilerMissing');
+    if (choice.version && !(await this.matchesVersion(selected, choice.version)))
+      throw new Error('error.buildCompilerVersion');
+    return selected;
+  }
+
+  private async matchesVersion(selected: SelectedCompiler, version: string): Promise<boolean> {
+    try {
+      const result = await this.host.runCommand(
+        path.join(
+          selected.directory,
+          this.executable(selected.kind === 'ac6' ? 'armclang' : 'arm-none-eabi-gcc'),
+        ),
+        ['--version'],
+        { timeout: 10_000, env: this.host.env, signal: this.host.signal },
+      );
+      const actual =
+        selected.kind === 'ac6'
+          ? /Arm Compiler for Embedded\s+([\d.]+)/i.exec(result.output)?.[1]
+          : /(\d+\.\d+\.\d+)/.exec(result.output)?.[1];
+      return result.code === 0 && !!actual && (version === actual || version.startsWith(actual + '-'));
+    } catch (error) {
+      if (this.host.signal.aborted) throw error;
+      return false;
+    }
+  }
+
+  private async completeDirectory(root: string, kind: 'ac6' | 'gnu'): Promise<string | null> {
+    for (const directory of new Set([path.join(root, 'bin'), root])) {
+      const found = await Promise.all(
+        (kind === 'ac6'
+          ? ['armclang', 'armlink', 'fromelf']
+          : ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy']
+        ).map(async (name) => {
+          const file = await fs.stat(path.join(directory, this.executable(name))).catch(() => null);
+          return file?.isFile();
+        }),
+      );
+      if (found.every(Boolean)) return directory;
+    }
+    return null;
+  }
+
+  /** Installation facts are independent of the compiler selected for a build. */
+  async installationStatuses(config: ProjectConfig): Promise<{
+    armCompiler: CompilerInstallation;
+    gnuArm: CompilerInstallation;
+  }> {
+    const automatic = {
+      ...config,
+      toolchain: { ...config.toolchain, armCompilerDirectory: undefined },
+    };
+    const armDirectory = await this.directory(config).catch((error) => {
+      if (this.host.signal.aborted) throw error;
+      return null;
+    });
+    const ac6 = armDirectory ?? (await this.directory(automatic));
+    let gnu = await this.gnuDirectory(config).catch((error) => {
+      if (this.host.signal.aborted) throw error;
+      return null;
+    });
+    if (!gnu) {
+      // A downloaded side-by-side version is installed even before the user
+      // selects it. Only inspect this fixed version store, never an SDK tree.
+      const root = path.join(
+        this.host.toolchainRoot ?? path.join(this.host.dataRoot, 'toolchains'),
+        'versions',
+        'gnu-arm',
+      );
+      const info = await fs.lstat(root).catch(() => null);
+      if (info?.isDirectory() && !info.isSymbolicLink()) {
+        const versions = (await fs.readdir(root, { withFileTypes: true }))
+          .filter(
+            (entry) =>
+              entry.isDirectory() && !entry.isSymbolicLink() && /^[\d][\d.-]{0,63}$/.test(entry.name),
+          )
+          .sort((left, right) => right.name.localeCompare(left.name, 'en', { numeric: true }))
+          .slice(0, 64);
+        for (const version of versions) {
+          const directory = path.join(root, version.name, 'bin');
+          const required = await Promise.all(
+            ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'].map(async (name) => {
+              const file = await fs.stat(path.join(directory, this.executable(name))).catch(() => null);
+              return file?.isFile();
+            }),
+          );
+          if (required.every(Boolean)) {
+            gnu = directory;
+            break;
+          }
+        }
+      }
+    }
+    const inspect = async (
+      directory: string | null,
+      kind: 'armCompiler' | 'gnuArm',
+    ): Promise<CompilerInstallation> => {
+      if (!directory) return { installed: false, version: '' };
+      try {
+        const result = await this.host.runCommand(
+          path.join(directory, this.executable(kind === 'armCompiler' ? 'armclang' : 'arm-none-eabi-gcc')),
+          ['--version'],
+          { timeout: 10_000, signal: this.host.signal, env: this.host.env },
+        );
+        if (result.code !== 0) return { installed: false, version: '' };
+        const version =
+          (kind === 'armCompiler'
+            ? /Arm Compiler for Embedded\s+([\d.]+)/i.exec(result.output)?.[1]
+            : /(\d+\.\d+\.\d+)/.exec(result.output)?.[1]) ?? result.output.trim().slice(0, 256);
+        return { installed: true, version };
+      } catch (error) {
+        if (this.host.signal.aborted) throw error;
+        return { installed: false, version: '' };
+      }
+    };
+    const [armCompiler, gnuArm] = await Promise.all([inspect(ac6, 'armCompiler'), inspect(gnu, 'gnuArm')]);
+    return { armCompiler, gnuArm };
   }
 
   async status(config: ProjectConfig): Promise<{ installed: boolean; version: string; gnu: boolean }> {
@@ -234,6 +415,8 @@ export class Stm32Compiler {
     if (!sources.length) throw new Error('error.noBuildSources');
     return {
       keil,
+      settings: build.settings,
+      cStandard: build.cStandard,
       sources,
       headers: all.filter((relative) => /\.(?:h|hh|hpp|inc)$/i.test(relative)),
       assembly: all.filter(
@@ -260,9 +443,19 @@ export class Stm32Compiler {
       ? Number.parseInt(config.programmer.targetChipId, 16)
       : F1_MEDIUM_DENSITY.chipId;
     if (chipId !== F1_MEDIUM_DENSITY.chipId) throw new Error('error.stm32CompilerProfileRequired');
-    const tool = await this.resolveToolchain(config);
-    if (!tool) throw new Error('errors.stm32CompilerMissing');
     const inputs = await this.inputs(build);
+    const hasCpp = inputs.sources.some((file) => /\.(?:cpp|cc|cxx)$/i.test(file));
+    const c = await this.chooseCompiler(config, compilerChoice(build.settings, 'c'));
+    const cpp = hasCpp ? await this.chooseCompiler(config, compilerChoice(build.settings, 'cpp')) : c;
+    if (c.kind !== cpp.kind) throw new Error('error.buildCompilerMixedFamilies');
+    if (hasCpp && cpp.kind === 'gnu') {
+      const driver = await fs
+        .stat(path.join(cpp.directory, this.executable('arm-none-eabi-g++')))
+        .catch(() => null);
+      if (!driver?.isFile()) throw new Error('error.buildCppCompilerMissing');
+    }
+    const tool = hasCpp ? cpp : c;
+    inputs.tools = { c, cpp, link: tool };
     if (inputs.keil)
       this.host.emit(
         `Keil target: ${inputs.keil.name}; device: ${inputs.keil.device}; source files: ${inputs.sources.length}`,
@@ -273,10 +466,27 @@ export class Stm32Compiler {
     } catch (error) {
       // A native startup needs armasm. When only that piece is missing and a
       // GNU compiler exists, the generated F1 startup can take over.
-      if (!(error instanceof Error) || error.message !== 'error.armCompilerMissing') throw error;
+      const automatic = ['c', ...(hasCpp ? ['cpp'] : [])].every((language) => {
+        const choice = compilerChoice(build.settings, language as 'c' | 'cpp');
+        return (
+          (choice.family === 'inherit' || choice.family === 'auto') && !choice.directory && !choice.version
+        );
+      });
+      if (!(error instanceof Error) || error.message !== 'error.armCompilerMissing' || !automatic)
+        throw error;
       const gnu = await this.gnuDirectory(config);
       if (!gnu) throw error;
+      if (
+        hasCpp &&
+        !(await fs.stat(path.join(gnu, this.executable('arm-none-eabi-g++'))).catch(() => null))?.isFile()
+      )
+        throw new Error('error.buildCppCompilerMissing');
       this.host.emit('status.stm32UsingGnuStartup', 'warning');
+      inputs.tools = {
+        c: { kind: 'gnu', directory: gnu },
+        cpp: { kind: 'gnu', directory: gnu },
+        link: { kind: 'gnu', directory: gnu },
+      };
       return this.buildGnu(config, inputs, gnu);
     }
   }
@@ -292,8 +502,8 @@ export class Stm32Compiler {
     const objectDirectory = path.join(outputDirectory, 'objects');
     await fs.mkdir(objectDirectory);
     const output: string[] = [];
-    const run = async (tool: string, args: string[], timeout = 60_000) => {
-      const result = await this.host.runCommand(path.join(directory, this.executable(tool)), args, {
+    const run = async (tool: string, args: string[], timeout = 60_000, toolDirectory = directory) => {
+      const result = await this.host.runCommand(path.join(toolDirectory, this.executable(tool)), args, {
         timeout,
         signal: this.host.signal,
         env: this.host.env,
@@ -317,8 +527,7 @@ export class Stm32Compiler {
       '-mcpu=cortex-m3',
       '-mthumb',
       '-mfloat-abi=soft',
-      '-Os',
-      '-g',
+      ...optimizationFlags(inputs.settings),
       '-ffunction-sections',
       '-fdata-sections',
       '-ffreestanding',
@@ -332,16 +541,23 @@ export class Stm32Compiler {
     let firmwareTag = false;
     const compile = async (source: string, cxx = false) => {
       const object = path.join(objectDirectory, `${objects.length}.o`);
-      await run('armclang', [
-        // C++ needs hosted main naming and AC6's constructor runtime; exceptions
-        // and RTTI stay disabled, as on typical embedded C++ builds.
-        ...flags.filter((flag) => !cxx || flag !== '-ffreestanding'),
-        ...(cxx ? ['-std=gnu++17', '-fno-exceptions', '-fno-rtti'] : ['-std=gnu11']),
-        '-c',
-        source,
-        '-o',
-        object,
-      ]);
+      await run(
+        'armclang',
+        [
+          // C++ needs hosted main naming and AC6's constructor runtime; exceptions
+          // and RTTI stay disabled, as on typical embedded C++ builds.
+          ...flags.filter((flag) => !cxx || flag !== '-ffreestanding'),
+          ...(cxx
+            ? ['-std=gnu++17', '-fno-exceptions', '-fno-rtti']
+            : [`-std=gnu${inputs.cStandard?.slice(1) ?? '17'}`]),
+          '-c',
+          source,
+          '-o',
+          object,
+        ],
+        60_000,
+        inputs.tools?.[cxx ? 'cpp' : 'c'].directory ?? directory,
+      );
       objects.push(object);
     };
     for (const source of inputs.sources) {
@@ -372,7 +588,12 @@ export class Stm32Compiler {
         });
       } else {
         const object = path.join(objectDirectory, `${objects.length}.o`);
-        await run('armclang', [...flags, '-c', full, '-o', object]);
+        await run(
+          'armclang',
+          [...flags, '-c', full, '-o', object],
+          60_000,
+          inputs.tools?.c.directory ?? directory,
+        );
         objects.push(object);
       }
     }
@@ -394,10 +615,18 @@ export class Stm32Compiler {
       // compiler integration only runs the fixed, explicitly selected tools.
       if (/^\s*#!/m.test(await fs.readFile(scatter, 'utf8')))
         throw new Error('error.stm32ScatterPreprocessor');
-      const assembler = await fs.lstat(path.join(directory, this.executable('armasm'))).catch(() => null);
-      if (!assembler?.isFile() || assembler.isSymbolicLink()) throw new Error('error.armCompilerMissing');
+      const assemblerDirectory = inputs.tools?.c.directory ?? directory;
+      const assembler = await fs
+        .stat(path.join(assemblerDirectory, this.executable('armasm')))
+        .catch(() => null);
+      if (!assembler?.isFile()) throw new Error('error.armCompilerMissing');
       const object = path.join(objectDirectory, `${objects.length}.o`);
-      await run('armasm', ['--cpu=Cortex-M3', '--debug', native[0].file, '-o', object]);
+      await run(
+        'armasm',
+        ['--cpu=Cortex-M3', '--debug', native[0].file, '-o', object],
+        60_000,
+        assemblerDirectory,
+      );
       objects.push(object);
     } else {
       if (inputs.scatter.length || projectStartups.length || inputs.all.some((file) => file.endsWith('.ld')))
@@ -420,6 +649,7 @@ export class Stm32Compiler {
       path.join(outputDirectory, 'firmware.map'),
       '--info=sizes',
       '--datacompressor=off',
+      ...(inputs.settings?.mode === 'debug' ? ['--no_remove'] : ['--remove']),
       useNative ? '--keep=*(RESET)' : '--keep=*(.isr_vector)',
       ...(firmwareTag ? ['--keep=*(.fwtag)'] : []),
       ...objects,
@@ -474,7 +704,15 @@ export class Stm32Compiler {
     const outputDirectory = await this.host.resetDirectory('.blode/build');
     const objectDirectory = path.join(outputDirectory, 'objects');
     await fs.mkdir(objectDirectory);
-    const gcc = path.join(directory, this.executable('arm-none-eabi-gcc'));
+    const gcc = path.join(inputs.tools?.c.directory ?? directory, this.executable('arm-none-eabi-gcc'));
+    const linkCommand = path.join(
+      directory,
+      this.executable(
+        inputs.sources.some((file) => /\.(?:cpp|cc|cxx)$/i.test(file))
+          ? 'arm-none-eabi-g++'
+          : 'arm-none-eabi-gcc',
+      ),
+    );
     const objcopy = path.join(directory, this.executable('arm-none-eabi-objcopy'));
     const output: string[] = [];
     const run = async (command: string, args: string[], timeout = 60_000) => {
@@ -501,8 +739,7 @@ export class Stm32Compiler {
       '-mcpu=cortex-m3',
       '-mthumb',
       '-mfloat-abi=soft',
-      '-Os',
-      '-g',
+      ...optimizationFlags(inputs.settings),
       '-ffunction-sections',
       '-fdata-sections',
       '-ffreestanding',
@@ -516,9 +753,15 @@ export class Stm32Compiler {
     let firmwareTag = false;
     const compile = async (source: string, cxx = false) => {
       const object = path.join(objectDirectory, `${objects.length}.o`);
-      await run(gcc, [
+      const command = path.join(
+        inputs.tools?.[cxx ? 'cpp' : 'c'].directory ?? directory,
+        this.executable(cxx ? 'arm-none-eabi-g++' : 'arm-none-eabi-gcc'),
+      );
+      await run(command, [
         ...flags,
-        ...(cxx ? ['-std=gnu++17', '-fno-exceptions', '-fno-rtti'] : ['-std=gnu11']),
+        ...(cxx
+          ? ['-std=gnu++17', '-fno-exceptions', '-fno-rtti']
+          : [`-std=gnu${inputs.cStandard?.slice(1) ?? '17'}`]),
         '-c',
         source,
         '-o',
@@ -565,7 +808,7 @@ export class Stm32Compiler {
     await compile(startup);
     const elf = path.join(outputDirectory, 'firmware.elf');
     const binary = path.join(outputDirectory, 'firmware.bin');
-    await run(gcc, [
+    await run(linkCommand, [
       ...flags,
       '-T',
       linker,

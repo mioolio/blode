@@ -36,6 +36,7 @@ const commandKeys: DebuggerAction[] = ['continue', 'pause', 'step', 'next', 'fin
 /** Independent native debugging surface. Sampled hardware data and local file data stay separate. */
 export function HardwareDebuggerView() {
   const customTitlebar = window.__blodeFrameless === true;
+  const isWeb = window.__blodeWeb === true;
   const { t, locale } = useI18n();
   const [debug, setDebug] = useState<DebuggerState | null>(null);
   const [app, setApp] = useState<AppState | null>(null);
@@ -358,7 +359,7 @@ export function HardwareDebuggerView() {
           <div className="debug-brand">
             <div>
               <h1>{t('debugger.dashboard.title')}</h1>
-              <p>{t('debugger.dashboard.subtitle')}</p>
+              <p>{t(isWeb ? 'debugger.webSubtitle' : 'debugger.dashboard.subtitle')}</p>
             </div>
           </div>
           <span className={`debug-state state-${debug?.connection ?? 'disconnected'}`}>
@@ -466,12 +467,14 @@ export function HardwareDebuggerView() {
             >
               {t('debugger.installTools')}
             </button>
-            <button
-              disabled={busy || connected || attaching}
-              onClick={() => void act(() => window.blode.debuggerChooseGdb())}
-            >
-              {t('debugger.chooseGdb')}
-            </button>
+            {!isWeb && (
+              <button
+                disabled={busy || connected || attaching}
+                onClick={() => void act(() => window.blode.debuggerChooseGdb())}
+              >
+                {t('debugger.chooseGdb')}
+              </button>
+            )}
           </section>
         )}
         {(installation || installing) && (
@@ -582,7 +585,6 @@ export function HardwareDebuggerView() {
                     <small>{t('debugger.dashboard.storageBus')}</small>
                   </div>
                 </div>
-                <p className="debug-footnote">{t('debugger.dashboard.architectureNote')}</p>
               </section>
               <div className="debug-two-columns">
                 {stackPanel}

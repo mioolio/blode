@@ -7,6 +7,9 @@ tools/
 *.tsbuildinfo
 **/.blode/build/
 **/.blode/cache/
+**/.blode/index/
+**/.blode/git/
+**/.blode/git-management.json
 **/.blode/staging/
 **/.blode/build-state.json
 artifacts/

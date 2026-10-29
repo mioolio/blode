@@ -11,6 +11,8 @@
  * runtime can still be installed through the normal setup flow or a custom path.
  */
 const full = process.env.npm_lifecycle_event === 'package:full' || process.env.BLODE_BUNDLE_TOOLS === '1';
+const { releaseVersion } = require('./package.json');
+if (!/^\d+\.\d+\.\d+\.\d+$/.test(releaseVersion)) throw new Error('A four-part releaseVersion is required.');
 
 /**
  * Skipped inside the bundled Arduino data folder: `tmp` is a cache and the
@@ -33,8 +35,20 @@ const bundledTools = full
 module.exports = {
   appId: 'studio.blode.desktop',
   productName: 'Blode Studio',
-  directories: { output: full ? 'release/full' : 'release/lite' },
-  files: ['dist/**/*', 'package.json'],
+  buildVersion: releaseVersion,
+  buildNumber: releaseVersion.split('.').at(-1),
+  extraMetadata: { releaseVersion, shortVersionWindows: releaseVersion },
+  directories: { output: `release/${releaseVersion}${full ? '/full' : ''}` },
+  files: [
+    'dist/main.cjs',
+    'dist/preload.cjs',
+    'dist/mcp-bridge.mjs',
+    'dist/renderer/**/*',
+    'config/application.json',
+    'package.json',
+    'LICENSE',
+    '!**/*.map',
+  ],
   extraResources: [
     { from: 'docs', to: 'docs' },
     { from: 'extensions/boards', to: 'boards', filter: ['*/manifest.json'] },
@@ -42,7 +56,8 @@ module.exports = {
     ...bundledTools,
   ],
   asarUnpack: ['**/*.node'],
-  artifactName: `Blode.Studio-\${version}-win-x64-${full ? 'full' : 'lite'}.\${ext}`,
+  artifactName: `Blode.Studio-${releaseVersion}-desktop${full ? '-full' : ''}-win-x64.\${ext}`,
+  publish: null,
   win: {
     // A 3+ GiB portable executable would unpack itself on every launch, so the
     // full build is published as a plain, directly runnable folder archive.

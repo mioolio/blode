@@ -9,6 +9,7 @@ interface Props {
   x: number;
   y: number;
   target: MenuTarget;
+  path?: string;
   onCommand: (command: string) => void;
   onClose: () => void;
   disabledCommands?: readonly string[];
@@ -19,6 +20,7 @@ export function ContextMenu({
   x,
   y,
   target,
+  path,
   onCommand,
   onClose,
   disabledCommands = [],
@@ -56,7 +58,11 @@ export function ContextMenu({
   // Collapse groups that became adjacent after filtering so the menu never shows
   // leading, trailing or repeated separators.
   const entries = getContextMenu('explorer')
-    .filter((entry) => entry.separator || !entry.when || entry.when.includes(target))
+    .filter(
+      (entry) =>
+        entry.separator ||
+        ((!entry.when || entry.when.includes(target)) && (!entry.whenPath || entry.whenPath === path)),
+    )
     .filter((entry, index, all) => {
       if (!entry.separator) return true;
       if (index === 0 || index === all.length - 1) return false;

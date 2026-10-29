@@ -1,0 +1,88 @@
+.host-picker-backdrop {
+  z-index: 1500;
+}
+.host-picker {
+  width: min(900px, 94vw);
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.host-picker-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.host-picker-heading h2 {
+  margin: 0;
+}
+.host-picker-heading p {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.host-picker-location {
+  display: flex;
+  gap: 8px;
+}
+.host-picker-location input {
+  flex: 1;
+  min-width: 0;
+}
+.host-picker-body {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 240px;
+  height: 45dvh;
+  overflow: hidden;
+}
+.host-picker-body nav {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border-right: 1px solid var(--border);
+  overflow: auto;
+}
+.host-picker-files {
+  overflow: auto;
+  padding: 8px;
+}
+.host-picker-files button {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 9px;
+  gap: 9px;
+  border-radius: 5px;
+}
+.host-picker-files button svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.host-picker-files button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.host-picker-files button.active {
+  background: var(--accent-soft);
+}
+.host-picker footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.host-picker > label {
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .host-picker {
+    padding: 14px;
+  }
+  .host-picker-body {
+    grid-template-columns: 65px minmax(0, 1fr);
+  }
+}

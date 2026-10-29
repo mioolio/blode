@@ -17,6 +17,36 @@ export const GNU_WINDOWS_RELEASE = {
     'https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v15.2.1-1.1/xpack-arm-none-eabi-gcc-15.2.1-1.1-win32-x64.zip',
 } as const;
 
+export interface GnuRelease {
+  version: string;
+  asset: string;
+  metadataUrl: string;
+  downloadUrl: string;
+}
+/** Catalog entries are pinned; architectures resolve to real publisher asset names. */
+export function gnuRelease(
+  version = '15.2.1-1.1',
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): GnuRelease {
+  if (!['15.2.1-1.1', '14.2.1-1.1', '13.3.1-1.1'].includes(version)) throw new Error('errors.gnuRelease');
+  const suffix =
+    platform === 'win32' && arch === 'x64'
+      ? 'win32-x64.zip'
+      : platform === 'linux' && ['x64', 'arm64'].includes(arch)
+        ? `linux-${arch}.tar.gz`
+        : null;
+  if (!suffix) throw new Error('errors.gnuInstallUnsupported');
+  const tag = `v${version}`,
+    asset = `xpack-arm-none-eabi-gcc-${version}-${suffix}`;
+  return {
+    version: tag,
+    asset,
+    metadataUrl: `https://api.github.com/repos/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/tags/${tag}`,
+    downloadUrl: `https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/${tag}/${asset}`,
+  };
+}
+
 const MAX_ARCHIVE_BYTES = 420_000_000;
 const REQUIRED_TOOLS = ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'] as const;
 
@@ -26,6 +56,7 @@ interface GnuOptions {
   signal?: AbortSignal;
   onLine?: (line: string) => void;
   onProgress?: (progress: InstallationProgress) => void;
+  release?: GnuRelease;
   runner: RuntimeHost['runCommand'];
 }
 
@@ -103,28 +134,41 @@ export class GnuArmToolchain {
     return response;
   }
 
-  /** Install the pinned Windows x64 archive after verifying its GitHub digest. */
+  /** Install the pinned host archive after verifying publisher SHA-256 metadata. */
   async install(): Promise<void> {
-    if (process.platform !== 'win32' || process.arch !== 'x64')
-      throw new Error('errors.gnuInstallUnsupported');
+    const expected = this.options.release ?? gnuRelease();
     this.options.onProgress?.({ tool: 'GNU Arm GCC', phase: 'starting' });
     this.options.onLine?.('status.gnuResolving');
-    const release = (await (await this.fetch(GNU_WINDOWS_RELEASE.metadataUrl, 30_000)).json()) as {
+    const release = (await (await this.fetch(expected.metadataUrl, 30_000)).json()) as {
       tag_name?: string;
       draft?: boolean;
       prerelease?: boolean;
       assets?: { name: string; browser_download_url: string; digest?: string; size?: number }[];
     };
-    const asset = release.assets?.find((entry) => entry.name === GNU_WINDOWS_RELEASE.asset);
+    const asset = release.assets?.find((entry) => entry.name === expected.asset);
     if (
-      release.tag_name !== GNU_WINDOWS_RELEASE.version ||
+      release.tag_name !== expected.version ||
       release.draft ||
       release.prerelease ||
       !asset ||
-      asset.browser_download_url !== GNU_WINDOWS_RELEASE.downloadUrl
+      asset.browser_download_url !== expected.downloadUrl
     )
       throw new Error('errors.gnuRelease');
-    const checksum = /^sha256:([a-f0-9]{64})$/i.exec(asset.digest ?? '')?.[1]?.toLowerCase();
+    let checksum = /^sha256:([a-f0-9]{64})$/i.exec(asset.digest ?? '')?.[1]?.toLowerCase();
+    // Older stable releases predate GitHub's asset digest field; use their own checksum asset.
+    if (!checksum) {
+      const checksumAsset = release.assets?.find(
+        (entry) =>
+          entry.name === `${expected.asset}.sha` &&
+          entry.browser_download_url === `${expected.downloadUrl}.sha`,
+      );
+      if (checksumAsset) {
+        const text = await (await this.fetch(checksumAsset.browser_download_url, 30_000)).text();
+        if (text.length <= 4096)
+          checksum = /^([a-f0-9]{64})\s+\*?(.+)$/im.exec(text.trim())?.[1]?.toLowerCase();
+        if (!text.includes(expected.asset)) checksum = undefined;
+      }
+    }
     if (!checksum) throw new Error('errors.gnuChecksum');
     if (
       asset.size !== undefined &&
@@ -177,7 +221,7 @@ export class GnuArmToolchain {
     await fs.mkdir(this.root, { recursive: true });
     const stage = await fs.mkdtemp(path.join(this.root, '.install-'));
     try {
-      const archive = path.join(stage, 'gnu-arm.zip');
+      const archive = path.join(stage, expected.asset);
       const extractionRoot = path.join(stage, 'extracted');
       await fs.writeFile(archive, bytes);
       await fs.mkdir(extractionRoot);
@@ -203,6 +247,8 @@ export class GnuArmToolchain {
       if (!source) throw new Error('errors.gnuExtract');
       this.options.onProgress?.({ tool: 'GNU Arm GCC', phase: 'installing' });
       await fs.cp(source, this.root, { recursive: true });
+      if (process.platform !== 'win32')
+        for (const name of REQUIRED_TOOLS) await fs.chmod(path.join(this.root, 'bin', name), 0o755);
       const installed = await this.status();
       if (!installed.installed) throw new Error('errors.gnuExtract');
       this.options.onLine?.('status.gnuInstalled');

@@ -67,6 +67,8 @@ const languageMap: Record<string, string> = {
   '.hpp': 'cpp',
   '.c': 'cpp',
   '.cpp': 'cpp',
+  '.cc': 'cpp',
+  '.cxx': 'cpp',
   '.tpp': 'cpp',
   '.ipp': 'cpp',
   '.json': 'json',
@@ -126,24 +128,66 @@ export async function safeWorkspacePath(
   return cursor;
 }
 
+/** Bound eager editor snapshots independently of compiler input discovery. */
+export const PROJECT_SOURCE_LIMITS = Object.freeze({
+  files: 1024,
+  fileBytes: 1_000_000,
+  totalBytes: 16 * 1024 * 1024,
+  depth: 24,
+  entries: 20_000,
+});
+
+async function readBoundedSource(file: string, remainingBytes: number): Promise<Buffer | undefined> {
+  const handle = await fs.open(file, 'r');
+  try {
+    const stat = await handle.stat();
+    const limit = Math.min(PROJECT_SOURCE_LIMITS.fileBytes, remainingBytes);
+    if (!stat.isFile() || stat.size > limit) return;
+    const chunks: Buffer[] = [];
+    let length = 0;
+    while (length <= limit) {
+      // Peek one byte beyond the budget so a file growing after stat remains bounded.
+      const buffer = Buffer.allocUnsafe(Math.min(65536, Math.max(4096, stat.size + 1), limit - length + 1));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, length);
+      if (!bytesRead) break;
+      length += bytesRead;
+      if (length > limit) return;
+      chunks.push(buffer.subarray(0, bytesRead));
+    }
+    return Buffer.concat(chunks, length);
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function readProjectFiles(root: string): Promise<ProjectFile[]> {
   const files: ProjectFile[] = [];
+  let totalBytes = 0,
+    visitedEntries = 0;
   async function walk(directory: string, depth: number): Promise<void> {
-    if (depth > 8 || files.length >= 150) return;
+    if (
+      depth > PROJECT_SOURCE_LIMITS.depth ||
+      files.length >= PROJECT_SOURCE_LIMITS.files ||
+      visitedEntries >= PROJECT_SOURCE_LIMITS.entries
+    )
+      return;
     const entries = await fs.readdir(directory, { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
+      if (files.length >= PROJECT_SOURCE_LIMITS.files || visitedEntries++ >= PROJECT_SOURCE_LIMITS.entries)
+        return;
       if (entry.isSymbolicLink() || ignored.has(entry.name.toLowerCase()) || entry.name.startsWith('.'))
         continue;
       const fullPath = path.join(directory, entry.name);
       if (entry.isDirectory()) await walk(fullPath, depth + 1);
-      else if (isEditableTextFile(entry.name)) {
-        const stat = await fs.stat(fullPath);
-        if (stat.size > 1_000_000 || files.length >= 150) continue;
+      else if (entry.isFile() && isEditableTextFile(entry.name)) {
+        const bytes = await readBoundedSource(fullPath, PROJECT_SOURCE_LIMITS.totalBytes - totalBytes);
+        if (!bytes) continue;
+        totalBytes += bytes.length;
         files.push({
           path: path.relative(root, fullPath).replaceAll('\\', '/'),
           language: languageFor(entry.name),
-          content: await fs.readFile(fullPath, 'utf8'),
+          content: bytes.toString('utf8'),
         });
       }
     }

@@ -1,0 +1,56 @@
+.ai-completion-settings .ai-prediction-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+.ai-prediction-toggle input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.ai-completion-settings textarea,
+.ai-completion-settings pre {
+  font:
+    11px/1.6 'Cascadia Code',
+    Consolas,
+    monospace;
+  tab-size: 2;
+}
+.ai-completion-settings textarea {
+  resize: vertical;
+  min-height: 180px;
+}
+.ai-completion-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ai-completion-actions > span {
+  color: var(--green);
+  font-size: 11px;
+}
+.ai-completion-settings details {
+  margin-top: 16px;
+  color: var(--text-dim);
+}
+.ai-completion-settings summary {
+  cursor: pointer;
+}
+.ai-completion-settings pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--editor-bg);
+  user-select: text;
+}
+.ai-completion-warning {
+  color: var(--amber);
+  line-height: 1.6;
+}

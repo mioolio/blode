@@ -41,6 +41,8 @@ import { runCommand } from './process';
 import { SerialConnection } from './serial';
 import { Drivers } from './drivers';
 import { InstallationTracker } from './installation';
+import { SnapshotCache } from './snapshot-cache';
+import { analyzeCSourceRules, validateProjectLanguageRules } from '../../extensions/completions/rules';
 
 interface InstallationReporter {
   progress: (progress: InstallationProgress) => void;
@@ -64,10 +66,15 @@ export interface CoreOptions {
   createRuntimes?: CreatePlatformRuntimes;
   /** Initialize desktop discovery once; further scans require refresh or an OS device event. */
   refreshDevices?: boolean;
+  /** Render the desktop shell before its initial hardware/toolchain checks finish. */
+  progressiveStartup?: boolean;
   /** A debugger owns the physical connection until its session is stopped. */
   hardwareBusy?: () => boolean;
 }
 export interface CoreService extends CoreApi {
+  currentProjectRoot(): string;
+  currentConfig(): ProjectConfig;
+  workspaceSnapshot(fresh?: boolean): Promise<Pick<AppState, 'projectRoot' | 'files'>>;
   shutdown(): Promise<void>;
   setProjectRoot(root: string): Promise<void>;
   closeProject(): Promise<void>;
@@ -103,8 +110,31 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   let busy = false;
   const lifecycle = new AbortController();
   const installation = new InstallationTracker(options.onEvent);
-  const emit = (message: string, level: LogEvent['level'] = 'info', kind: LogEvent['kind'] = 'log') =>
+  const resourceCache = new SnapshotCache<Pick<AppState, 'files' | 'inventory'>>();
+  const toolchainCache = new SnapshotCache<ToolchainStatus>();
+  const emit = (message: string, level: LogEvent['level'] = 'info', kind: LogEvent['kind'] = 'log') => {
+    if (lifecycle.signal.aborted) return;
+    if (
+      [
+        'status.workspaceChanged',
+        'status.fileSaved',
+        'status.configSaved',
+        'status.buildEntrySet',
+        'status.projectOpened',
+        'status.projectClosed',
+      ].includes(message)
+    )
+      resourceCache.invalidate();
     options.onEvent(installation.capture({ kind, level, message, time: new Date().toISOString() }));
+  };
+  const workspaceResources = () => {
+    const root = requireWorkspace();
+    return resourceCache.get(root, async () => {
+      const files = await readProjectFiles(root);
+      const inventory = await scanProjectInventory(root, new Set(files.map((file) => file.path)));
+      return { files, inventory };
+    });
+  };
   const serial = new SerialConnection(
     (data) => emit(data, 'info', 'serial'),
     (error) => emit(error.message, 'error', 'serial'),
@@ -127,6 +157,8 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   let ports: PortInfo[] = [];
   let portsInitialized = false;
   let devicesDirty = !!options.refreshDevices;
+  let startupPending = options.progressiveStartup === true;
+  let startupInitialization: Promise<void> | undefined;
   let deviceRevision = 0;
   let deviceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingDeviceScan: Promise<DetectionScan> | undefined;
@@ -257,9 +289,12 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     if (!runtime) throw new Error('errors.unknownBoard');
     return runtime;
   };
-  const invalidateRuntimes = () => runtimes.forEach((runtime) => runtime.invalidate());
+  const invalidateRuntimes = () => {
+    toolchainCache.invalidate();
+    runtimes.forEach((runtime) => runtime.invalidate());
+  };
   const selectedTransport = (value: ProjectConfig = config) => value.programmer?.transport ?? 'auto';
-  const toolchainStatus = async (refresh = false): Promise<ToolchainStatus> => {
+  const collectToolchainStatus = async (refresh = false): Promise<ToolchainStatus> => {
     const active =
       config.boardId !== 'auto'
         ? runtimeFor(config.boardId)
@@ -288,9 +323,16 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     }
     return combined;
   };
+  const toolchainStatus = (refresh = false): Promise<ToolchainStatus> => {
+    if (refresh) toolchainCache.invalidate();
+    return toolchainCache.get(JSON.stringify([config.boardId, config.toolchain, selectedTransport()]), () =>
+      collectToolchainStatus(refresh),
+    );
+  };
   const scan = async (): Promise<DetectionScan> => {
     requireHardware();
     if (pendingDeviceScan) return pendingDeviceScan;
+    toolchainCache.invalidate();
     const revision = deviceRevision;
     pendingDeviceScan = (async () => {
       await refreshPorts(true);
@@ -371,6 +413,35 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     }, delay);
     deviceRefreshTimer.unref();
   };
+  const initializeStartup = () => {
+    if (!startupPending || startupInitialization) return;
+    // This task is started once, outside the first getState response. Window
+    // creation and the welcome screen do not depend on USB/PnP subprocesses.
+    startupInitialization = Promise.resolve().then(async () => {
+      try {
+        if (devicesDirty && !busy && !options.hardwareBusy?.()) await scan();
+        else {
+          if (!portsInitialized) await refreshPorts();
+          if (devicesDirty) scheduleDeviceRefresh();
+        }
+      } catch (error) {
+        // Failed discovery is retried by an explicit refresh or OS notification,
+        // never by every subsequent snapshot request.
+        devicesDirty = false;
+        const message = error instanceof Error ? error.message : String(error);
+        probeState = { state: 'unavailable', checkedAt: new Date().toISOString(), error: message };
+        emit(message, 'warning');
+      }
+      if (lifecycle.signal.aborted) return;
+      const results = await Promise.allSettled([toolchainStatus(), drivers.statuses()]);
+      if (lifecycle.signal.aborted) return;
+      for (const result of results)
+        if (result.status === 'rejected')
+          emit(result.reason instanceof Error ? result.reason.message : String(result.reason), 'warning');
+      startupPending = false;
+      emit('status.devicesChanged', 'info', 'status');
+    });
+  };
   const connectedUnavailable = async () => {
     const statuses = await drivers.statuses();
     return detection.unavailablePlatforms.filter((id) =>
@@ -449,6 +520,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     // The be descriptor repeats the configuration. Normalize its runtime options
     // too, while retaining all build inputs and the expected target chip identity.
     return createHash('sha256')
+      .update('blode-c-standards-v1')
       .update(JSON.stringify(stable(buildConfig(config))))
       .update(JSON.stringify(inputs))
       .digest('hex');
@@ -508,13 +580,29 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     await restoreSuccessfulBuild();
   }
   const api: CoreService = {
+    currentProjectRoot: () => projectRoot,
+    currentConfig: () => structuredClone(config),
+    async workspaceSnapshot(fresh = false) {
+      if (fresh) resourceCache.invalidate();
+      const root = projectRoot;
+      const files = root ? (await workspaceResources()).files : [];
+      if (root !== projectRoot) throw new Error('error.collaborationProjectChanged');
+      return { projectRoot: root, files };
+    },
     async getState(): Promise<AppState> {
-      if (devicesDirty && !busy && !options.hardwareBusy?.()) await scan();
-      else if (!portsInitialized) await refreshPorts();
-      const [toolchain, driverStatuses] = await Promise.all([toolchainStatus(), drivers.statuses()]);
+      const initializing = startupPending;
+      if (initializing) initializeStartup();
+      else {
+        if (devicesDirty && !busy && !options.hardwareBusy?.()) await scan();
+        else if (!portsInitialized) await refreshPorts();
+      }
+      const [toolchain, driverStatuses]: [ToolchainStatus, DriverStatus[]] = initializing
+        ? [{ arduinoCli: false, esp32Core: false, python: false, esptool: false, versions: {} }, []]
+        : await Promise.all([toolchainStatus(), drivers.statuses()]);
       const connections = { serial: serial.state, probes: structuredClone(probeState) };
       if (!projectRoot)
         return {
+          initializing,
           projectRoot: '',
           installation: installation.snapshot(),
           workspaceOpen: false,
@@ -534,12 +622,11 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
           pipe: { endpoint: '', tokenFile: '' },
           web: { endpoint: '', tokenFile: '', allowExternal: false },
         };
-      const files = await readProjectFiles(projectRoot);
-      const [inventory, buildStale] = await Promise.all([
-        scanProjectInventory(projectRoot, new Set(files.map((file) => file.path))),
-        isBuildStale(files),
-      ]);
+      const { files, inventory } = await workspaceResources();
+      // Build validity must not depend on the debounced editor index cache.
+      const buildStale = await isBuildStale();
       return {
+        initializing,
         projectRoot,
         installation: installation.snapshot(),
         workspaceOpen: true,
@@ -686,8 +773,20 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         }
         const adapter = getBoardAdapter(config.boardId);
         adapter.validateConfig(config);
-        const before = await currentFingerprint();
+        const languageFiles = await readProjectFiles(projectRoot);
+        const before = await currentFingerprint(languageFiles);
         emit('status.buildStarted', 'info', 'status');
+        const languageDiagnostics = [
+          ...validateProjectLanguageRules(languageFiles, projectBuild.cStandard ?? 'c17'),
+          ...analyzeCSourceRules(languageFiles, projectBuild.cStandard ?? 'c17'),
+        ];
+        for (const diagnostic of languageDiagnostics)
+          emit(
+            `${diagnostic.file}:${diagnostic.line}:${diagnostic.column}: ${diagnostic.severity}: ${diagnostic.message}`,
+            diagnostic.severity,
+          );
+        if (languageDiagnostics.some((diagnostic) => diagnostic.severity === 'error'))
+          throw new Error('error.languageRulesInvalid');
         const result = await runtimeFor(config.boardId).build(config, projectBuild);
         if (result.success && before === (await currentFingerprint())) {
           lastBuild = result;
@@ -717,15 +816,18 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       await pendingDeviceScan;
       return withLock(async () => {
         requireHardware();
-        await installation.run(tool, () =>
-          action({
-            progress: installation.progress,
-            log: (line) => emit(line),
-            fetcher: options.fetcher,
-            signal: lifecycle.signal,
-          }),
-        );
-        invalidateRuntimes();
+        try {
+          await installation.run(tool, () =>
+            action({
+              progress: installation.progress,
+              log: (line) => emit(line),
+              fetcher: options.fetcher,
+              signal: lifecycle.signal,
+            }),
+          );
+        } finally {
+          invalidateRuntimes();
+        }
       });
     },
     async flashPrepared(value, image) {

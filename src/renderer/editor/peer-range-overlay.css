@@ -1,0 +1,42 @@
+.collaboration-peer-ranges {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint;
+}
+.collaboration-peer-range {
+  position: absolute;
+  inset: 0 0 auto;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-radius: 5px;
+  border-left: 2px solid color-mix(in srgb, var(--peer-range-color) 55%, transparent);
+  background-color: color-mix(in srgb, var(--peer-range-color) 7%, transparent);
+  transition:
+    opacity 180ms ease-out,
+    background-color 160ms ease,
+    border-color 160ms ease;
+  will-change: transform, height, opacity;
+}
+.collaboration-peer-range[data-editing='true'] {
+  background-color: color-mix(in srgb, var(--peer-range-color) 12%, transparent);
+  border-left-color: color-mix(in srgb, var(--peer-range-color) 75%, transparent);
+}
+.collaboration-peer-range[data-motion='move'] {
+  transition:
+    transform 180ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 180ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 180ms ease-out,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+.collaboration-peer-range[data-motion='immediate'] {
+  transition-property: opacity, background-color, border-color;
+}
+@media (prefers-reduced-motion: reduce) {
+  .collaboration-peer-range {
+    transition: none;
+    will-change: auto;
+  }
+}

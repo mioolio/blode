@@ -1,4 +1,14 @@
 /** Public boundary shared by Electron IPC, named-pipe RPC and board plugins. */
+import type { AiAssistanceApi } from './ai';
+import type { CollaborationApi } from './collaboration';
+import type { WorkbenchApi } from './workbench';
+import type { GitApi } from './git';
+import type { ToolVersionsApi } from './tool-versions';
+import type { HostWorkspaceApi } from './host-workspace';
+import type { ProjectPackageApi } from './project-package';
+import type { TerminalApi } from './terminal';
+import type { LanguageApi } from './language';
+import type { BuildSettings } from './build-settings';
 export interface Partition {
   id: string;
   name: string;
@@ -38,6 +48,8 @@ export interface ProjectConfig {
     stlinkDirectory?: string;
     /** Portable Arm Compiler directory; empty discovers tools/armclang or PATH. */
     armCompilerDirectory?: string;
+    /** Isolated Arduino package store, including side-by-side core versions. */
+    packageDirectory?: string;
   };
 }
 export interface ProjectFile {
@@ -94,6 +106,9 @@ export interface DetectionScan {
   unavailablePlatforms: string[];
 }
 export interface ProjectBuildInputs {
+  settings?: BuildSettings;
+  /** C language rules and compiler dialect. C++ keeps its own platform settings. */
+  cStandard?: 'c99' | 'c11' | 'c17' | 'c23';
   /** Project-relative source file/directory; '.' selects the workspace root. */
   entry?: string;
   sketch?: string;
@@ -188,6 +203,9 @@ export interface InstallationState extends InstallationProgress {
   logs: LogEvent[];
 }
 export interface AppState {
+  /** Initial desktop discovery is running; tool/driver absence is not yet known. */
+  initializing?: boolean;
+  recentLogs?: LogEvent[];
   installation?: InstallationState;
   connections?: {
     serial: { open: boolean; port: string; baudRate: number; options?: SerialOptions };
@@ -215,7 +233,8 @@ export interface AppState {
   web: { endpoint: string; tokenFile: string; allowExternal: boolean };
 }
 export interface LogEvent {
-  kind: 'log' | 'serial' | 'status';
+  sequence?: number;
+  kind: 'log' | 'serial' | 'status' | 'terminal';
   level: 'info' | 'success' | 'warning' | 'error';
   message: string;
   time: string;
@@ -224,6 +243,8 @@ export interface LogEvent {
   progressOnly?: boolean;
 }
 export interface CoreApi {
+  /** Optional native workbench capabilities exposed through the authenticated automation router. */
+  automationInvoke?(method: string, params: Record<string, unknown>): Promise<unknown>;
   getState(): Promise<AppState>;
   listPorts(): Promise<PortInfo[]>;
   listDebugProbes(): Promise<DebugProbeInfo[]>;
@@ -285,7 +306,20 @@ export interface DebuggerStorage {
   preview: string;
   source: 'elf';
 }
-export interface DesktopApi extends CoreApi {
+export interface DesktopApi
+  extends
+    CoreApi,
+    AiAssistanceApi,
+    CollaborationApi,
+    WorkbenchApi,
+    GitApi,
+    ToolVersionsApi,
+    HostWorkspaceApi,
+    ProjectPackageApi,
+    LanguageApi,
+    TerminalApi {
+  /** Notify the native shell after the first workspace frame has mounted. */
+  rendererReady?(): void;
   listRecentProjects(): Promise<RecentProject[]>;
   openRecentProject(path: string): Promise<ReopenProjectResult>;
   removeRecentProject(path: string): Promise<void>;
@@ -321,5 +355,8 @@ export interface DesktopApi extends CoreApi {
   windowAction(action: 'minimize' | 'maximize' | 'close'): void;
 }
 export const IPC_CHANNEL = 'blode:request';
+export const RENDERER_READY_CHANNEL = 'blode:renderer-ready';
 export const EVENT_CHANNEL = 'blode:event';
 export const DRAFTS_CHANNEL = 'blode:drafts';
+export const COLLABORATION_CHANNEL = 'blode:collaboration';
+export const UI_COMMAND_CHANNEL = 'blode:ui-command';

@@ -19,6 +19,7 @@ export interface DevRuntimeOptions {
   kill?: (pid: number, signal: NodeJS.Signals) => unknown;
   stopProcessTree?: (pid: number, options?: DevRuntimeOptions) => Promise<boolean>;
 }
+export function hasFatalStartupError(log: string): boolean;
 export function stopProcessTree(pid: number, options?: DevRuntimeOptions): Promise<boolean>;
 export function findStaleElectronProcesses(
   electronExecutable: string,
@@ -36,6 +37,13 @@ export function findStaleVite(
   options?: DevRuntimeOptions,
 ): Promise<OwnedProcess[]>;
 export function recoverStaleVite(
+  viteScript: string,
+  nodeExecutable: string,
+  options?: DevRuntimeOptions,
+): Promise<number>;
+export function recoverStaleDevProcesses(
+  electronExecutable: string,
+  profile: string,
   viteScript: string,
   nodeExecutable: string,
   options?: DevRuntimeOptions,

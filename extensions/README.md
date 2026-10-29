@@ -24,7 +24,7 @@ S3 与 STM32 已完成单目录隔离 bundle 检查。这证明依赖边界，�
 
 ## 其他扩展
 
-- completions/ 保存片段、符号、成员和悬停数据，不导入 Node、Electron 或 Monaco；静态包在 completions/index.ts 注册。C/C++ 另由 c.ts 递归解析工程头文件和草稿，并读取工程根目录的 blode.completions.json。
+- completions/ 按语言和版本保存 JSON 规则：C/c99、c11、c17、c23 各自独立，C++/arduino 保存 Arduino 数据。片段、符号、成员和悬停通过显式目录注册；工程可在 languages/C/<标准>/ 添加规则。工作区符号由增量索引提供，旧 blode.completions.json 继续兼容。格式见 [语言规则](../docs/LANGUAGE-RULES.md)。
 - menus/explorer.ts 声明右键菜单的标题、显示条件和命令 ID，renderer 执行实际动作。编译入口选择只写入 be.build.entry，可指文件或目录，不立即编译。
 - drivers/types.ts 与 drivers/index.ts 提供描述和注册；ST-Link 事实来自 boards/stm32/driver.ts，归档位于应用 tools/STSW-LINK/。
 

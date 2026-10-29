@@ -3,6 +3,7 @@ import { Download, Flame, RefreshCw, X } from 'lucide-react';
 import { getBoardAdapter } from '../../../extensions/registry';
 import type { AppState, FirmwareFormat, PreparedFirmware, ProjectConfig } from '../../shared/contracts';
 import { useI18n } from '../i18n';
+import './firmware-tools.css';
 
 /** Firmware tools are native operations and remain available on the welcome screen. */
 export function FirmwareTools() {
@@ -40,6 +41,7 @@ export function FirmwareTools() {
         .getState()
         .then((next) => {
           setState(next);
+          if (next.config.boardId !== 'stm32') setFormat((current) => (current === 'elf' ? 'bin' : current));
           const target =
             next.config.boardId === 'auto'
               ? {
@@ -139,11 +141,10 @@ export function FirmwareTools() {
       }}
     >
       <div
-        className="modal"
+        className="modal firmware-tools-modal"
         role="dialog"
         aria-modal="true"
         aria-label={t(standalone ? 'firmware.flashStandalone' : 'firmware.export')}
-        style={{ width: 'min(640px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}
       >
         <div className="modal-heading">
           <span className="modal-icon warning">
@@ -173,9 +174,12 @@ export function FirmwareTools() {
                 <option value="bin">Binary (.bin)</option>
                 <option value="hex">Intel HEX (.hex)</option>
                 <option value="srec">Motorola S-record (.srec)</option>
-                <option value="elf">ARM ELF (.elf)</option>
+                <option value="elf" disabled={state?.config.boardId !== 'stm32'}>
+                  ARM ELF (.elf) · STM32
+                </option>
               </select>
             </label>
+            <p className="firmware-format-description">{t(`firmware.formatNote.${format}`)}</p>
             <p className="subtle-note">{t('firmware.exportAddressNote')}</p>
             {(!state?.lastBuild?.success || state.buildStale) && (
               <p className="layout-warning">{t('firmware.buildRequired')}</p>

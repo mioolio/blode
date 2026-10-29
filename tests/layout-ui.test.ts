@@ -130,7 +130,7 @@ test('a manual STM32 capacity is shown against the probe report', () => {
   );
 
   assert.match(html, /检测容量 128 KiB/);
-  assert.match(html, /手动容量已启用/);
+  assert.match(html, /检测容量 128 KiB · 手动容量/);
   assert.match(html, /自定义容量 \(KiB\)/);
 });
 

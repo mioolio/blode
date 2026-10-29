@@ -184,6 +184,29 @@ input::placeholder,
 textarea::placeholder {
   color: var(--text-faint);
 }
+select:not([multiple]):not([size]) {
+  appearance: none;
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position:
+    right 14px center,
+    right 9px center;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+select option,
+select optgroup {
+  background: var(--surface-1);
+  color: var(--text);
+}
+select:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
 label {
   display: flex;
   flex-direction: column;

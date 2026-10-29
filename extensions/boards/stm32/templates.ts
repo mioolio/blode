@@ -250,4 +250,3 @@ ${firmwareTag ? '  .fwtag : { KEEP(*(.fwtag)) } > FLASH\n' : ''}
 ASSERT(_ebss <= ORIGIN(RAM) + LENGTH(RAM) - _Min_Stack_Size, "RAM overflow")
 `;
 }
-

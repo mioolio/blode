@@ -7,6 +7,8 @@ export interface ContextMenuItem {
   command: string;
   /** Targets that show this item; omitted means every target. */
   when?: MenuTarget[];
+  /** Match an exact workspace-relative file, such as the root be descriptor. */
+  whenPath?: string;
   shortcut?: string;
   separator?: false;
 }

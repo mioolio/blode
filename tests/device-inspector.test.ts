@@ -91,7 +91,7 @@ test('STM32 inspector separates the selected ST-Link from the optional monitor C
   assert.match(html, new RegExp(`<option value="${serialNumber}" selected="">`));
   assert.match(html, /<option value="COM7" selected="">/);
   assert.doesNotMatch(html, /device\.speed/);
-  assert.match(html, /device\.stm32EntryHint/);
+  assert.doesNotMatch(html, /device\.stm32EntryHint|resource\.sourceNotice/);
 });
 
 test('an attached ST-Link is not implicitly selected and COM alone cannot enable its probe action', () => {
@@ -134,6 +134,26 @@ test('the serial ESP inspector keeps upload baud and its existing COM selection'
   assert.match(html, /device\.port/);
   assert.match(html, /device\.speed/);
   assert.doesNotMatch(html, /device\.debugProbe/);
+});
+
+test('the first loading snapshot keeps saved connectors visible without reporting missing tools', () => {
+  const config = getBoardAdapter('stm32').createConfig();
+  config.port = 'COM7';
+  config.programmer!.serialNumber = serialNumber;
+  const studio = studioFor(config);
+  studio.state!.initializing = true;
+  studio.state!.ports = [];
+  studio.state!.debugProbes = [];
+  studio.state!.toolchain.stlink = false;
+  const html = renderToStaticMarkup(createElement(DeviceInspector, { studio }));
+  assert.match(html, new RegExp(`<option value="${serialNumber}" selected="">`));
+  assert.match(html, /<option value="COM7" selected="">COM7 · device\.connectionChecking/);
+  assert.match(html, /device\.connectionChecking/);
+  assert.doesNotMatch(html, /device\.(?:stlinkToolsMissing|debugProbeMissing)/);
+  assert.match(html, /<button class="secondary" disabled="">[^]*?action\.probe<\/button>/);
+  const status = renderToStaticMarkup(createElement(StudioStatusBar, { studio }));
+  assert.match(status, /device\.connectionChecking/);
+  assert.doesNotMatch(status, /status\.offline/);
 });
 
 test('STM32 flash confirmation identifies the probe and physical target address instead of COM', () => {

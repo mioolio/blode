@@ -1,7 +1,8 @@
 {
   "name": "blode-studio",
   "productName": "Blode Studio",
-  "version": "0.1.0",
+  "version": "0.2.3-6",
+  "releaseVersion": "0.2.3.6",
   "description": "Modular microcontroller development studio",
   "private": true,
   "type": "module",
@@ -12,15 +13,20 @@
     "repair:permissions": "node scripts/windows-runtime.mjs",
     "build": "npm run typecheck && node scripts/build.mjs && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --import ./tests/register-styles.mjs --test tests/*.test.ts",
     "prestart": "node scripts/windows-runtime.mjs",
     "start": "electron .",
     "package": "npm run package:lite",
-    "package:lite": "npm run build && electron-builder -c electron-builder.config.cjs",
-    "package:full": "npm run build && electron-builder -c electron-builder.config.cjs",
+    "package:desktop": "npm run package:lite",
+    "package:lite": "npm run build && electron-builder -c electron-builder.config.cjs --win --x64 --publish never",
+    "package:full": "npm run build && electron-builder -c electron-builder.config.cjs --win --x64 --publish never",
     "mcp": "tsx scripts/mcp-bridge.ts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "web:dev": "tsx scripts/web-server.ts",
+    "web:build": "node scripts/build-web.mjs",
+    "web:start": "node dist/web-server.cjs",
+    "package:web": "tsx scripts/package-web.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -44,5 +50,20 @@
     "tsx": "^4.21.0",
     "typescript": "7.0.2",
     "vite": "8.3.5"
-  }
+  },
+  "overrides": {
+    "dompurify": "3.4.17"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mioolio/blode.git"
+  },
+  "homepage": "https://github.com/mioolio/blode#readme",
+  "bugs": {
+    "url": "https://github.com/mioolio/blode/issues"
+  },
+  "license": "Apache-2.0"
 }

@@ -14,6 +14,8 @@
 
 ## 工具位置
 
+首选项采用左侧分类导航和右侧详情，可选择并行安装的 GNU Arm GCC、Arduino CLI 和 Arduino-ESP32 版本。选择 GNU／CLI 会写入明确的工具路径；选择 ESP32 core 会写入 `toolchain.packageDirectory`，隔离该版本的内核、库和缓存。其他版本保留，不覆盖原工程源码。版本清单、公开下载链接、完整性检查与平台验证范围见 [工具版本管理](TOOL-VERSIONS.md)。
+
 | 环境       | 默认工具链根目录                 |
 | ---------- | -------------------------------- |
 | 开发桌面   | 仓库 tools/                      |
@@ -55,7 +57,7 @@ Windows x64 托管 ST-Link 使用固定官方发行归档及元数据 SHA-256 �
 
 项目 Arm 启动文件与 .sct 必须是完整配对，否则已知目标会提示并使用明确的 F1 模板。AC6 模板通过 __main 执行运行库初始化；GNU 模板在 Reset_Handler 中复制 .data、清零 .bss、调用 SystemInit 与 __libc_init_array，因此 C++ 全局构造在两条路径下都会执行。两者默认在 0x20004c00..0x20005000 保留 1 KiB 栈。模板不能保证 GNU 自定义 section 或绝对地址相同，需检查构建 warning 和 .blode/build/firmware.map。输出还包括 firmware.elf 与 firmware.bin；本次用户工程副本测得 Flash 2136 字节、RAM 1028 字节（4 字节静态数据 + 1024 字节保留栈）。RAM 数值包含链接器保留栈，不是运行时峰值，不能由此推断其他工程或硬件运行结果。
 
-GNU 工具链使用固定发行版 v15.2.1-1.1 的 Windows x64 归档，源自 xPack 对 ARM GNU 工具链的重打包，安装前校验 GitHub 发行元数据摘要与归档大小；其许可为 GNU 工具链自身许可，可随安装流程下载。其他平台需手动安装并通过 armCompilerDirectory 指定。
+默认 GNU 安装使用 v15.2.1-1.1；版本目录另提供 14.2.1-1.1 和 13.3.1-1.1，源自 xPack 对 ARM GNU 工具链的重打包。Windows x64、Linux x64 与 Linux ARM64 的原生归档选择及下载校验已准备；Linux 尚未实际验证。安装前校验发行元数据或发布方校验清单中的 SHA-256 与归档大小；其许可为 GNU 工具链自身许可，可随安装流程下载。其他主机可使用已有工具并通过 armCompilerDirectory 指定；Arm Compiler 6 仍须遵循自身授权条款。
 
 没有 build.entry 时保留工程根目录 firmware.bin 的验证方式。完整固件按实际目标生成并链接到 0x08000000；当前只允许从 Flash 起点写入单一完整固件区，不套用 ESP 分区，不承诺保留独立 bootloader 或相邻数据页。main.c 本身不足以生成正确启动和链接环境。
 

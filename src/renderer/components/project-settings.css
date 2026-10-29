@@ -1,0 +1,81 @@
+.modal.project-settings-modal {
+  width: min(1120px, calc(100vw - 48px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+.project-settings-modal .modal-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.project-settings-modal .modal-title h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 16px;
+}
+.project-settings-modal .modal-title .icon-button {
+  flex-shrink: 0;
+}
+.project-settings-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  contain: paint;
+  padding: 20px 0;
+}
+.project-settings-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-content: start;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.project-settings-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.project-settings-wide {
+  grid-column: 1 / -1;
+}
+.project-settings-fields textarea {
+  width: 100%;
+  resize: vertical;
+  font:
+    13px/1.6 Consolas,
+    monospace;
+}
+.project-settings-preview {
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.project-settings-preview pre {
+  overflow: auto;
+  font:
+    12px/1.6 Consolas,
+    monospace;
+  max-height: 58vh;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .project-settings-body {
+    grid-template-columns: 1fr;
+  }
+  .project-settings-fields {
+    grid-template-columns: 1fr;
+  }
+}

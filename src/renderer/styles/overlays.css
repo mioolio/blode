@@ -95,6 +95,12 @@
   background: var(--overlay);
   backdrop-filter: blur(3px);
 }
+/* Large scrolling workspaces must not resample the entire editor behind them.
+   This is especially expensive in the Windows software-rendering fallback. */
+.modal-backdrop.workspace-dialog-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 .modal {
   width: 460px;
   max-width: calc(100vw - 48px);

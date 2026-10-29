@@ -1,7 +1,8 @@
-import { z } from 'zod';
+import * as z from 'zod';
 import type { CoreApi, LogEvent } from '../shared/contracts';
 import { configSchema } from '../core/config';
 import { RpcError } from './protocol';
+import { workbenchRouteSchemas } from './workbench-routes';
 
 const empty = z.object({}).strict();
 const port = z.string().min(1).max(256).optional();
@@ -9,6 +10,7 @@ const filePath = z.string().min(1).max(1024);
 
 /** One schema map powers both the named-pipe and the MCP tool catalog. */
 export const routeSchemas = {
+  ...workbenchRouteSchemas,
   'state.get': empty,
   'ports.list': empty,
   'probes.list': empty,
@@ -146,5 +148,8 @@ export async function dispatch(
       return null;
     case 'events.poll':
       return events.poll(routeSchemas['events.poll'].parse(input ?? {}).after);
+    default:
+      if (!api.automationInvoke) throw new RpcError(-32601, 'rpc.methodNotFound');
+      return api.automationInvoke(method, parsed.data as Record<string, unknown>);
   }
 }

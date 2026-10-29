@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as z from 'zod';
 
 /** A frame is one UTF-8 JSON object followed by LF. This is not HTTP. */
 export const PROTOCOL_VERSION = 1;

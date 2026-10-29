@@ -14,6 +14,13 @@ export const explorerContextMenu: ContextMenuEntry[] = [
   },
   { separator: true },
   {
+    id: 'project-settings',
+    labelKey: 'project.settings',
+    command: 'explorer.projectSettings',
+    when: ['file'],
+    whenPath: 'be',
+  },
+  {
     id: 'set-build-entry',
     labelKey: 'action.setBuildEntry',
     command: 'explorer.setBuildEntry',

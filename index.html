@@ -8,21 +8,67 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ws://127.0.0.1:5173 http://127.0.0.1:5173 http://127.0.0.1:47821 http://localhost:47821"
     />
     <title>Blode Studio</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #0b0e14;
+      }
+      .startup-shell {
+        min-height: 100vh;
+        box-sizing: border-box;
+        color: #93a0b4;
+        font:
+          14px 'Segoe UI',
+          'Microsoft YaHei',
+          sans-serif;
+      }
+      .startup-shell header {
+        height: 40px;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        border-bottom: 1px solid #232a36;
+        color: #d8deea;
+        font-weight: 600;
+      }
+      .startup-shell main {
+        padding: 48px;
+      }
+      .startup-shell h1 {
+        margin: 0 0 12px;
+        color: #f1f5fc;
+        font-size: 25px;
+        font-weight: 600;
+      }
+      @media (prefers-color-scheme: light) {
+        html,
+        body {
+          background: #eef1f6;
+        }
+        .startup-shell {
+          color: #5a6679;
+        }
+        .startup-shell header {
+          color: #1f2937;
+          border-color: #dfe4ec;
+        }
+        .startup-shell h1 {
+          color: #0f172a;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root">
-      <div
-        role="status"
-        style="
-          padding: 32px;
-          font:
-            14px 'Segoe UI',
-            'Microsoft YaHei',
-            sans-serif;
-          color: #536078;
-        "
-      >
-        正在启动 Blode Studio…
+      <div class="startup-shell" aria-busy="true">
+        <header>Blode Studio</header>
+        <main>
+          <h1>Blode Studio</h1>
+          <p role="status">正在准备工作区…</p>
+        </main>
       </div>
     </div>
     <script type="module" src="/src/renderer/main.tsx"></script>

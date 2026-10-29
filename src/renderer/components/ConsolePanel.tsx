@@ -10,10 +10,12 @@ import {
   Unplug,
   Usb,
   TriangleAlert,
+  X,
 } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import type { SerialOptions } from '../../shared/contracts';
 import { iconButton } from './IconButton';
+import { TerminalPanel } from './TerminalPanel';
 
 /** ConsolePanel renders one workspace surface; application actions stay in useStudio. */
 export function ConsolePanel({ studio }: { studio: Studio }) {
@@ -65,6 +67,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     { id: 'serial' as const, icon: Usb },
     { id: 'problems' as const, icon: CircleAlert },
     { id: 'warnings' as const, icon: TriangleAlert },
+    { id: 'terminal' as const, icon: SquareTerminal },
   ];
   const emptyIcon =
     tab === 'serial' ? (
@@ -75,7 +78,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
       <SquareTerminal size={26} strokeWidth={1.3} />
     );
   return (
-    <section className="console-panel" onKeyDown={selectLogText}>
+    <section className="console-panel" hidden={!studio.consolePanelVisible} onKeyDown={selectLogText}>
       <div className="console-header">
         <div className="console-tabs">
           {tabs.map(({ id, icon: Icon }) => (
@@ -94,16 +97,23 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               {t(busy)}
             </span>
           )}
+          {tab !== 'terminal' &&
+            iconButton(
+              'action.clear',
+              () =>
+                setLogs((current) =>
+                  current.filter((log) => (tab === 'serial' ? log.kind !== 'serial' : log.kind === 'serial')),
+                ),
+              <Trash2 size={13} strokeWidth={1.8} />,
+            )}
           {iconButton(
-            'action.clear',
-            () =>
-              setLogs((current) =>
-                current.filter((log) => (tab === 'serial' ? log.kind !== 'serial' : log.kind === 'serial')),
-              ),
-            <Trash2 size={13} strokeWidth={1.8} />,
+            'view.hideConsolePanel',
+            () => studio.setConsolePanelVisible(false),
+            <X size={14} strokeWidth={1.9} aria-hidden="true" />,
           )}
         </div>
       </div>
+      <TerminalPanel visible={tab === 'terminal'} />
       {tab === 'serial' && (
         <>
           <div className="serial-toolbar" style={{ flexWrap: 'wrap' }}>
@@ -271,54 +281,56 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           </details>
         </>
       )}
-      <div
-        className="log-scroll"
-        ref={logRef}
-        tabIndex={0}
-        role="log"
-        aria-label={t(`console.${tab}`)}
-        onMouseDown={() => logRef.current?.focus()}
-      >
-        {(tab === 'serial'
-          ? logs.filter((log) => log.kind === 'serial')
-          : tab === 'problems'
-            ? errors
-            : tab === 'warnings'
-              ? warnings
-              : logs.filter((log) => log.kind !== 'serial')
-        ).map((log, index) => (
-          <div className={`log-line ${log.level}`} key={`${log.time}-${index}`}>
-            <time>{new Date(log.time).toLocaleTimeString(locale, { hour12: false })}</time>
-            <span className="log-marker">
-              {log.level === 'error' ? '×' : log.level === 'success' ? '✓' : '›'}
-            </span>
-            <pre>{t(log.message)}</pre>
-          </div>
-        ))}
-        {!(tab === 'serial'
-          ? logs.some((log) => log.kind === 'serial')
-          : tab === 'problems'
-            ? errors.length
-            : tab === 'warnings'
-              ? warnings.length
-              : logs.some((log) => log.kind !== 'serial')) && (
-          <div className="console-empty">
-            <span className="console-empty-icon">{emptyIcon}</span>
-            <span>
-              {t(
-                tab === 'serial'
-                  ? 'console.serialEmpty'
-                  : tab === 'problems'
-                    ? 'console.noProblems'
-                    : tab === 'warnings'
-                      ? 'console.noWarnings'
-                      : 'console.empty',
-              )}
-            </span>
-          </div>
-        )}
-        <div ref={logEnd} />
-      </div>
+      {tab !== 'terminal' && (
+        <div
+          className="log-scroll"
+          ref={logRef}
+          tabIndex={0}
+          role="log"
+          aria-label={t(`console.${tab}`)}
+          onMouseDown={() => logRef.current?.focus()}
+        >
+          {(tab === 'serial'
+            ? logs.filter((log) => log.kind === 'serial')
+            : tab === 'problems'
+              ? errors
+              : tab === 'warnings'
+                ? warnings
+                : logs.filter((log) => log.kind !== 'serial')
+          ).map((log, index) => (
+            <div className={`log-line ${log.level}`} key={`${log.time}-${index}`}>
+              <time>{new Date(log.time).toLocaleTimeString(locale, { hour12: false })}</time>
+              <span className="log-marker">
+                {log.level === 'error' ? '×' : log.level === 'success' ? '✓' : '›'}
+              </span>
+              <pre>{t(log.message)}</pre>
+            </div>
+          ))}
+          {!(tab === 'serial'
+            ? logs.some((log) => log.kind === 'serial')
+            : tab === 'problems'
+              ? errors.length
+              : tab === 'warnings'
+                ? warnings.length
+                : logs.some((log) => log.kind !== 'serial')) && (
+            <div className="console-empty">
+              <span className="console-empty-icon">{emptyIcon}</span>
+              <span>
+                {t(
+                  tab === 'serial'
+                    ? 'console.serialEmpty'
+                    : tab === 'problems'
+                      ? 'console.noProblems'
+                      : tab === 'warnings'
+                        ? 'console.noWarnings'
+                        : 'console.empty',
+                )}
+              </span>
+            </div>
+          )}
+          <div ref={logEnd} />
+        </div>
+      )}
       {tab === 'serial' && (
         <form
           className="serial-input"

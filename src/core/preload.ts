@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { createWorkbenchBridge } from '../shared/workbench-bridge';
 import {
   DRAFTS_CHANNEL,
   EVENT_CHANNEL,
   IPC_CHANNEL,
+  RENDERER_READY_CHANNEL,
   type DesktopApi,
   type LogEvent,
 } from '../shared/contracts';
@@ -10,6 +12,15 @@ import {
 // Only this typed, explicit surface crosses the sandbox boundary.
 const call = (method: string, ...args: unknown[]) => ipcRenderer.invoke(IPC_CHANNEL, method, args);
 const bridge: DesktopApi = {
+  rendererReady: () => ipcRenderer.send(RENDERER_READY_CHANNEL),
+  ...createWorkbenchBridge(
+    (method, args) => call(method, ...args),
+    (channel, callback) => {
+      const listener = (_: unknown, event: any) => callback(event);
+      ipcRenderer.on(channel, listener);
+      return () => ipcRenderer.removeListener(channel, listener);
+    },
+  ),
   listRecentProjects: () => call('listRecentProjects'),
   openRecentProject: (path) => call('openRecentProject', path),
   removeRecentProject: (path) => call('removeRecentProject', path),

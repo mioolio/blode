@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c23",
+  "rules": [
+    {
+      "id": "removed-gets",
+      "kind": "call",
+      "names": ["gets"],
+      "severity": "warning",
+      "message": "gets 已从 C23 标准库移除，请使用 fgets。",
+      "enabled": true
+    }
+  ]
+}

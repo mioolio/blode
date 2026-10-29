@@ -4,3 +4,5 @@ release
 .tools
 artifacts
 package-lock.json
+extensions/**/vendor/*.cjs
+esp32fff

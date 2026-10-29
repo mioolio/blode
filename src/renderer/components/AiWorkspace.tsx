@@ -84,6 +84,11 @@ export function AiWorkspace({
               ['flash.run', 'ai.flash', Flame],
               ['ports.list', 'ai.ports', Usb],
               ['device.probe', 'ai.probe', Cpu],
+              ['capabilities.get', 'ai.capabilities', Waypoints],
+              ['collaboration.edit', 'ai.collaboration', FilePen],
+              ['ai.configure', 'ai.completions', FilePen],
+              ['ai.predictions.poll', 'ai.predictions', Waypoints],
+              ['ui.command', 'ai.ui', Waypoints],
             ] as const
           ).map(([method, key, Icon]) => (
             <div className="ai-tool" key={method}>

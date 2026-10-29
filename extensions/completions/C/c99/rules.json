@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c99",
+  "rules": [
+    {
+      "id": "removed-gets",
+      "kind": "call",
+      "names": ["gets"],
+      "severity": "warning",
+      "message": "gets 无法限制输入长度，请使用 fgets。",
+      "enabled": true
+    },
+    {
+      "id": "c11-syntax",
+      "kind": "call",
+      "names": ["_Generic", "_Static_assert", "_Alignof", "_Alignas"],
+      "severity": "warning",
+      "message": "此语法需要 C11 或更新标准。",
+      "enabled": true
+    },
+    {
+      "id": "c23-syntax",
+      "kind": "call",
+      "names": ["typeof", "typeof_unqual", "_BitInt", "static_assert", "alignof", "alignas"],
+      "severity": "warning",
+      "message": "此标准语法需要 C23；编译器扩展可另行支持。",
+      "enabled": true
+    }
+  ]
+}

@@ -38,7 +38,15 @@ export class InstallationTracker {
       this.decorate({
         kind: 'status',
         level: 'info',
-        message: `status.install${progress.phase[0].toUpperCase()}${progress.phase.slice(1)}`,
+        message: {
+          starting: 'status.installStarting',
+          downloading: 'status.installDownloading',
+          verifying: 'status.installVerifying',
+          extracting: 'status.installExtracting',
+          installing: 'status.installInstalling',
+          completed: 'status.installCompleted',
+          failed: 'status.installFailed',
+        }[progress.phase],
         time: new Date().toISOString(),
         progressOnly: !changed,
       }),

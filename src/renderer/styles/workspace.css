@@ -677,6 +677,32 @@
   flex: 1;
   background: var(--editor-bg);
 }
+.editor-source-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  color: var(--text-dim);
+  background: var(--editor-bg);
+}
+.editor-source-preview > span {
+  position: sticky;
+  display: block;
+  top: 0;
+  padding: 6px 24px;
+  background: var(--editor-bg);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.editor-source-preview pre {
+  margin: 0;
+  padding: 12px 24px 20px;
+  font:
+    13px / 23px 'Cascadia Code',
+    Consolas,
+    monospace;
+  white-space: pre;
+}
 .editor-empty {
   height: 100%;
   display: flex;

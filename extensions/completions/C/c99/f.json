@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c99",
+  "symbols": [
+    {
+      "name": "fopen",
+      "kind": "function",
+      "detail": "FILE *fopen(const char *filename, const char *mode)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fopen(${1:})"
+    },
+    {
+      "name": "fclose",
+      "kind": "function",
+      "detail": "int fclose(FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fclose(${1:})"
+    },
+    {
+      "name": "fflush",
+      "kind": "function",
+      "detail": "int fflush(FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fflush(${1:})"
+    },
+    {
+      "name": "fread",
+      "kind": "function",
+      "detail": "size_t fread(void *ptr, size_t size, size_t count, FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fread(${1:})"
+    },
+    {
+      "name": "fwrite",
+      "kind": "function",
+      "detail": "size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fwrite(${1:})"
+    },
+    {
+      "name": "fprintf",
+      "kind": "function",
+      "detail": "int fprintf(FILE *stream, const char *format, ...)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fprintf(${1:})"
+    },
+    {
+      "name": "fgets",
+      "kind": "function",
+      "detail": "char *fgets(char *buffer, int count, FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fgets(${1:})"
+    },
+    {
+      "name": "fputs",
+      "kind": "function",
+      "detail": "int fputs(const char *text, FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fputs(${1:})"
+    },
+    {
+      "name": "fgetc",
+      "kind": "function",
+      "detail": "int fgetc(FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fgetc(${1:})"
+    },
+    {
+      "name": "fputc",
+      "kind": "function",
+      "detail": "int fputc(int ch, FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fputc(${1:})"
+    },
+    {
+      "name": "feof",
+      "kind": "function",
+      "detail": "int feof(FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "feof(${1:})"
+    },
+    {
+      "name": "ferror",
+      "kind": "function",
+      "detail": "int ferror(FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "ferror(${1:})"
+    },
+    {
+      "name": "fseek",
+      "kind": "function",
+      "detail": "int fseek(FILE *stream, long offset, int origin)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "fseek(${1:})"
+    },
+    {
+      "name": "ftell",
+      "kind": "function",
+      "detail": "long ftell(FILE *stream)",
+      "documentation": "`<stdio.h>` · C99",
+      "insertText": "ftell(${1:})"
+    },
+    {
+      "name": "free",
+      "kind": "function",
+      "detail": "void free(void *ptr)",
+      "documentation": "`<stdlib.h>` · C99",
+      "insertText": "free(${1:})"
+    },
+    {
+      "name": "floor",
+      "kind": "function",
+      "detail": "double floor(double value)",
+      "documentation": "`<math.h>` · C99",
+      "insertText": "floor(${1:})"
+    },
+    {
+      "name": "fabs",
+      "kind": "function",
+      "detail": "double fabs(double value)",
+      "documentation": "`<math.h>` · C99",
+      "insertText": "fabs(${1:})"
+    },
+    {
+      "name": "fmod",
+      "kind": "function",
+      "detail": "double fmod(double x, double y)",
+      "documentation": "`<math.h>` · C99",
+      "insertText": "fmod(${1:})"
+    },
+    {
+      "name": "fmax",
+      "kind": "function",
+      "detail": "double fmax(double x, double y)",
+      "documentation": "`<math.h>` · C99",
+      "insertText": "fmax(${1:})"
+    },
+    {
+      "name": "fmin",
+      "kind": "function",
+      "detail": "double fmin(double x, double y)",
+      "documentation": "`<math.h>` · C99",
+      "insertText": "fmin(${1:})"
+    }
+  ]
+}

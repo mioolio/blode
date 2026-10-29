@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as z from 'zod';
 import { getBoardAdapter } from '../../extensions/registry';
 import type { ProjectConfig, ProjectBuildInputs } from '../shared/contracts';
 
@@ -54,6 +54,7 @@ export const configSchema = z
         fqbn: z.string().regex(/^(?:[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+(?::[a-zA-Z0-9_=,.-]+)?)?$/),
         stlinkDirectory: z.string().max(1024).optional(),
         armCompilerDirectory: z.string().max(1024).optional(),
+        packageDirectory: z.string().max(4096).optional(),
       })
       .strict(),
   })
@@ -89,8 +90,53 @@ export function parseConfig(value: unknown): ProjectConfig {
 /** Build inputs declared by the `be` project descriptor. */
 export type ProjectBuild = ProjectBuildInputs;
 
+const buildPath = z
+  .string()
+  .trim()
+  .min(1)
+  .max(4096)
+  .refine((value) => !/[\0\r\n]/.test(value));
+const compilerChoiceSchema = z
+  .object({
+    family: z.enum(['inherit', 'auto', 'gnu-arm', 'armclang', 'arduino']),
+    directory: buildPath.optional(),
+    version: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9.+_-]*$/)
+      .optional(),
+    arduinoCli: buildPath.optional(),
+    packageDirectory: buildPath.optional(),
+  })
+  .strict();
+const platformCompilerSettingsSchema = z
+  .object({
+    common: compilerChoiceSchema.optional(),
+    c: compilerChoiceSchema.optional(),
+    cpp: compilerChoiceSchema.optional(),
+  })
+  .strict();
+const buildSettingsSchema = z
+  .object({
+    mode: z.enum(['debug', 'release']).optional(),
+    optimizeForSize: z.boolean().optional(),
+    common: compilerChoiceSchema.optional(),
+    platforms: z
+      .object({
+        stm32: platformCompilerSettingsSchema.optional(),
+        'esp32-s3': platformCompilerSettingsSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 const buildSchema = z
   .object({
+    settings: buildSettingsSchema.optional(),
+    cStandard: z.enum(['c99', 'c11', 'c17', 'c23']).optional(),
     entry: z.string().trim().min(1).max(1024).optional(),
     sketch: z.string().trim().min(1).max(1024).optional(),
     files: z.array(z.string().trim().min(1).max(1024)).max(1000).optional(),

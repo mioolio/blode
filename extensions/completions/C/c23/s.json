@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c23",
+  "symbols": [
+    {
+      "name": "sprintf",
+      "kind": "function",
+      "detail": "int sprintf(char *buffer, const char *format, ...)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "sprintf(${1:})"
+    },
+    {
+      "name": "snprintf",
+      "kind": "function",
+      "detail": "int snprintf(char *buffer, size_t count, const char *format, ...)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "snprintf(${1:})"
+    },
+    {
+      "name": "scanf",
+      "kind": "function",
+      "detail": "int scanf(const char *format, ...)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "scanf(${1:})"
+    },
+    {
+      "name": "sscanf",
+      "kind": "function",
+      "detail": "int sscanf(const char *buffer, const char *format, ...)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "sscanf(${1:})"
+    },
+    {
+      "name": "strtol",
+      "kind": "function",
+      "detail": "long strtol(const char *text, char **end, int base)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "strtol(${1:})"
+    },
+    {
+      "name": "strtoul",
+      "kind": "function",
+      "detail": "unsigned long strtoul(const char *text, char **end, int base)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "strtoul(${1:})"
+    },
+    {
+      "name": "strtoll",
+      "kind": "function",
+      "detail": "long long strtoll(const char *text, char **end, int base)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "strtoll(${1:})"
+    },
+    {
+      "name": "strtoull",
+      "kind": "function",
+      "detail": "unsigned long long strtoull(const char *text, char **end, int base)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "strtoull(${1:})"
+    },
+    {
+      "name": "strtod",
+      "kind": "function",
+      "detail": "double strtod(const char *text, char **end)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "strtod(${1:})"
+    },
+    {
+      "name": "strtof",
+      "kind": "function",
+      "detail": "float strtof(const char *text, char **end)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "strtof(${1:})"
+    },
+    {
+      "name": "strtold",
+      "kind": "function",
+      "detail": "long double strtold(const char *text, char **end)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "strtold(${1:})"
+    },
+    {
+      "name": "srand",
+      "kind": "function",
+      "detail": "void srand(unsigned int seed)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "srand(${1:})"
+    },
+    {
+      "name": "system",
+      "kind": "function",
+      "detail": "int system(const char *command)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "system(${1:})"
+    },
+    {
+      "name": "strlen",
+      "kind": "function",
+      "detail": "size_t strlen(const char *text)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strlen(${1:})"
+    },
+    {
+      "name": "strcpy",
+      "kind": "function",
+      "detail": "char *strcpy(char *dest, const char *src)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strcpy(${1:})"
+    },
+    {
+      "name": "strncpy",
+      "kind": "function",
+      "detail": "char *strncpy(char *dest, const char *src, size_t count)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strncpy(${1:})"
+    },
+    {
+      "name": "strcat",
+      "kind": "function",
+      "detail": "char *strcat(char *dest, const char *src)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strcat(${1:})"
+    },
+    {
+      "name": "strncat",
+      "kind": "function",
+      "detail": "char *strncat(char *dest, const char *src, size_t count)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strncat(${1:})"
+    },
+    {
+      "name": "strcmp",
+      "kind": "function",
+      "detail": "int strcmp(const char *left, const char *right)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strcmp(${1:})"
+    },
+    {
+      "name": "strncmp",
+      "kind": "function",
+      "detail": "int strncmp(const char *left, const char *right, size_t count)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strncmp(${1:})"
+    },
+    {
+      "name": "strchr",
+      "kind": "function",
+      "detail": "char *strchr(const char *text, int ch)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strchr(${1:})"
+    },
+    {
+      "name": "strrchr",
+      "kind": "function",
+      "detail": "char *strrchr(const char *text, int ch)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strrchr(${1:})"
+    },
+    {
+      "name": "strstr",
+      "kind": "function",
+      "detail": "char *strstr(const char *text, const char *needle)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strstr(${1:})"
+    },
+    {
+      "name": "strtok",
+      "kind": "function",
+      "detail": "char *strtok(char *text, const char *delimiters)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strtok(${1:})"
+    },
+    {
+      "name": "strerror",
+      "kind": "function",
+      "detail": "char *strerror(int code)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strerror(${1:})"
+    },
+    {
+      "name": "strspn",
+      "kind": "function",
+      "detail": "size_t strspn(const char *text, const char *accept)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strspn(${1:})"
+    },
+    {
+      "name": "strcspn",
+      "kind": "function",
+      "detail": "size_t strcspn(const char *text, const char *reject)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strcspn(${1:})"
+    },
+    {
+      "name": "strpbrk",
+      "kind": "function",
+      "detail": "char *strpbrk(const char *text, const char *accept)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strpbrk(${1:})"
+    },
+    {
+      "name": "strdup",
+      "kind": "function",
+      "detail": "char *strdup(const char *text)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strdup(${1:})"
+    },
+    {
+      "name": "strndup",
+      "kind": "function",
+      "detail": "char *strndup(const char *text, size_t count)",
+      "documentation": "`<string.h>` · C23",
+      "insertText": "strndup(${1:})"
+    },
+    {
+      "name": "sin",
+      "kind": "function",
+      "detail": "double sin(double value)",
+      "documentation": "`<math.h>` · C23",
+      "insertText": "sin(${1:})"
+    },
+    {
+      "name": "sinh",
+      "kind": "function",
+      "detail": "double sinh(double value)",
+      "documentation": "`<math.h>` · C23",
+      "insertText": "sinh(${1:})"
+    },
+    {
+      "name": "sqrt",
+      "kind": "function",
+      "detail": "double sqrt(double value)",
+      "documentation": "`<math.h>` · C23",
+      "insertText": "sqrt(${1:})"
+    }
+  ]
+}

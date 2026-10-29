@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c23",
+  "symbols": [
+    {
+      "name": "ungetc",
+      "kind": "function",
+      "detail": "int ungetc(int ch, FILE *stream)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "ungetc(${1:})"
+    }
+  ]
+}

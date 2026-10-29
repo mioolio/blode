@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c23",
+  "symbols": [
+    {
+      "name": "getchar",
+      "kind": "function",
+      "detail": "int getchar(void)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "getchar(${1:})"
+    },
+    {
+      "name": "getenv",
+      "kind": "function",
+      "detail": "char *getenv(const char *name)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "getenv(${1:})"
+    }
+  ]
+}

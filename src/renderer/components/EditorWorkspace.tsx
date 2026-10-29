@@ -1,16 +1,38 @@
-import { Fragment, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  Fragment,
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { Bot, ChevronRight, Columns2, FileCode, FolderOpen, LayoutGrid, Settings2, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { FileIcon } from './FileIcon';
-import { CodeEditor } from '../editor/CodeEditor';
 import { setCompletionProject } from '../editor/completionProvider';
-import { PartitionLayout } from './PartitionLayout';
-import { ResourceLayout } from './ResourceLayout';
-import { Settings, type PreferencesSection } from './Settings';
-import { AiWorkspace } from './AiWorkspace';
+import type { PreferencesSection } from './Settings';
 import { supportsLayout, supportsPartitionEditing } from '../workspace/capabilities';
 import { resizeAppRegion, resizeFixedLayout } from '../workspace/layout';
 import { WelcomeHome } from './WelcomeHome';
+import { useCollaboration } from '../workspace/useCollaboration';
+import { CollaborationAvatars, CollaborationStatus } from './CollaborationStatus';
+import { reconcileDismissedTabs, visibleFilePaths, type FileClosedEvent } from '../workspace/remoteTabs';
+import './preferences.css';
+import { EditorLoading } from '../editor/EditorLoading';
+import type { SourceLocation } from '../../shared/language';
+
+const CodeEditor = lazy(() =>
+  import('../editor/CodeEditor').then((module) => ({ default: module.CodeEditor })),
+);
+const PartitionLayout = lazy(() =>
+  import('./PartitionLayout').then((module) => ({ default: module.PartitionLayout })),
+);
+const ResourceLayout = lazy(() =>
+  import('./ResourceLayout').then((module) => ({ default: module.ResourceLayout })),
+);
+const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })));
+const AiWorkspace = lazy(() => import('./AiWorkspace').then((module) => ({ default: module.AiWorkspace })));
 
 const tools = [
   { id: 'layout' as const, icon: LayoutGrid, label: 'workspace.layout' },
@@ -29,6 +51,12 @@ function greetingKey(now = new Date()): string {
 
 /** EditorWorkspace renders the tabbed editor and its tool views. */
 export function EditorWorkspace({ studio }: { studio: Studio }) {
+  const collaboration = useCollaboration(studio);
+  useEffect(() => {
+    const conflict = () => studio.notify(studio.t('collaboration.undoConflict'), false, true);
+    window.addEventListener('blode:undo-conflict', conflict);
+    return () => window.removeEventListener('blode:undo-conflict', conflict);
+  }, [studio.notify, studio.t]);
   const {
     t,
     view,
@@ -65,10 +93,15 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     isWeb,
   } = studio;
   const segments = activePath.replaceAll('\\', '/').split('/').filter(Boolean);
-  const fileTabs = openFiles.flatMap((path) => {
-    const file = state?.files.find((item) => item.path === path);
-    return file ? [file] : [];
-  });
+  const [dismissedRemoteTabs, setDismissedRemoteTabs] = useState<ReadonlySet<string>>(new Set());
+  const [dismissedRemoteTools, setDismissedRemoteTools] = useState<ReadonlySet<string>>(new Set());
+  const toolTabs = visibleFilePaths(openTools, collaboration.remoteTools, dismissedRemoteTools);
+  const fileTabs = visibleFilePaths(openFiles, collaboration.remotePaths, dismissedRemoteTabs).flatMap(
+    (path) => {
+      const file = state?.files.find((item) => item.path === path);
+      return file ? [file] : [];
+    },
+  );
   const layoutAvailable = supportsLayout(board);
   const partitionEditor = supportsPartitionEditing(board);
   const lastBuild = state?.lastBuild?.success ? state.lastBuild : null;
@@ -79,8 +112,80 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   const detectedFlashSize = probe?.flashSize;
   const ramTotal = lastBuild?.ramTotal || probe?.ramSize || board?.ramSize || 0;
   const [secondaryPath, setSecondaryPath] = useState('');
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('blode:editor-tabs', { detail: { root: state?.projectRoot ?? '', paths: openFiles } }),
+    );
+  }, [state?.projectRoot, openFiles]);
+  useEffect(() => {
+    setDismissedRemoteTabs(new Set());
+    setDismissedRemoteTools(new Set());
+    setSecondaryPath('');
+  }, [state?.projectRoot]);
+  useEffect(() => {
+    setDismissedRemoteTabs((current) =>
+      reconcileDismissedTabs(current, openFiles, collaboration.remotePaths),
+    );
+  }, [openFiles, collaboration.remotePaths.join('\0')]);
+  useEffect(() => {
+    setDismissedRemoteTools((current) =>
+      reconcileDismissedTabs(current, openTools, collaboration.remoteTools),
+    );
+  }, [openTools, collaboration.remoteTools.join('\0')]);
+  useEffect(() => {
+    const closed = (event: Event) => {
+      const detail = (event as CustomEvent<FileClosedEvent>).detail;
+      if (!detail || detail.root !== state?.projectRoot) return;
+      setDismissedRemoteTabs((current) => new Set([...current, detail.path]));
+      setSecondaryPath((current) => (current === detail.path ? '' : current));
+    };
+    window.addEventListener('blode:file-closed', closed);
+    return () => window.removeEventListener('blode:file-closed', closed);
+  }, [state?.projectRoot]);
+  useEffect(() => {
+    const closed = (event: Event) => {
+      const detail = (event as CustomEvent<{ root: string; id: string }>).detail;
+      if (detail?.root === state?.projectRoot)
+        setDismissedRemoteTools((current) => new Set([...current, detail.id]));
+    };
+    window.addEventListener('blode:tool-closed', closed);
+    return () => window.removeEventListener('blode:tool-closed', closed);
+  }, [state?.projectRoot]);
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const [navigationTarget, setNavigationTarget] = useState<SourceLocation>();
+  const navigationHistory = useRef<SourceLocation[]>([]);
+  useEffect(() => {
+    navigationHistory.current = [];
+    setNavigationTarget(undefined);
+  }, [state?.projectRoot]);
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      const detail = (event as CustomEvent<{ root: string; target: SourceLocation; origin?: SourceLocation }>)
+        .detail;
+      if (
+        detail?.root !== state?.projectRoot ||
+        !state?.files.some((file) => file.path === detail.target.path)
+      )
+        return;
+      if (detail.origin) navigationHistory.current.push(detail.origin);
+      if (navigationHistory.current.length > 100) navigationHistory.current.shift();
+      openFile(detail.target.path);
+      setNavigationTarget({ ...detail.target });
+    };
+    const back = () => {
+      const target = navigationHistory.current.pop();
+      if (!target || !state?.files.some((file) => file.path === target.path)) return;
+      openFile(target.path);
+      setNavigationTarget({ ...target });
+    };
+    window.addEventListener('blode:navigate-source', navigate);
+    window.addEventListener('blode:navigate-back', back);
+    return () => {
+      window.removeEventListener('blode:navigate-source', navigate);
+      window.removeEventListener('blode:navigate-back', back);
+    };
+  }, [state?.projectRoot, state?.files, openFile]);
   const splitRegion = useRef<HTMLDivElement>(null);
   const tabStrip = useRef<HTMLDivElement>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
@@ -107,7 +212,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     const strip = tabStrip.current;
     if (left < strip.scrollLeft) strip.scrollLeft = left;
     else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
-  }, [activePath, view, openFiles, openTools, showHome]);
+  }, [activePath, view, openFiles, openTools, showHome, collaboration.remoteTools.join('\0')]);
 
   useEffect(() => {
     if (!preferencesOpen) return;
@@ -130,16 +235,31 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
         path: file.path,
         content: drafts[file.path] ?? file.content,
       })),
+      { projectRoot: state?.projectRoot ?? '', cStandard: state?.build?.cStandard },
     );
-  }, [drafts, state?.files]);
+  }, [drafts, state?.files, state?.projectRoot, state?.build?.cStandard]);
+  useEffect(() => {
+    if (!state?.workspaceOpen || !window.blode.languageIndex) return;
+    // Saved-source cache is maintained off the typing path; buffers stay local.
+    const timer = setTimeout(() => {
+      void window.blode.languageIndex().catch(() => {});
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [state?.projectRoot, state?.files]);
 
   const toggleSplit = () => {
     if (secondaryPath) {
       setSecondaryPath('');
       return;
     }
-    setSecondaryPath(openFiles.find((path) => path !== activePath) ?? openFiles[0] ?? '');
+    const candidate = openFiles.find((path) => path !== activePath) ?? openFiles[0] ?? '';
+    if (candidate) pinFile(candidate);
+    setSecondaryPath(candidate);
   };
+  useEffect(() => {
+    window.addEventListener('blode:split-editor', toggleSplit);
+    return () => window.removeEventListener('blode:split-editor', toggleSplit);
+  }, [secondaryPath, openFiles, activePath]);
 
   const beginSplitDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     const region = splitRegion.current;
@@ -170,22 +290,31 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
         </div>
       );
     return (
-      <CodeEditor
-        path={`${state?.projectRoot}/${path}`}
-        language={file.language}
-        value={drafts[path] ?? file.content}
-        onCursor={primary ? (position) => setCursor(position) : undefined}
-        onChange={(value) => {
-          if (value !== file.content) pinFile(path);
-          setDrafts((current) => {
-            const next = { ...current };
-            if (value === file.content) delete next[path];
-            else next[path] = value;
-            return next;
-          });
-          setStale(true);
-        }}
-      />
+      <Suspense fallback={<EditorLoading value={drafts[path] ?? file.content} />}>
+        <CodeEditor
+          projectRoot={state?.projectRoot ?? ''}
+          path={path}
+          language={file.language}
+          value={drafts[path] ?? file.content}
+          onCursor={primary ? (position) => setCursor(position) : undefined}
+          peers={collaboration.peers}
+          onPresence={collaboration.reportPresence}
+          onUndo={collaboration.enabled ? (direction) => collaboration.undo(path, direction) : undefined}
+          primary={primary}
+          navigation={primary && navigationTarget?.path === path ? navigationTarget : undefined}
+          onChange={(value) => {
+            if (value !== file.content) pinFile(path);
+            setDrafts((current) => {
+              const next = { ...current };
+              if (value === file.content) delete next[path];
+              else next[path] = value;
+              return next;
+            });
+            setStale(true);
+            collaboration.reportEdit(path, value);
+          }}
+        />
+      </Suspense>
     );
   };
 
@@ -211,8 +340,14 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                 const active = view === 'code' && activePath === file.path;
                 return (
                   <div
-                    className={`editor-tab ${active ? 'active' : ''} ${previewPath === file.path ? 'preview-tab' : ''}`}
+                    className={`editor-tab ${active ? 'active' : ''} ${previewPath === file.path ? 'preview-tab' : ''} ${!openFiles.includes(file.path) ? 'remote-only-tab' : ''}`}
                     key={file.path}
+                    onAuxClick={(event) => {
+                      if (event.button === 1) {
+                        event.preventDefault();
+                        void closeTab('file', file.path);
+                      }
+                    }}
                   >
                     <button
                       className="tab-main"
@@ -221,6 +356,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                       title={`${file.path}${previewPath === file.path ? ` · ${t('editor.previewHint')}` : ''}`}
                     >
                       <FileIcon name={file.path} size={14} />
+                      <CollaborationAvatars path={file.path} peers={collaboration.allPeers} />
                       <span className="tab-name">{file.path.split('/').pop()}</span>
                       {drafts[file.path] !== undefined && (
                         <span className="tab-dirty" aria-label={t('project.unsaved')}>
@@ -232,29 +368,39 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                       className="tab-close"
                       aria-label={t('action.close')}
                       title={t('action.close')}
-                      onClick={() => closeTab('file', file.path)}
+                      onClick={() => void closeTab('file', file.path)}
                     >
                       <X size={11} strokeWidth={2} aria-hidden="true" />
                     </button>
                   </div>
                 );
               })}
-              {openTools.map((id) => {
+              {toolTabs.map((id) => {
                 const tool = tools.find((item) => item.id === id);
                 if (!tool) return null;
                 const Icon = tool.icon;
                 const active = view === tool.id;
                 return (
-                  <div className={`editor-tab tool-tab ${active ? 'active' : ''}`} key={tool.id}>
+                  <div
+                    className={`editor-tab tool-tab ${active ? 'active' : ''} ${!openTools.includes(tool.id) ? 'remote-only-tab' : ''}`}
+                    key={tool.id}
+                    onAuxClick={(event) => {
+                      if (event.button === 1) {
+                        event.preventDefault();
+                        void closeTab('tool', tool.id);
+                      }
+                    }}
+                  >
                     <button className="tab-main" onClick={() => setView(tool.id)}>
                       <Icon size={13} strokeWidth={1.9} aria-hidden="true" />
+                      <CollaborationAvatars tool={tool.id} peers={collaboration.allPeers} />
                       <span className="tab-name">{t(tool.label)}</span>
                     </button>
                     <button
                       className="tab-close"
                       aria-label={t('action.close')}
                       title={t('action.close')}
-                      onClick={() => closeTab('tool', tool.id)}
+                      onClick={() => void closeTab('tool', tool.id)}
                     >
                       <X size={11} strokeWidth={2} aria-hidden="true" />
                     </button>
@@ -289,10 +435,8 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                       <span className={index === segments.length - 1 ? 'crumb-current' : ''}>{segment}</span>
                     </Fragment>
                   ))}
-                  <span className="editor-language">
-                    {source?.language === 'cpp' ? t('editor.cpp') : source?.language}
-                  </span>
                 </div>
+                <CollaborationStatus collaboration={collaboration} />
                 <div className="monaco-container">
                   {secondaryPath ? (
                     <div
@@ -318,7 +462,10 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                           <select
                             value={secondaryPath}
                             aria-label={t('action.splitEditor')}
-                            onChange={(event) => setSecondaryPath(event.target.value)}
+                            onChange={(event) => {
+                              pinFile(event.target.value);
+                              setSecondaryPath(event.target.value);
+                            }}
                           >
                             {fileTabs.map((file) => (
                               <option key={file.path} value={file.path}>
@@ -346,65 +493,67 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                 </div>
               </>
             ) : config && state ? (
-              view === 'layout' ? (
-                !layoutAvailable ? (
-                  <div className="editor-empty">
-                    <FileCode size={36} strokeWidth={1.2} aria-hidden="true" />
-                    <p className="subtle-note">
-                      {t(config.boardId === 'auto' ? 'layout.detectFirst' : 'layout.unavailable')}
-                    </p>
-                  </div>
-                ) : partitionEditor ? (
-                  <PartitionLayout
-                    config={config}
-                    flashSizes={board?.flashSizes}
-                    customFlashSize={board?.customFlashSize}
-                    onChange={(value) => {
-                      setConfig(value);
-                      setStale(true);
-                    }}
-                    onSave={saveConfig}
-                    busy={!!busy}
-                  />
+              <Suspense fallback={<div className="editor-empty">{t('editor.loading')}</div>}>
+                {view === 'layout' ? (
+                  !layoutAvailable ? (
+                    <div className="editor-empty">
+                      <FileCode size={36} strokeWidth={1.2} aria-hidden="true" />
+                      <p className="subtle-note">
+                        {t(config.boardId === 'auto' ? 'layout.detectFirst' : 'layout.unavailable')}
+                      </p>
+                    </div>
+                  ) : partitionEditor ? (
+                    <PartitionLayout
+                      config={config}
+                      flashSizes={board?.flashSizes}
+                      customFlashSize={board?.customFlashSize}
+                      onChange={(value) => {
+                        setConfig(value);
+                        setStale(true);
+                      }}
+                      onSave={saveConfig}
+                      busy={!!busy}
+                    />
+                  ) : (
+                    <ResourceLayout
+                      config={config}
+                      baseAddress={board?.layout?.baseAddress ?? 0}
+                      firmwareUsed={lastBuild?.flashUsed ?? null}
+                      firmwareStale={!!state.buildStale || stale}
+                      flashSizes={board?.flashSizes}
+                      customFlashSize={board?.customFlashSize}
+                      detectedFlashSize={detectedFlashSize}
+                      busy={!!busy}
+                      onResize={(flashSize) => {
+                        setConfig(resizeFixedLayout(config, flashSize, flashSize !== detectedFlashSize));
+                        setStale(true);
+                      }}
+                      onAllocate={(appSize) => {
+                        setConfig(resizeAppRegion(config, appSize));
+                        setStale(true);
+                      }}
+                      onChangePartitions={(partitions) => {
+                        setConfig({ ...config, partitions });
+                        setStale(true);
+                      }}
+                      onSave={saveConfig}
+                      ramUsed={lastBuild?.ramUsed ?? null}
+                      ramTotal={ramTotal}
+                    />
+                  )
                 ) : (
-                  <ResourceLayout
-                    config={config}
-                    baseAddress={board?.layout?.baseAddress ?? 0}
-                    firmwareUsed={lastBuild?.flashUsed ?? null}
-                    firmwareStale={!!state.buildStale || stale}
-                    flashSizes={board?.flashSizes}
-                    customFlashSize={board?.customFlashSize}
-                    detectedFlashSize={detectedFlashSize}
-                    busy={!!busy}
-                    onResize={(flashSize) => {
-                      setConfig(resizeFixedLayout(config, flashSize, flashSize !== detectedFlashSize));
-                      setStale(true);
-                    }}
-                    onAllocate={(appSize) => {
-                      setConfig(resizeAppRegion(config, appSize));
-                      setStale(true);
-                    }}
-                    onChangePartitions={(partitions) => {
-                      setConfig({ ...config, partitions });
-                      setStale(true);
-                    }}
-                    onSave={saveConfig}
-                    ramUsed={lastBuild?.ramUsed ?? null}
-                    ramTotal={ramTotal}
+                  <AiWorkspace
+                    endpoint={state.pipe.endpoint}
+                    tokenFile={state.pipe.tokenFile}
+                    webEndpoint={state.web?.endpoint ?? ''}
+                    webTokenFile={state.web?.tokenFile ?? ''}
+                    allowExternal={state.web?.allowExternal ?? false}
+                    syncDrafts={syncDrafts}
+                    onSyncChange={setSyncDrafts}
+                    onCopy={copy}
                   />
-                )
-              ) : (
-                <AiWorkspace
-                  endpoint={state.pipe.endpoint}
-                  tokenFile={state.pipe.tokenFile}
-                  webEndpoint={state.web?.endpoint ?? ''}
-                  webTokenFile={state.web?.tokenFile ?? ''}
-                  allowExternal={state.web?.allowExternal ?? false}
-                  syncDrafts={syncDrafts}
-                  onSyncChange={setSyncDrafts}
-                  onCopy={copy}
-                />
-              )
+                )}
+              </Suspense>
             ) : (
               <div className="editor-empty">
                 <FileCode size={40} strokeWidth={1.2} aria-hidden="true" />
@@ -415,7 +564,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
       </div>
       {preferencesOpen && config && state && (
         <div
-          className="modal-backdrop"
+          className="modal-backdrop workspace-dialog-backdrop"
           onPointerDown={(event) => {
             if (event.target === event.currentTarget) setPreferencesOpen(false);
           }}
@@ -440,22 +589,25 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                 <X size={14} strokeWidth={2} aria-hidden="true" />
               </button>
             </div>
-            <Settings
-              target={preferencesTarget}
-              config={config}
-              status={state.toolchain}
-              drivers={state.drivers}
-              installation={studio.installation}
-              installPending={busy === 'action.install' || busy === 'action.installDriver'}
-              workspaceOpen={!!state.workspaceOpen}
-              onChange={setConfig}
-              onSave={saveConfig}
-              onInstall={install}
-              onInstallDriver={installDriver}
-              onRefreshDrivers={refreshDrivers}
-              busy={!!busy}
-              isWeb={isWeb}
-            />
+            <Suspense fallback={<div className="editor-empty">{t('editor.loading')}</div>}>
+              <Settings
+                target={preferencesTarget}
+                config={config}
+                status={state.toolchain}
+                drivers={state.drivers}
+                installation={studio.installation}
+                installPending={busy === 'action.install' || busy === 'action.installDriver'}
+                workspaceOpen={!!state.workspaceOpen}
+                onChange={setConfig}
+                onSave={saveConfig}
+                onInstall={install}
+                onInstallDriver={installDriver}
+                onRefreshDrivers={refreshDrivers}
+                busy={!!busy}
+                isWeb={isWeb}
+                initializing={state.initializing}
+              />
+            </Suspense>
           </div>
         </div>
       )}
@@ -469,6 +621,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
           >
             <h2>{t('project.close')}</h2>
             <p>{t(studio.dirty || studio.configDirty ? 'project.saveClosePrompt' : 'project.closePrompt')}</p>
+            {studio.syncDrafts && <p>{t('collaboration.closeProjectNote')}</p>}
             <div className="modal-actions">
               <button onClick={() => setCloseProjectPending(false)} disabled={!!busy}>
                 {t('action.cancel')}

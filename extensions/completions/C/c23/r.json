@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "language": "c",
+  "standard": "c23",
+  "symbols": [
+    {
+      "name": "rewind",
+      "kind": "function",
+      "detail": "void rewind(FILE *stream)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "rewind(${1:})"
+    },
+    {
+      "name": "remove",
+      "kind": "function",
+      "detail": "int remove(const char *filename)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "remove(${1:})"
+    },
+    {
+      "name": "rename",
+      "kind": "function",
+      "detail": "int rename(const char *oldName, const char *newName)",
+      "documentation": "`<stdio.h>` · C23",
+      "insertText": "rename(${1:})"
+    },
+    {
+      "name": "realloc",
+      "kind": "function",
+      "detail": "void *realloc(void *ptr, size_t size)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "realloc(${1:})"
+    },
+    {
+      "name": "rand",
+      "kind": "function",
+      "detail": "int rand(void)",
+      "documentation": "`<stdlib.h>` · C23",
+      "insertText": "rand(${1:})"
+    },
+    {
+      "name": "round",
+      "kind": "function",
+      "detail": "double round(double value)",
+      "documentation": "`<math.h>` · C23",
+      "insertText": "round(${1:})"
+    }
+  ]
+}

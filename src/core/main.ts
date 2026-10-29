@@ -1,13 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, session, shell } from 'electron';
 import { appendFileSync, mkdirSync, promises as fs, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { z } from 'zod';
+import * as z from 'zod';
 import { createCore, type CoreService } from './service';
 import { listBoards } from '../../extensions/registry';
 import { startPipeServer, type PipeServerHandle } from '../automation/server';
 import {
   EVENT_CHANNEL,
   IPC_CHANNEL,
+  RENDERER_READY_CHANNEL,
   type LogEvent,
   type RecentProject,
   type ReopenProjectResult,
@@ -21,6 +22,18 @@ import { MAX_PROBE_LOG_BYTES } from '../shared/probe-log';
 import { RecentProjects } from './recent-projects';
 import { FirmwareStore, prepareBuildExport } from './firmware';
 import { HardwareDebugger } from './hardware-debugger';
+import { createWebDebugger } from './web-debugger';
+import { AiAssistance } from './ai-assistance';
+import { CollaborationService } from './collaboration';
+import { createAssistanceRoutes } from './assistance-routes';
+import { NativePresenceOwner } from './native-presence';
+import { UiCommands } from './ui-commands';
+import { RecentLogs } from './recent-logs';
+import { createWorkbenchAutomation } from './workbench-automation';
+import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from '../shared/contracts';
+import { createHostServices, type HostServices } from './host-services';
+import { protectSharedWorkspace } from './shared-workspace';
+import { RELEASE_VERSION } from '../shared/version';
 
 app.setName('Blode Studio');
 // Keep drafts in Local Storage, but avoid persistent GPU/Dawn cache handles.
@@ -43,15 +56,22 @@ if (
   app.disableHardwareAcceleration();
 // Development launches pass a workspace log so early exits leave a readable trace.
 const devLogFile = process.env.BLODE_DEV_LOG;
+const bootStarted = performance.now();
 function logBoot(message: string): void {
   if (!devLogFile) return;
   try {
-    appendFileSync(devLogFile, `${new Date().toISOString()} ${message}\n`, 'utf8');
+    appendFileSync(
+      devLogFile,
+      `${new Date().toISOString()} ${message} elapsed=${Math.round(performance.now() - bootStarted)}ms\n`,
+      'utf8',
+    );
   } catch {
     /* A broken diagnostic log must never block startup. */
   }
 }
-logBoot(`start pid=${process.pid} packaged=${app.isPackaged} electron=${process.versions.electron}`);
+logBoot(
+  `start pid=${process.pid} version=${RELEASE_VERSION} packaged=${app.isPackaged} electron=${process.versions.electron}`,
+);
 // Configure and check the path in Electron itself: the parent Node process may
 // have broader filesystem access than the desktop process.
 if (!app.isPackaged && process.env.BLODE_DEV_USER_DATA) {
@@ -73,6 +93,15 @@ if (!app.isPackaged && process.env.BLODE_DEV_USER_DATA) {
 // Follow the operating system theme; the renderer reads the same preference via CSS.
 nativeTheme.themeSource = 'system';
 const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#0b0e14' : '#eef1f6');
+const windowActionArgs = z.tuple([z.enum(['minimize', 'maximize', 'close'])]);
+function controlWindow(target: BrowserWindow | null, action: 'minimize' | 'maximize' | 'close') {
+  if (!target || target.isDestroyed()) return;
+  if (action === 'minimize') target.minimize();
+  else if (action === 'maximize') {
+    if (target.isMaximized()) target.unmaximize();
+    else target.maximize();
+  } else target.close();
+}
 let window: BrowserWindow | null = null;
 let core: CoreService | null = null;
 let pipe: PipeServerHandle | null = null;
@@ -80,6 +109,27 @@ let web: WebServerHandle | null = null;
 let closing = false;
 let debuggerWindow: BrowserWindow | null = null;
 let hardwareDebugger: HardwareDebugger | null = null;
+let collaboration: CollaborationService | undefined;
+let uiCommands: UiCommands | undefined;
+let hostServices: HostServices | undefined;
+const allowReleaseLink = ({ url }: { url: string }) => {
+  try {
+    const link = new URL(url);
+    if (
+      link.protocol === 'https:' &&
+      !link.username &&
+      !link.password &&
+      ((link.hostname === 'github.com' &&
+        /^\/(?:xpack-dev-tools\/arm-none-eabi-gcc-xpack|arduino\/arduino-cli|espressif\/arduino-esp32|stlink-org\/stlink)\/(?:releases|blob)(?:\/|$)/.test(
+          link.pathname,
+        )) ||
+        (link.hostname === 'espressif.github.io' &&
+          link.pathname === '/arduino-esp32/package_esp32_index.json'))
+    )
+      void shell.openExternal(link.href).catch(() => {});
+  } catch {}
+  return { action: 'deny' as const };
+};
 const developmentUrl = process.env.ELECTRON_RENDERER_URL;
 const ownLock = app.requestSingleInstanceLock();
 logBoot(`singleInstanceLock=${ownLock} userData=${app.getPath('userData')}`);
@@ -131,6 +181,155 @@ async function bootstrap(): Promise<void> {
       : path.join(app.getAppPath(), 'extensions', 'boards'),
   );
   logBoot('board folder verified');
+  // Begin rendering while local services initialize. RPC calls wait for the same
+  // validated route table, so an early frame cannot observe a half-created core.
+  let nativePresence: NativePresenceOwner | undefined;
+  type RendererRoutes = Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }>;
+  let resolveRendererRoutes!: (routes: RendererRoutes | null) => void;
+  const rendererRoutes = new Promise<RendererRoutes | null>((resolve) => {
+    resolveRendererRoutes = resolve;
+  });
+  logBoot('creating window');
+  let windowShown = false;
+  let rendererRecoveryUsed = false;
+  window = new BrowserWindow({
+    title: 'Blode Studio',
+    width: 1500,
+    height: 950,
+    minWidth: 1100,
+    minHeight: 720,
+    frame: false,
+    backgroundColor: windowBackground(),
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+  window.removeMenu();
+  if (process.platform === 'win32') {
+    // Windows broadcasts topology changes to top-level windows. No polling of USB/SWD is needed.
+    window.hookWindowMessage(0x0219, (wParam) => {
+      if (closing || wParam.length < 4) return;
+      const change = wParam.readUInt32LE(0);
+      if (change === 0x0007 || change === 0x8000 || change === 0x8004) core?.notifyDevicesChanged();
+    });
+  }
+  const onRendererReady = (event: Electron.IpcMainEvent) => {
+    if (
+      windowShown ||
+      !window ||
+      window.isDestroyed() ||
+      event.sender !== window.webContents ||
+      event.senderFrame !== event.sender.mainFrame
+    )
+      return;
+    windowShown = true;
+    window.show();
+    logBoot('window ready interface=mounted');
+    if (devLogFile && process.env.BLODE_RENDER_DIAGNOSTICS === '1') {
+      void window.webContents
+        .capturePage()
+        .then((capture) =>
+          fs.writeFile(path.join(path.dirname(devLogFile), 'dev-renderer.png'), capture.toPNG()),
+        )
+        .catch((error) => logBoot(`renderer-capture-error ${String(error)}`));
+    }
+  };
+  ipcMain.on(RENDERER_READY_CHANNEL, onRendererReady);
+  window.once('closed', () => ipcMain.removeListener(RENDERER_READY_CHANNEL, onRendererReady));
+  window.once('closed', () => resolveRendererRoutes(null));
+  window.webContents.on('console-message', (_event, ...args: unknown[]) => {
+    logBoot(
+      `renderer-console ${args.map((value) => (typeof value === 'object' ? JSON.stringify(value) : String(value))).join(' ')}`,
+    );
+  });
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    logBoot(`preload-error ${preloadPath} ${error.stack ?? error.message}`);
+  });
+  window.webContents.on('did-fail-load', (_event, code, description, url) => {
+    logBoot(`did-fail-load ${code} ${description} ${url}`);
+  });
+  window.webContents.on('render-process-gone', (_event, details) => {
+    void nativePresence?.clear();
+    logBoot(`render-process-gone ${details.reason} exit=${details.exitCode}`);
+    if (closing || !windowShown || window?.isDestroyed()) return;
+    if (!rendererRecoveryUsed && details.reason !== 'clean-exit') {
+      rendererRecoveryUsed = true;
+      logBoot('recovering crashed renderer');
+      window?.webContents.reloadIgnoringCache();
+    } else app.quit();
+  });
+  const disposeDebugControls = installDebugControls(window, {
+    ...applicationConfig.debug,
+    enabled: !app.isPackaged && applicationConfig.debug.enabled,
+  });
+  window.on('closed', disposeDebugControls);
+  const syncWindowBackground = () => window?.setBackgroundColor(windowBackground());
+  nativeTheme.on('updated', syncWindowBackground);
+  window.on('closed', () => nativeTheme.off('updated', syncWindowBackground));
+  window.webContents.setWindowOpenHandler(allowReleaseLink);
+  window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) void nativePresence?.clear();
+  });
+  window.webContents.once('destroyed', () => {
+    void nativePresence?.clear();
+  });
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
+    callback(false),
+  );
+
+  ipcMain.handle(IPC_CHANNEL, async (event, method: unknown, args: unknown) => {
+    const secondary = event.sender === debuggerWindow?.webContents;
+    if ((event.sender !== window?.webContents && !secondary) || event.senderFrame !== event.sender.mainFrame)
+      throw new Error('error.unauthorized');
+    if (
+      secondary &&
+      method !== 'getState' &&
+      method !== 'listDebugProbes' &&
+      method !== 'windowAction' &&
+      method !== 'hostBrowse' &&
+      !(typeof method === 'string' && method.startsWith('debugger'))
+    )
+      throw new Error('error.unauthorized');
+    // Frameless controls must remain responsive even while a service is starting.
+    if (method === 'windowAction') {
+      const parsed = windowActionArgs.safeParse(args);
+      if (!parsed.success) throw new Error('error.invalidArguments');
+      controlWindow(secondary ? debuggerWindow : window, parsed.data[0]);
+      return;
+    }
+    const routes = await rendererRoutes;
+    if (!routes || closing || event.sender.isDestroyed() || event.senderFrame !== event.sender.mainFrame)
+      throw new Error('error.operationCancelled');
+    if (typeof method !== 'string' || !Object.hasOwn(routes, method)) throw new Error('error.unknownMethod');
+    const route = routes[method];
+    const parsed = route.args.safeParse(args);
+    if (!parsed.success) throw new Error('error.invalidArguments');
+    return route.run(...(parsed.data as unknown[]));
+  });
+  window.once('ready-to-show', () => {
+    // index.html already contains a themed, lightweight startup surface.
+    window?.show();
+    logBoot('window first paint');
+  });
+  window.once('closed', () => debuggerWindow?.close());
+  const loadRenderer = () => {
+    if (developmentUrl) {
+      const url = new URL(developmentUrl);
+      if (url.origin !== 'http://127.0.0.1:5173') throw new Error('error.invalidDevServer');
+      return window!.loadURL(url.toString());
+    }
+    return window!.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  };
+  const rendererLoad = loadRenderer().then(
+    () => ({ ok: true as const }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
   const dataRoot = process.env.BLODE_DATA_ROOT || app.getPath('userData');
   logBoot(`dataRoot=${dataRoot}`);
   const recentProjectFile = path.join(dataRoot, 'recent-project.json');
@@ -165,7 +364,9 @@ async function bootstrap(): Promise<void> {
   };
   // No workspace is opened on startup; the welcome screen asks for a project area.
   const projectRoot = process.env.BLODE_PROJECT_ROOT || '';
-  const emit = (event: LogEvent) => {
+  const recentLogs = new RecentLogs();
+  const emit = (input: LogEvent) => {
+    const event = recentLogs.publish(input);
     if (window && !window.isDestroyed()) window.webContents.send(EVENT_CHANNEL, event);
     if (debuggerWindow && !debuggerWindow.isDestroyed())
       debuggerWindow.webContents.send(EVENT_CHANNEL, event);
@@ -186,6 +387,7 @@ async function bootstrap(): Promise<void> {
       toolchainEnv.HTTP_PROXY ??= address;
     }
   }
+  if (closing) return;
   // The full package ships a tools folder beside the app, so compilation works
   // without extra downloads. The lite package has none and installs into the
   // user data folder; an explicitly configured path always wins.
@@ -200,6 +402,7 @@ async function bootstrap(): Promise<void> {
     dataRoot,
     onEvent: emit,
     refreshDevices: true,
+    progressiveStartup: true,
     hardwareBusy: () => !!hardwareDebugger?.active,
     toolchainEnv,
     fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
@@ -211,19 +414,77 @@ async function bootstrap(): Promise<void> {
         ? path.join(process.resourcesPath, 'drivers', 'STSW-LINK')
         : path.join(app.getAppPath(), 'tools', 'STSW-LINK')),
   });
-  // The UI and all automation routes use the same service instance and locks.
-  const state = core.getState.bind(core);
-  core.getState = async () => ({
-    ...(await state()),
-    recentProject: (await recentHistory.list())[0] ?? null,
-    recentProjects: await recentHistory.list(),
-    pipe: { endpoint: pipe?.endpoint ?? '', tokenFile: pipe?.tokenFile ?? '' },
-    web: {
-      endpoint: web?.endpoint ?? '',
-      tokenFile: web?.tokenFile ?? '',
-      allowExternal: web?.allowExternal ?? false,
+  if (closing) {
+    await core.shutdown();
+    return;
+  }
+  const originalSaveFile = core.saveFile.bind(core);
+  collaboration = new CollaborationService({
+    workspace: () => core!.workspaceSnapshot(),
+    freshWorkspace: () => core!.workspaceSnapshot(true),
+    saveFile: originalSaveFile,
+    publish: (event) => {
+      if (window && !window.isDestroyed()) window.webContents.send(COLLABORATION_CHANNEL, event);
+      web?.publishCollaboration(event);
     },
   });
+  const ai = new AiAssistance({ dataRoot, projectRoot: () => core!.currentProjectRoot(), emit });
+  uiCommands = new UiCommands((request) => {
+    if (window && !window.isDestroyed()) window.webContents.send(UI_COMMAND_CHANNEL, request);
+    web?.publishUiCommand(request);
+  });
+  const assistance = createAssistanceRoutes(ai, collaboration, uiCommands, true);
+  nativePresence = new NativePresenceOwner(collaboration);
+  assistance.routes.collaborationPresence.run = (input) => nativePresence!.presence(input);
+  assistance.routes.collaborationLeave.run = (input) => nativePresence!.leave(input);
+  const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
+  const protection = protectSharedWorkspace(core, collaboration);
+  hostServices = createHostServices({
+    core,
+    collaboration,
+    firmware: firmwareStore,
+    recent: recentHistory,
+    dataRoot,
+    toolchainRoot:
+      process.env.BLODE_TOOLCHAIN_ROOT ||
+      (bundledToolsReady ? bundledTools : path.join(dataRoot, 'toolchains')),
+    emit,
+    toolchainEnv,
+    fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    reloadProject: protection.reload,
+    savePackage: async (file) => {
+      const destination = await dialog.showSaveDialog(window!, {
+        title: '打包工程 / Package project',
+        defaultPath: file.name,
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      });
+      if (destination.canceled || !destination.filePath) return false;
+      await fs.copyFile(file.path, destination.filePath);
+      return true;
+    },
+  });
+  // The UI and all automation routes use the same service instance and locks.
+  const state = core.getState.bind(core);
+  core.getState = async () => {
+    const [current, recent, shared] = await Promise.all([
+      state(),
+      recentHistory.list(),
+      collaboration!.state(),
+    ]);
+    return {
+      ...current,
+      buildStale: current.buildStale || shared.documents.some((document) => document.dirty),
+      recentLogs: recentLogs.snapshot(),
+      recentProject: recent[0] ?? null,
+      recentProjects: recent,
+      pipe: { endpoint: pipe?.endpoint ?? '', tokenFile: pipe?.tokenFile ?? '' },
+      web: {
+        endpoint: web?.endpoint ?? '',
+        tokenFile: web?.tokenFile ?? '',
+        allowExternal: web?.allowExternal ?? false,
+      },
+    };
+  };
   hardwareDebugger = new HardwareDebugger(
     process.env.BLODE_TOOLCHAIN_ROOT ||
       (bundledToolsReady ? bundledTools : path.join(dataRoot, 'toolchains')),
@@ -231,6 +492,7 @@ async function bootstrap(): Promise<void> {
     (message) => emit({ kind: 'status', level: 'info', message, time: new Date().toISOString() }),
   );
   await hardwareDebugger.restore();
+  if (closing) return;
   if (projectRoot) await recentHistory.remember(projectRoot).catch(() => {});
   const openDebugger = async () => {
     if (debuggerWindow && !debuggerWindow.isDestroyed()) {
@@ -258,7 +520,7 @@ async function bootstrap(): Promise<void> {
     });
     const secondary = debuggerWindow;
     secondary.removeMenu();
-    secondary.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    secondary.webContents.setWindowOpenHandler(allowReleaseLink);
     secondary.webContents.on('will-navigate', (e) => e.preventDefault());
     secondary.once('ready-to-show', () => secondary.show());
     secondary.once('closed', () => {
@@ -271,115 +533,58 @@ async function bootstrap(): Promise<void> {
         hash: '/hardware-debugger',
       });
   };
+  core.automationInvoke = createWorkbenchAutomation({
+    core,
+    ai,
+    collaboration,
+    debugger: hardwareDebugger,
+    firmware: firmwareStore,
+    recent: recentHistory,
+    logs: recentLogs,
+    ui: uiCommands,
+    hostServices,
+    openDebugger,
+    windowAction: (action) => {
+      if (action === 'minimize') window?.minimize();
+      if (action === 'maximize' && window) {
+        if (window.isMaximized()) window.unmaximize();
+        else window.maximize();
+      }
+      if (action === 'close') window?.close();
+    },
+  });
   pipe = await startPipeServer({ api: core, dataRoot, onEvent: emit });
+  if (closing) {
+    await pipe.close();
+    return;
+  }
   logBoot(`pipe ready ${pipe.endpoint}`);
   if (applicationConfig.web.enabled) {
     try {
       web = await startWebServer({
         api: core,
+        assistance: webAssistance,
+        hostServices,
+        packageDownload: (id) => hostServices!.packages.download(id),
+        debugger: createWebDebugger(hardwareDebugger, core),
         dataRoot,
         appRoot: app.getAppPath(),
         isPackaged: app.isPackaged,
         rendererUrl: developmentUrl,
         allowExternal: applicationConfig.web.allowExternal,
       });
+      if (closing) {
+        await web.close();
+        return;
+      }
     } catch (error) {
       console.error('Blode web workspace unavailable', error);
     }
   }
-  logBoot('creating window');
-  let windowShown = false;
-  let rendererRecoveryUsed = false;
-  window = new BrowserWindow({
-    title: 'Blode Studio',
-    width: 1500,
-    height: 950,
-    minWidth: 1100,
-    minHeight: 720,
-    frame: false,
-    backgroundColor: windowBackground(),
-    show: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webSecurity: true,
-    },
-  });
-  window.removeMenu();
-  if (process.platform === 'win32') {
-    // Windows broadcasts topology changes to top-level windows. No polling of USB/SWD is needed.
-    window.hookWindowMessage(0x0219, (wParam) => {
-      if (closing || wParam.length < 4) return;
-      const change = wParam.readUInt32LE(0);
-      if (change === 0x0007 || change === 0x8000 || change === 0x8004) core?.notifyDevicesChanged();
-    });
-  }
-  let interfaceCheck: ReturnType<typeof setInterval> | undefined;
-  window.webContents.on('did-finish-load', () => {
-    clearInterval(interfaceCheck);
-    let pending = false;
-    interfaceCheck = setInterval(async () => {
-      if (pending || !window || window.isDestroyed()) return;
-      pending = true;
-      try {
-        const mounted = await window.webContents.executeJavaScript(
-          `!!document.querySelector('#root > .studio .ide-menubar') || (!!document.querySelector('#root > .studio') && document.querySelector('#root').innerText.length > 20)`,
-        );
-        if (!mounted) return;
-        clearInterval(interfaceCheck);
-        windowShown = true;
-        window.show();
-        logBoot('window ready interface=mounted');
-        if (devLogFile && process.env.BLODE_RENDER_DIAGNOSTICS === '1') {
-          const capture = await window.webContents.capturePage();
-          await fs.writeFile(path.join(path.dirname(devLogFile), 'dev-renderer.png'), capture.toPNG());
-        }
-      } catch (error) {
-        logBoot(`renderer-interface-error ${String(error)}`);
-      } finally {
-        pending = false;
-      }
-    }, 250);
-  });
-  window.once('closed', () => clearInterval(interfaceCheck));
-  window.webContents.on('console-message', (_event, ...args: unknown[]) => {
-    logBoot(
-      `renderer-console ${args.map((value) => (typeof value === 'object' ? JSON.stringify(value) : String(value))).join(' ')}`,
-    );
-  });
-  window.webContents.on('preload-error', (_event, preloadPath, error) => {
-    logBoot(`preload-error ${preloadPath} ${error.stack ?? error.message}`);
-  });
-  window.webContents.on('did-fail-load', (_event, code, description, url) => {
-    logBoot(`did-fail-load ${code} ${description} ${url}`);
-  });
-  window.webContents.on('render-process-gone', (_event, details) => {
-    logBoot(`render-process-gone ${details.reason} exit=${details.exitCode}`);
-    if (closing || !windowShown || window?.isDestroyed()) return;
-    if (!rendererRecoveryUsed && details.reason !== 'clean-exit') {
-      rendererRecoveryUsed = true;
-      logBoot('recovering crashed renderer');
-      window?.webContents.reloadIgnoringCache();
-    } else app.quit();
-  });
-  const disposeDebugControls = installDebugControls(window, {
-    ...applicationConfig.debug,
-    enabled: !app.isPackaged && applicationConfig.debug.enabled,
-  });
-  window.on('closed', disposeDebugControls);
-  const syncWindowBackground = () => window?.setBackgroundColor(windowBackground());
-  nativeTheme.on('updated', syncWindowBackground);
-  window.on('closed', () => nativeTheme.off('updated', syncWindowBackground));
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  window.webContents.on('will-navigate', (event) => event.preventDefault());
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
-    callback(false),
-  );
-
   const noArgs = z.tuple([]);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    ...assistance.routes,
+    ...hostServices.routes,
     listRecentProjects: { args: noArgs, run: () => recentHistory.list() },
     openRecentProject: {
       args: z.tuple([z.string().min(1).max(4096)]),
@@ -639,55 +844,14 @@ async function bootstrap(): Promise<void> {
       },
     },
     windowAction: {
-      args: z.tuple([z.enum(['minimize', 'maximize', 'close'])]),
-      run: (action) => {
-        if (action === 'minimize') window?.minimize();
-        if (action === 'maximize') {
-          if (window?.isMaximized()) window.unmaximize();
-          else window?.maximize();
-        }
-        if (action === 'close') window?.close();
-      },
+      args: windowActionArgs,
+      run: (action) => controlWindow(window, action),
     },
   };
-  ipcMain.handle(IPC_CHANNEL, (event, method: unknown, args: unknown) => {
-    const secondary = event.sender === debuggerWindow?.webContents;
-    if ((event.sender !== window?.webContents && !secondary) || event.senderFrame !== event.sender.mainFrame)
-      throw new Error('error.unauthorized');
-    if (
-      secondary &&
-      method !== 'getState' &&
-      method !== 'listDebugProbes' &&
-      method !== 'windowAction' &&
-      !(typeof method === 'string' && method.startsWith('debugger'))
-    )
-      throw new Error('error.unauthorized');
-    if (typeof method !== 'string' || !Object.hasOwn(routes, method)) throw new Error('error.unknownMethod');
-    const route = routes[method];
-    const parsed = route.args.safeParse(args);
-    if (!parsed.success) throw new Error('error.invalidArguments');
-    if (secondary && method === 'windowAction') {
-      const target = debuggerWindow;
-      const [action] = parsed.data as ['minimize' | 'maximize' | 'close'];
-      if (action === 'minimize') target?.minimize();
-      if (action === 'maximize' && target) {
-        if (target.isMaximized()) target.unmaximize();
-        else target.maximize();
-      }
-      if (action === 'close') target?.close();
-      return;
-    }
-    return route.run(...(parsed.data as unknown[]));
-  });
-  window.once('ready-to-show', () => {
-    window?.show();
-  });
-  window.once('closed', () => debuggerWindow?.close());
-  if (developmentUrl) {
-    const url = new URL(developmentUrl);
-    if (url.origin !== 'http://127.0.0.1:5173') throw new Error('error.invalidDevServer');
-    await window.loadURL(url.toString());
-  } else await window.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  resolveRendererRoutes(routes);
+  const rendererResult = await rendererLoad;
+  if (!rendererResult.ok) throw rendererResult.error;
+  logBoot('bootstrap services ready');
 }
 
 if (ownLock)
@@ -709,6 +873,8 @@ app.on('before-quit', (event) => {
   if (closing) return;
   event.preventDefault();
   closing = true;
+  collaboration?.dispose();
+  uiCommands?.dispose();
   const deadline = setTimeout(() => {
     logBoot('shutdown deadline reached');
     app.exit(0);
@@ -719,6 +885,7 @@ app.on('before-quit', (event) => {
     web?.close(),
     core?.shutdown(),
     hardwareDebugger?.disconnect(),
+    hostServices?.close(),
   ]).then(() => {
     clearTimeout(deadline);
     app.quit();

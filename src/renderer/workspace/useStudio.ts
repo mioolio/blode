@@ -11,12 +11,15 @@ import type {
 import { useI18n } from '../i18n';
 import { parseWorkspaceRoute, workspaceRouteHash, type WorkspaceRoute } from './routes';
 import { validatesExistingFirmware } from './buildMode';
-import { previewFile, pinFileTab, persistentFiles } from './tabs';
+import { previewFile, pinFileTab, persistentFiles, readSession, sessionKey, type ToolTab } from './tabs';
 import { diagnosticLevel } from './diagnostics';
+import { usePanelVisibility } from './usePanelVisibility';
+import { flushCollaboration } from './collaborationFlush';
+import { mergeRecentLogs } from '../../shared/recent-logs';
+import { useFileTabClose } from './useFileTabClose';
 
 type View = 'code' | 'layout' | 'ai';
-type ToolTab = 'layout' | 'ai';
-type ConsoleTab = 'output' | 'serial' | 'problems' | 'warnings';
+type ConsoleTab = 'output' | 'serial' | 'problems' | 'warnings' | 'terminal';
 
 const toolTabViews: Record<ToolTab, View> = { layout: 'layout', ai: 'ai' };
 
@@ -26,22 +29,16 @@ function viewFromRoute(route: WorkspaceRoute): View {
   return 'code';
 }
 
-const isToolTab = (value: unknown): value is ToolTab => value === 'layout' || value === 'ai';
-
 function initialToolTabs(route: WorkspaceRoute): ToolTab[] {
   const routeTool: ToolTab | null =
     route.kind === 'layout' ? 'layout' : route.kind === 'automation' ? 'ai' : null;
   return routeTool ? [routeTool] : [];
 }
 
-interface StoredSession {
-  openFiles: string[];
-  openTools: ToolTab[];
-  activePath: string;
-}
-
-const sessionKey = (root: string) => `blode.session:${root}`;
 function retainDraftConfig(pending: ProjectConfig, next: AppState): ProjectConfig {
+  // The first desktop snapshot deliberately precedes hardware enumeration.
+  // An empty loading list is not evidence that a saved connector disappeared.
+  if (next.initializing) return pending;
   const port =
     pending.port &&
     !next.ports.some((item) => item.path === pending.port) &&
@@ -65,25 +62,6 @@ function retainDraftConfig(pending: ProjectConfig, next: AppState): ProjectConfi
 function messageOf(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-}
-
-/** Per-project tab state survives reloads; missing or corrupt data means a fresh start. */
-function readSession(root: string): StoredSession | null {
-  try {
-    const raw = localStorage.getItem(sessionKey(root));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Record<string, unknown>>;
-    return {
-      openFiles:
-        parsed.version === 2 && Array.isArray(parsed.openFiles)
-          ? parsed.openFiles.filter((value): value is string => typeof value === 'string')
-          : [],
-      openTools: Array.isArray(parsed.openTools) ? parsed.openTools.filter(isToolTab) : [],
-      activePath: parsed.version === 2 && typeof parsed.activePath === 'string' ? parsed.activePath : '',
-    };
-  } catch {
-    return null;
-  }
 }
 
 export function useStudio() {
@@ -138,18 +116,8 @@ export function useStudio() {
   const [confirmFlash, setConfirmFlash] = useState(false);
   const [stale, setStale] = useState(false);
   const [widths, setWidths] = useState({ left: 224, right: 284, bottom: 207 });
-  const [devicePanelVisible, setDevicePanelVisible] = useState(() => {
-    try {
-      return localStorage.getItem('blode.devicePanel') !== 'hidden';
-    } catch {
-      return true;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem('blode.devicePanel', devicePanelVisible ? 'visible' : 'hidden');
-    } catch {}
-  }, [devicePanelVisible]);
+  const [devicePanelVisible, setDevicePanelVisible] = usePanelVisibility('blode.devicePanel');
+  const [consolePanelVisible, setConsolePanelVisible] = usePanelVisibility('blode.consolePanel');
   const logEnd = useRef<HTMLDivElement>(null);
   const restoredFolder = useRef('');
   const dirty = Object.keys(drafts).length > 0;
@@ -181,6 +149,15 @@ export function useStudio() {
   const refresh = useCallback(async () => {
     const next = await window.blode.getState();
     setState(next);
+    if (next.recentLogs)
+      setLogs((current) =>
+        mergeRecentLogs(
+          current,
+          next.recentLogs!.map((event) =>
+            event.level === 'error' ? { ...event, level: diagnosticLevel(event.message) } : event,
+          ),
+        ),
+      );
     setInstallation(next.installation);
     setSerialConnected(!!next.connections?.serial.open);
     setConfig(next.config);
@@ -264,6 +241,14 @@ export function useStudio() {
     setActivePath(nextActive);
     return next;
   }, []);
+  const refreshedInstallation = useRef('');
+  useEffect(() => {
+    if (!installation || installation.status === 'running' || busy) return;
+    const revision = `${installation.id}:${installation.status}`;
+    if (refreshedInstallation.current === revision) return;
+    refreshedInstallation.current = revision;
+    void refresh().catch((error) => notify(String(error), true));
+  }, [installation?.id, installation?.status, busy, refresh, notify]);
   useEffect(() => {
     if (!state?.projectRoot || restoredFolder.current !== state.projectRoot) return;
     try {
@@ -307,22 +292,6 @@ export function useStudio() {
     }
   }, [syncDrafts]);
   useEffect(() => {
-    if (isWeb || !syncDrafts || !state?.web?.endpoint) return;
-    const timer = setTimeout(() => window.blode.publishDrafts(drafts), 500);
-    return () => clearTimeout(timer);
-  }, [drafts, isWeb, syncDrafts, state?.web?.endpoint]);
-  useEffect(() => {
-    if (isWeb || syncDrafts || !state?.web?.endpoint) return;
-    window.blode.publishDrafts({});
-  }, [isWeb, syncDrafts, state?.web?.endpoint]);
-  useEffect(() => {
-    if (!isWeb || !syncDrafts) return;
-    return window.blode.onDrafts((incoming) => {
-      const editable = new Set(state?.files.map((file) => file.path) ?? []);
-      setDrafts(Object.fromEntries(Object.entries(incoming).filter(([path]) => editable.has(path))));
-    });
-  }, [isWeb, syncDrafts, state?.files]);
-  useEffect(() => {
     if (view === 'code') return;
     const tool = view as ToolTab;
     setOpenTools((current) => (current.includes(tool) ? current : [...current, tool]));
@@ -361,9 +330,13 @@ export function useStudio() {
         }));
       }
       if (event.progressOnly) return;
+      if (event.message === 'status.buildStarted') {
+        setConsolePanelVisible(true);
+        setTab('output');
+      }
       const classified =
         event.level === 'error' ? { ...event, level: diagnosticLevel(event.message) } : event;
-      setLogs((current) => [...current.slice(-999), classified]);
+      setLogs((current) => mergeRecentLogs(current, [classified]));
       if (event.message === 'status.serialDisconnected') setSerialConnected(false);
       if (event.message === 'status.serialConnected') setSerialConnected(true);
     });
@@ -375,7 +348,7 @@ export function useStudio() {
   }, [toast]);
   useEffect(() => {
     logEnd.current?.scrollIntoView({ block: 'end' });
-  }, [logs, tab]);
+  }, [logs, tab, consolePanelVisible]);
   // Refresh external AI changes only when local edits are safe to retain.
   useEffect(() => {
     if (!window.blode) return;
@@ -443,8 +416,11 @@ export function useStudio() {
     }
   };
   const saveFiles = async () => {
-    const snapshot = { ...drafts };
-    for (const [path, value] of Object.entries(snapshot)) await window.blode.saveFile(path, value);
+    const snapshot = { ...drafts, ...(await flushCollaboration()) };
+    const saved = state?.files ?? [];
+    for (const [path, value] of Object.entries(snapshot))
+      if (value !== saved.find((file) => file.path === path)?.content)
+        await window.blode.saveFile(path, value);
     // Retain keystrokes entered while an asynchronous write was completing.
     setDrafts((current) =>
       Object.fromEntries(Object.entries(current).filter(([path, value]) => snapshot[path] !== value)),
@@ -520,12 +496,13 @@ export function useStudio() {
     });
   const build = () =>
     perform(validatesFirmware ? 'action.validateFirmware' : 'action.build', async () => {
+      setConsolePanelVisible(true);
+      setTab('output');
       if (
         !isAuto &&
         !board?.capabilities.some((capability) => capability === 'compile' || capability === 'flash')
       )
         throw new Error('error.detectBoardFirst');
-      setTab('output');
       await saveFiles();
       if (config && configDirty) await window.blode.saveConfig(config);
       const result = await window.blode.build();
@@ -803,26 +780,37 @@ export function useStudio() {
     setActivePath(path);
     setView('code');
   };
-  const closeTab = (kind: 'file' | 'tool', id: string) => {
-    if (kind === 'file') {
+  const fileTabClose = useFileTabClose({
+    state,
+    drafts,
+    setState,
+    setDrafts,
+    failed: (error) => notify(t(messageOf(error)), true),
+    close: (id) => {
       if (previewPathRef.current === id) {
         previewPathRef.current = '';
         setPreviewPath('');
       }
-      const index = openFiles.indexOf(id);
-      const next = openFiles.filter((path) => path !== id);
+      const index = openFilesRef.current.indexOf(id);
+      const next = openFilesRef.current.filter((path) => path !== id);
       openFilesRef.current = next;
       setOpenFiles(next);
-      if (activePath === id) {
+      if (index >= 0 && activePathRef.current === id) {
         const nextActive = next[index] ?? next[index - 1] ?? next[0] ?? '';
         activePathRef.current = nextActive;
         setActivePath(nextActive);
       }
-      return;
-    }
+    },
+  });
+  const closeTab = (kind: 'file' | 'tool', id: string): Promise<boolean> => {
+    if (kind === 'file') return fileTabClose.requestFileClose(id);
     const tool = id as ToolTab;
     setOpenTools((current) => current.filter((item) => item !== tool));
+    window.dispatchEvent(
+      new CustomEvent('blode:tool-closed', { detail: { root: state?.projectRoot ?? '', id: tool } }),
+    );
     if (view === toolTabViews[tool]) setView('code');
+    return Promise.resolve(true);
   };
   const editorCommand = (command: 'undo' | 'redo' | 'find' | 'format' | 'gotoLine' | 'selectAll') => {
     setView('code');
@@ -859,6 +847,13 @@ export function useStudio() {
   };
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (fileTabClose.closeFilePrompt) {
+        if ((event.ctrlKey || event.metaKey) && ['s', 'w', 'b', 'f4'].includes(event.key.toLowerCase())) {
+          event.preventDefault();
+          if (event.key.toLowerCase() === 's') void fileTabClose.chooseFileClose('save');
+        }
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         save();
@@ -866,6 +861,15 @@ export function useStudio() {
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'b') {
         event.preventDefault();
         build();
+      }
+      if (
+        ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'w') ||
+        (event.ctrlKey && event.key === 'F4')
+      ) {
+        if (activePathRef.current && viewRef.current === 'code') {
+          event.preventDefault();
+          void closeTab('file', activePathRef.current);
+        }
       }
     };
     window.addEventListener('keydown', handler);
@@ -896,9 +900,12 @@ export function useStudio() {
     removeRecentProject,
     openFile,
     closeTab,
+    closeFilePrompt: fileTabClose.closeFilePrompt,
+    chooseFileClose: fileTabClose.chooseFileClose,
     view,
     setView: (next: View) => {
       setShowHome(false);
+      if (next !== 'code') setOpenTools((current) => (current.includes(next) ? current : [...current, next]));
       setView(next);
     },
     logs,
@@ -908,7 +915,10 @@ export function useStudio() {
     toast,
     setToast,
     tab,
-    setTab,
+    setTab: (next: ConsoleTab) => {
+      setConsolePanelVisible(true);
+      setTab(next);
+    },
     serialConnected,
     serialInput,
     setSerialInput,
@@ -935,6 +945,8 @@ export function useStudio() {
     widths,
     devicePanelVisible,
     setDevicePanelVisible,
+    consolePanelVisible,
+    setConsolePanelVisible,
     logEnd,
     dirty,
     configDirty,

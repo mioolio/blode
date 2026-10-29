@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { ChevronRight, Minus, Square, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { supportsLayout } from '../workspace/capabilities';
+import { RELEASE_VERSION } from '../../shared/version';
 
 interface MenuAction {
   label: string;
@@ -197,6 +198,11 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         { label: 'welcome.selectFile', run: openProjectMarker, disabled: !!busy },
         { label: 'project.openFolder', run: openProject, disabled: !!busy },
         { label: 'action.save', run: save, shortcut: 'shortcut.ctrlS', disabled: unavailable },
+        {
+          label: 'package.title',
+          run: () => window.dispatchEvent(new CustomEvent('blode:project-package')),
+          disabled: unavailable,
+        },
         { label: 'welcome.home', run: studio.goHome, disabled: !!busy },
         { label: 'project.saveClose', run: () => studio.setCloseProjectPending(true), disabled: unavailable },
         separator,
@@ -265,11 +271,19 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         {
           label: 'workspace.hardwareSimulation',
           run: () => void studio.perform('workspace.hardwareSimulation', () => window.blode.openDebugger()),
-          disabled: isWeb,
+        },
+        {
+          label: 'git.title',
+          run: () => window.dispatchEvent(new CustomEvent('blode:git')),
+          disabled: unavailable,
         },
         {
           label: studio.devicePanelVisible ? 'view.hideDevicePanel' : 'view.showDevicePanel',
           run: () => studio.setDevicePanelVisible(!studio.devicePanelVisible),
+        },
+        {
+          label: studio.consolePanelVisible ? 'view.hideConsolePanel' : 'view.showConsolePanel',
+          run: () => studio.setConsolePanelVisible(!studio.consolePanelVisible),
         },
       ],
     },
@@ -289,6 +303,12 @@ export function StudioHeader({ studio }: { studio: Studio }) {
       id: 'run',
       label: 'menu.run',
       items: [
+        {
+          label: 'buildSettings.title',
+          run: () => window.dispatchEvent(new CustomEvent('blode:build-settings')),
+          disabled: unavailable,
+        },
+        separator,
         {
           label: 'firmware.export',
           run: () =>
@@ -324,9 +344,11 @@ export function StudioHeader({ studio }: { studio: Studio }) {
       id: 'terminal',
       label: 'menu.terminal',
       items: [
+        { label: 'console.terminal', run: () => setTab('terminal') },
         { label: 'console.output', run: () => setTab('output') },
         { label: 'console.serial', run: () => setTab('serial') },
         { label: 'console.problems', run: () => setTab('problems') },
+        { label: 'console.warnings', run: () => setTab('warnings') },
       ],
     },
     { id: 'help', label: 'menu.help', items: [{ label: 'help.automation', run: () => setView('ai') }] },
@@ -350,7 +372,9 @@ export function StudioHeader({ studio }: { studio: Studio }) {
   return (
     <header className="topbar">
       <div className="brand">
-        <span className="brand-name">Blode Studio</span>
+        <span className="brand-name" title={`Blode Studio ${RELEASE_VERSION}`}>
+          Blode Studio
+        </span>
       </div>
       <nav className="menu-items ide-menubar" role="menubar" aria-label={t('menu.main')} ref={menuRoot}>
         {menus.map((menu, index) => (

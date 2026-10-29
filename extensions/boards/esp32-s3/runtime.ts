@@ -7,6 +7,7 @@ import { esp32S3Adapter } from './adapter.js';
 import { Toolchains } from './toolchain.js';
 import { buildFlashArgs, buildProbeArgs } from './programmer.js';
 import { toPartitionCsv } from './layout.js';
+import { compilerChoice, compilerConfig, compilerIdentity, optimizationFlags } from './build-settings.js';
 
 function detectedFlashSize(output: string): number | null {
   const match = output.match(/(?:Detected flash size|Flash size)\s*:\s*([\d.]+)\s*MB/i);
@@ -108,8 +109,20 @@ export function createEsp32S3Runtime(host: RuntimeHost): PlatformRuntime {
     },
     async build(config, buildInputs) {
       esp32S3Adapter.validateConfig(config);
-      const status = await toolchains.status(config, true);
+      const cChoice = compilerChoice(buildInputs.settings, 'c');
+      const cppChoice = compilerChoice(buildInputs.settings, 'cpp');
+      const cConfig = await compilerConfig(host, config, cChoice);
+      const cppConfig = await compilerConfig(host, config, cppChoice);
+      if (
+        compilerIdentity(host, cConfig) !== compilerIdentity(host, cppConfig) ||
+        (cChoice.version && cppChoice.version && cChoice.version !== cppChoice.version)
+      )
+        throw new Error('error.buildArduinoConflict');
+      const status = await toolchains.status(cppConfig, true);
       if (!status.arduinoCli || !status.esp32Core) throw new Error('error.toolchainMissing');
+      for (const choice of [cChoice, cppChoice])
+        if (choice.version && status.versions.esp32 !== choice.version)
+          throw new Error('error.buildCompilerVersion');
       const allFiles = await host.readProjectFiles();
       let files = allFiles;
       let entryFile: string | undefined;
@@ -170,7 +183,7 @@ export function createEsp32S3Runtime(host: RuntimeHost): PlatformRuntime {
       await fs.writeFile(path.join(stage, 'partitions.csv'), toPartitionCsv(config.partitions));
       const outputDirectory = await host.resetDirectory('.blode/build');
       const result = await toolchains.runCli(
-        config,
+        cppConfig,
         [
           'compile',
           '--fqbn',
@@ -179,6 +192,12 @@ export function createEsp32S3Runtime(host: RuntimeHost): PlatformRuntime {
           outputDirectory,
           '--warnings',
           'all',
+          '--build-property',
+          `compiler.c.extra_flags=${[...(buildInputs.cStandard ? [`-std=gnu${buildInputs.cStandard.slice(1)}`] : []), ...optimizationFlags(buildInputs.settings)].join(' ')}`,
+          '--build-property',
+          `compiler.cpp.extra_flags=${optimizationFlags(buildInputs.settings).join(' ')}`,
+          '--build-property',
+          'compiler.c.elf.extra_flags=-Wl,--gc-sections',
           '--build-property',
           `upload.maximum_size=${config.partitions.find((partition) => partition.type === 'app')!.size}`,
           stage,

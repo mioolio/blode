@@ -1,0 +1,143 @@
+.modal.build-settings-modal {
+  width: min(1120px, calc(100vw - 40px));
+  max-width: none;
+  height: min(740px, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
+}
+.build-settings-modal .modal-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.build-settings-modal .modal-title h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  margin: 0;
+}
+.build-settings-body {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  border-block: 1px solid var(--border);
+  margin-block: 18px;
+}
+.build-settings-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 18px 14px 18px 0;
+  border-right: 1px solid var(--border);
+}
+.build-settings-nav button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 12px;
+  border-radius: 7px;
+}
+.build-settings-nav button.active {
+  color: var(--accent);
+  background: var(--surface-2);
+}
+.build-settings-detail {
+  overflow: auto;
+  overscroll-behavior: contain;
+  contain: paint;
+  padding: 22px;
+}
+.build-mode-fields,
+.build-compiler-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.build-mode-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: end;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.build-mode-fields label,
+.build-compiler-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.build-mode-fields .build-size-option {
+  flex-direction: row;
+  align-items: center;
+  min-height: 38px;
+  gap: 8px;
+}
+.build-size-option input {
+  width: 16px;
+  height: 16px;
+}
+.build-tool-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-block: 18px;
+}
+.build-tool-heading h4 {
+  margin: 0;
+}
+.build-compiler-row {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  margin-bottom: 12px;
+}
+.build-compiler-row select,
+.build-compiler-row input,
+.build-mode-fields select {
+  width: 100%;
+  min-height: 38px;
+}
+.build-tool-path {
+  font:
+    12px/1.5 Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  margin-bottom: 0;
+}
+.build-custom-tool {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding-top: 14px;
+}
+.build-settings-wide {
+  grid-column: 1 / -1;
+}
+@media (max-width: 680px) {
+  .build-settings-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .build-settings-nav {
+    flex-direction: row;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 8px;
+  }
+  .build-settings-detail {
+    padding: 14px;
+  }
+  .build-mode-fields,
+  .build-custom-tool {
+    grid-template-columns: 1fr;
+  }
+}

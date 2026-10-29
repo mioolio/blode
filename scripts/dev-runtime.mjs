@@ -4,6 +4,11 @@ import path from 'node:path';
 
 const executeFile = promisify(execFile);
 
+/** A mounted shell is independent of successful background service startup. */
+export function hasFatalStartupError(log) {
+  return /^\d{4}-\d{2}-\d{2}T\S+ fatal(?:\s|$)/m.test(log);
+}
+
 function validPid(pid) {
   return Number.isSafeInteger(pid) && pid > 0;
 }
@@ -195,4 +200,22 @@ export async function findStaleVite(viteScript, nodeExecutable, options = {}) {
 
 export async function recoverStaleVite(viteScript, nodeExecutable, options = {}) {
   return stopMatchedTrees(await findStaleVite(viteScript, nodeExecutable, options), options);
+}
+
+/** Recover both legacy child types from one fresh inventory, after taking the session mutex. */
+export async function recoverStaleDevProcesses(
+  electronExecutable,
+  profile,
+  viteScript,
+  nodeExecutable,
+  options = {},
+) {
+  if ((options.platform ?? process.platform) !== 'win32' && !options.inventory) return 0;
+  const entries = await inventory(options);
+  const shared = { ...options, inventory: entries };
+  const [electron, vite] = await Promise.all([
+    findStaleElectronProcesses(electronExecutable, profile, shared),
+    findStaleVite(viteScript, nodeExecutable, shared),
+  ]);
+  return stopMatchedTrees([...electron, ...vite], options);
 }

@@ -57,7 +57,14 @@ export function StudioStatusBar({ studio }: { studio: Studio }) {
         <i />
         <span className={`status-item ${connectedDevice ? '' : 'muted'}`}>
           <Usb size={11} strokeWidth={2} aria-hidden="true" />
-          {connectedDevice || t(automaticChoice ? 'device.autoSelection' : 'status.offline')}
+          {connectedDevice ||
+            t(
+              !state || state.initializing
+                ? 'device.connectionChecking'
+                : automaticChoice
+                  ? 'device.autoSelection'
+                  : 'status.offline',
+            )}
         </span>
         <i />
         <span className="status-item">

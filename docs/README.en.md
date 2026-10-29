@@ -2,79 +2,139 @@
 
 English | [简体中文](../README.md)
 
-Blode Studio is a modular desktop workbench for microcontroller development. It chains chip detection, resource allocation, build-boundary checks, flash confirmation and read-back verification into one verifiable workflow, covering everything from opening a project to running firmware. Built on Electron, React, TypeScript and the Monaco editor; the UI, browser workbench and AI integration share the same project validation and build records.
+Blode Studio is a modular embedded development workbench for ESP32-S3 and STM32, covering code editing, collaboration, offline builds, firmware export, serial communication and hardware debugging.
 
-> A real hardware verification: an STM32F103C8T6 rated at 64 KiB reported 128 KiB of Flash, and a 75,888-byte firmware image passed read-back verification after being written. See the [feature showcase and real hardware case](../SHOWCASE.md).
+**Current release: 0.2.3.6** · [Release notes](releases/0.2.3.6.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
 
-## Highlights
+## Choose an edition
 
-- **Automatic chip detection**: one click after selecting a serial port; the matching registered platform is selected and configured automatically. On failure, a dialog offers manual selection and log export.
-- **Visual Flash layout**: allocate app, data and system partitions graphically with wheel zooming, custom names and colors, and overlap detection; manually correct chips that misreport capacity.
-- **Build-boundary checks**: usage is measured against the real ELF load ranges and SRAM sections; out-of-bounds firmware raises warnings with a second confirmation before flashing.
-- **Multi-platform**: ESP32-S3 (Arduino CLI build, esptool flash) and STM32 (ST-Link detection, Arm Compiler 6 or GNU Arm GCC, including supported Keil `.uvprojx` projects). Compilation works without connected hardware.
-- **Modern editor**: syntax highlighting, C/C++ symbol completion (recursive parsing of project headers and macros), split editors, unsaved-draft markers, and tab state preserved across reloads.
-- **Project management**: inline create and rename in the file tree, the `be` project descriptor, build caching and artifact fingerprints.
-- **Serial monitor**: real-time send and receive once a device is connected, with mutual exclusion against the flash flow.
-- **Browser workbench**: draft sync between desktop and web, accessible over LAN with token authentication.
-- **AI and automation**: an authenticated JSON-RPC system pipe and MCP bridge expose the same API the UI uses.
-- **Theming**: follows the system light/dark preference; UI text ships in Chinese and English.
+| Edition          | Intended use                                                                  | Requirements                                          | Release artifact                           |
+| ---------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
+| Desktop portable | Local editing, builds and connected hardware                                  | Windows x64; Electron runtime included                | `Blode.Studio-0.2.3.6-desktop-win-x64.exe` |
+| Standalone Web   | A target computer hosts projects and hardware; users connect through browsers | Node.js 24+ and npm on the host; a browser on clients | `Blode.Studio-0.2.3.6-web.zip`             |
 
-## New desktop features
+Both editions use the same project format and host services. The desktop artifact uses the lightweight packaging mode. Install compilers through Preferences or select existing custom tool paths. Git operations use Git installed on the host. Build outputs are placed in `release/0.2.3.6/`.
 
-- A home screen with recent projects, history removal, and save-and-close back to home.
-- Replaceable preview tabs; editing or pressing `Ctrl+S` pins a tab. Horizontal scrolling keeps additional tabs accessible.
-- BIN, Intel HEX and S-record export, plus STM32 ELF export. Prebuilt BIN/HEX/S-record files can be flashed without opening a project after checking the connected target and addresses.
-- UTF-8/HEX serial communication with custom baud rates, framing, flow control and line endings.
-- **View → Hardware simulation** opens a separate STM32/ST-Link debugger window with paused register samples, disassembly, stack, memory reads and local ELF inspection. The CPU diagram is schematic, and running views retain the last paused sample.
-- Preferences show download bytes, percentages, installation stages and third-party installer output. Unknown download sizes and non-download stages use an indeterminate indicator.
-- Device discovery initializes once; manual refresh and Windows device-change notifications update the cache. The target device panel can be closed and restored through View.
+## What's new in 0.2.3.6
 
-See the [desktop feature guide (Chinese)](NEW-FEATURES.md) for workflows and limits. These additions passed type checking; full desktop, download and hardware validation remain pending.
+- **Code navigation:** C/C++ definitions, declarations, references and header links. Right-click or press F12, choose among duplicate results, and use Alt+Left to return.
+- **Versioned language data:** separate C99, C11, C17 and C23 JSON directories, alphabetic function catalogs, control-flow snippets, types and declarative source checks.
+- **Incremental indexing:** workspace functions, macros, types and variables contribute to completion; current drafts update the editor index, while saved-source exports are cached under `.blode/index/`.
+- **Project settings:** right-click the root `be` file to edit project identity, platform, entry, source list and C standard with a live JSON preview.
+- **Layered build settings:** **Run → Build settings** selects debug/release mode, size optimization and installed C/C++ tools for common, STM32 and ESP32-S3 scopes.
+- **Independent Git:** software-owned metadata in `.blode/git`, graphical diffs, staging, commits, branches and remotes; management can be disabled or its own history removed. Existing repository sharing is explicitly enabled.
+- **Collaboration:** persistent browser identity and color, shared tabs, viewport highlights, independent edit merging, explicit conflicts and the latest build logs.
+- **Stable reading and undo:** remote edits retain the reader's anchor where possible; browser undo affects the user's own changes, and closed tabs release presence.
+- **External AI completion:** editable user/AI catalogs and optional version-bound inline predictions. Predictions are off by default and accepted with Tab.
+- **Visible startup and installation progress:** phase timings, long-wait messages, download progress and third-party installer output.
 
-## Quick start
+Read the detailed [release notes](releases/0.2.3.6.md) for migration and validation information.
 
-Requires Node.js 24 or later and npm:
+## Core workflows
 
-```powershell
+The editor supports preview and pinned tabs, horizontal scrolling, split views and draft recovery. The home screen lists recent workspaces and supports save-and-close back to home.
+
+Build a selected file or directory without connecting a device. Firmware operations include BIN, Intel HEX and S-record export, STM32 ELF export, Flash layout editing and prepared firmware programming without opening a project. Connect and identify the physical target for programming.
+
+Serial communication supports UTF-8/HEX, configurable framing, flow control and line endings. The STM32/ST-Link/GDB workbench opens a separate desktop window or browser tab with registers, disassembly, stack, breakpoints, memory and local ELF inspection.
+
+Portable project ZIP export collects supported external dependencies, rewrites archive-copy paths and includes a dependency manifest. JSON-RPC and MCP expose validated project, Git, build, firmware, debugger, language-index and UI actions.
+
+## Installation
+
+### Windows desktop portable
+
+1. Place the desktop executable in a writable directory and run it.
+2. Open a project folder or its `be` descriptor.
+3. Install/select the toolchain in Preferences. Install host Git when using version control.
+4. Set the build entry from the file tree or Advanced settings, then choose the build mode and installed tool versions in **Run → Build settings**.
+5. Save and compile; connect and identify the target for hardware operations.
+
+The application stores settings, history and managed tools in its OS application-data directory. Projects can remain outside the application folder.
+
+### Standalone Web ZIP
+
+Extract the ZIP on the computer that owns the projects and hardware, then run:
+
+```sh
+npm ci --omit=dev
+npm start
+```
+
+Open the private launch link printed in the terminal. File pickers browse the **host computer**, and builds, Git and USB access run there.
+
+For a trusted LAN:
+
+```sh
+npm start -- --host 0.0.0.0 --port 47821
+```
+
+Treat the launch token as a workspace credential. Stop the service with Ctrl+C. See the [Web host guide](WEB-HOST.md).
+
+### From source
+
+Use Node.js 24+, npm and Git for Git workflows and their tests:
+
+```sh
 npm ci
 npm run dev
 ```
 
-1. Open a project folder or its `be` descriptor file.
-2. Set the compile platform and toolchain, then set the build entry in the file tree. Supported STM32 Keil projects can supply the platform information automatically.
-3. Save and build offline. Connect and identify the physical target before flashing.
+For the standalone host:
 
-`npm run build` produces the bundles, `npm start` runs an existing build, and `npm run package` creates a portable Windows build. See the [development guide](DEVELOPMENT.md) for environment details.
+```sh
+npm run web:build
+npm run web:start
+```
 
-## Supported hardware
+Restart after changing main-process, preload or platform code. Renderer development supports hot updates. See [development](DEVELOPMENT.md) for startup diagnostics, permission repair and log paths.
 
-| Platform | Build path                                                             | Flashing       |
-| -------- | ---------------------------------------------------------------------- | -------------- |
-| ESP32-S3 | Arduino CLI + Arduino-ESP32                                            | esptool (UART) |
-| STM32F1  | Arm Compiler 6 / GNU Arm GCC, or verify firmware                       | ST-Link (SWD)  |
-| Auto     | Infer compile platform from supported project data, or select manually | —              |
+## Language and project configuration
 
-Platform details and hardware limits: [ESP32-S3](../extensions/boards/esp32-s3/README.md) · [STM32](STM32.md) · [Flashing notes](../extensions/boards/stm32/README.md)
+Built-in data lives in `extensions/completions/C/<standard>/` and `extensions/completions/C++/arduino/`. C version directories are independent; projects can override a selected standard in `languages/C/<standard>/`.
 
-## The `be` project descriptor
+Right-click `be` → **Advanced settings** to change the build entry, source list and `build.cStandard`. C17 is the default. Compiler support for a selected standard depends on the installed tool version. Legacy `blode.completions.json` and `.blode/project.json` inputs remain compatible.
 
-The `be` file at a project root is a JSON descriptor holding the project configuration, partition layout and build entry. Reading it restores the full project context; legacy `.blode/project.json` projects remain compatible. Format details are in the [architecture guide](ARCHITECTURE.md).
+`be.build.settings` resolves common, platform and C/C++ selections in that order. Inherit follows the parent configuration, auto discovers compatible host tools, and explicit versions use installed tools. Downloads are managed separately in Preferences. A STM32 build uses one compiler family; an ESP32-S3 build uses a consistent Arduino CLI/core environment. See [project and build settings](PROJECTS.md) for mode flags, JSON examples and portable packaging.
+
+JSON structure/version errors produce file and line diagnostics. Source rules can be warnings or build-stopping errors. The current engine provides lexical navigation and declarative checks; the compiler performs full preprocessing and type analysis. See [language rules](LANGUAGE-RULES.md) and [architecture](ARCHITECTURE.md).
+
+## Platforms
+
+| Embedded platform | Build path                                                        | Hardware operations                            |
+| ----------------- | ----------------------------------------------------------------- | ---------------------------------------------- |
+| ESP32-S3          | Arduino CLI + Arduino-ESP32                                       | esptool UART flashing and serial communication |
+| STM32F1           | GNU Arm GCC or licensed Arm Compiler 6; supported project imports | ST-Link/SWD flashing and ST-Link/GDB debugging |
+| Automatic         | Infer a supported project platform or select it manually          | Identify a connected target                    |
+
+Windows x64 is the current desktop distribution and main development environment. Linux x64/ARM64 Node paths and selected GNU/Arduino downloads are implemented, but **Linux installation, compilation, USB access and desktop packaging have not been verified on real Linux machines**. macOS custom tool paths also remain unverified. See the [support matrix](PLATFORM-SUPPORT.md) and [hardware records](HARDWARE-VALIDATION.md).
+
+The hardware workbench displays connected-target samples. Its CPU diagram combines paused register and instruction data; cycle-accurate chip emulation is outside this release.
+
+## Build and validation
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npm run package:desktop
+npm run package:web
+```
+
+The desktop command aliases the lightweight `package:lite` flow. The Web build checks for Electron imports. Automated coverage includes disposable Git repositories, language rules and indexes, collaboration, project ZIPs and HTTP services with fixture hardware boundaries. Physical hardware, cross-machine and sustained-session results are tracked separately.
 
 ## Documentation
 
-| Document                                          | Contents                                    |
-| ------------------------------------------------- | ------------------------------------------- |
-| [Showcase and real hardware case](../SHOWCASE.md) | On-device detection, flashing and read-back |
-| [STM32 guide](STM32.md)                           | Connection, build and firmware limits       |
-| [Toolchains](TOOLCHAINS.md)                       | Tool directories and offline setup          |
-| [AI pipe](AI-PIPE.md)                             | JSON-RPC and MCP integration                |
-| [Development guide](DEVELOPMENT.md)               | Builds, scripts and environment variables   |
-| [Architecture](ARCHITECTURE.md)                   | Module layout and extension contracts       |
-| [Extension conventions](../extensions/README.md)  | Platform package structure and registration |
-| [Hardware validation](HARDWARE-VALIDATION.md)     | Historical verification data                |
+- [0.2.3.6 release notes](releases/0.2.3.6.md) and [changelog](../CHANGELOG.md)
+- [Language rules](LANGUAGE-RULES.md), [AI completion](AI-COMPLETIONS.md), [collaboration](COLLABORATION.md)
+- [Git](GIT.md), [project and build settings](PROJECTS.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
+- [STM32](STM32.md), [ESP32-S3](../extensions/boards/esp32-s3/README.md), [toolchains](TOOLCHAINS.md)
+- [Web host](WEB-HOST.md), [development](DEVELOPMENT.md), [architecture](ARCHITECTURE.md)
+- [Platform support](PLATFORM-SUPPORT.md), [roadmap](ROADMAP.md), [feature guide](NEW-FEATURES.md)
+- [Contributing](../CONTRIBUTING.md), [security policy](../SECURITY.md), [license](../LICENSE)
 
-## Contributing
+## Contributing and license
 
-Contributions are welcome at the [project repository](https://github.com/mioolio/blode): platform packages, editor improvements and documentation fixes. A new platform should ship with its README, contract and boundary tests, and state its hardware validation scope. Source files stay under 1000 lines each, and UI and protocol text is maintained in both Chinese and English.
+Use [GitHub Issues](https://github.com/mioolio/blode/issues) for bug reports and feature discussions, and Pull Requests for changes. Include the release, edition, host OS, project type and redacted logs. See the [contribution guide](../CONTRIBUTING.md).
 
-Dependencies, build artifacts, `tools/`, `.tools/`, project caches and local credentials are never committed. The project is licensed under Apache License 2.0; see [LICENSE](../LICENSE).
+Blode Studio is licensed under [Apache License 2.0](../LICENSE), with [third-party dependency notices](THIRD-PARTY-NOTICES.md) included in the distributions. Downloaded compilers, drivers and other third-party tools retain their own licenses.

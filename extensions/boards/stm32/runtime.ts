@@ -40,7 +40,7 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
   const status = async (config: ProjectConfig): Promise<ToolchainStatus> => {
     const [current, compilation] = await Promise.all([
       programmer.status(config.toolchain.stlinkDirectory),
-      compiler.status(config),
+      compiler.installationStatuses(config),
     ]);
     return {
       arduinoCli: false,
@@ -48,11 +48,12 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
       python: false,
       esptool: false,
       stlink: current.installed,
-      armCompiler: compilation.installed && !compilation.gnu,
-      gnuArm: compilation.installed && compilation.gnu,
+      armCompiler: compilation.armCompiler.installed,
+      gnuArm: compilation.gnuArm.installed,
       versions: {
         stlink: current.version,
-        ...(compilation.version ? { [compilation.gnu ? 'gnuArm' : 'armCompiler']: compilation.version } : {}),
+        ...(compilation.armCompiler.version ? { armCompiler: compilation.armCompiler.version } : {}),
+        ...(compilation.gnuArm.version ? { gnuArm: compilation.gnuArm.version } : {}),
       },
     };
   };
@@ -77,7 +78,8 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
     buildInputs: (_config, build) => compiler.buildInputs(sourceBuild(build)),
     status,
     async install(config) {
-      if (!config.toolchain.stlinkDirectory) await programmer.install();
+      if (!config.toolchain.stlinkDirectory && !(await programmer.status()).installed)
+        await programmer.install();
       // Arm Compiler 6 cannot be redistributed; install the managed GNU
       // toolchain only when no compiler is already available.
       if (!(await compiler.status(config)).installed) await gnu.install();
@@ -87,7 +89,8 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
       return current;
     },
     async discover(config) {
-      if (!(await status(config)).stlink) throw new Error('errors.stlinkMissing');
+      if (!(await programmer.status(config.toolchain.stlinkDirectory)).installed)
+        throw new Error('errors.stlinkMissing');
       return (
         await programmer.listProbes(config.toolchain.stlinkDirectory, config.programmer?.frequencyKhz ?? 1800)
       ).map((device) => ({

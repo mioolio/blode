@@ -69,9 +69,7 @@ export function MemoryUsage({
             ))}
           </div>
         )}
-        <p className="subtle-note">
-          {t(footprint.truncated ? 'resource.truncated' : 'resource.sourceNotice')}
-        </p>
+        {footprint.truncated && <p className="subtle-note">{t('resource.truncated')}</p>}
       </section>
       {needsDetection ? (
         <section className="inspector-section memory-section">
@@ -133,7 +131,6 @@ export function MemoryUsage({
               </div>
             );
           })}
-          {!build && <p className="subtle-note">{t('resource.pendingFirmware')}</p>}
         </section>
       )}
     </>

@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { z } from 'zod';
+import * as z from 'zod';
 import type { BuildResult } from '../shared/contracts';
 import { safeWorkspacePath } from './workspace';
 

@@ -108,6 +108,10 @@ export class HardwareDebugger {
   async symbolsFile(file: string) {
     if (this.active) throw new Error('error.debuggerBusy');
     const bytes = await fs.readFile(file);
+    return this.symbolsBytes(bytes, path.basename(file));
+  }
+  async symbolsBytes(bytes: Buffer, name: string) {
+    if (this.active) throw new Error('error.debuggerBusy');
     if (
       bytes.length < 52 ||
       bytes.length > 128 * 1024 * 1024 ||
@@ -118,7 +122,7 @@ export class HardwareDebugger {
     await fs.mkdir(this.dataRoot, { recursive: true });
     this.symbols = path.join(this.dataRoot, 'symbols.elf');
     await fs.writeFile(this.symbols, bytes);
-    this.snapshot.symbols = path.basename(file);
+    this.snapshot.symbols = path.basename(name).slice(0, 255);
     return this.snapshot.symbols;
   }
   async storage(): Promise<DebuggerStorage | null> {
