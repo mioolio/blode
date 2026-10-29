@@ -10,6 +10,9 @@ export default defineConfig({
     // and their documentation to find unrelated HTML/JavaScript dependencies.
     entries: ['index.html'],
     include: [
+      // Module language schemas are also loaded by optional editor panels.
+      // Keep their validator in the initial batch instead of reloading the UI.
+      'zod',
       '@monaco-editor/react',
       'monaco-editor/esm/vs/editor/editor.api.js',
       'monaco-editor/esm/vs/editor/editor.all.js',

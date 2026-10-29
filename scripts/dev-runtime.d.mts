@@ -20,6 +20,33 @@ export interface DevRuntimeOptions {
   stopProcessTree?: (pid: number, options?: DevRuntimeOptions) => Promise<boolean>;
 }
 export function hasFatalStartupError(log: string): boolean;
+export function hasReadyWindow(log: string): boolean;
+export interface DevelopmentSandboxOptions {
+  workspaceRoot: string;
+  electronExecutable: string;
+  electronVersion: string;
+  profile: string;
+  platform?: NodeJS.Platform;
+  override?: string;
+}
+export interface DevelopmentSandboxSelection {
+  mode: 'sandbox' | 'no-sandbox';
+  canRetrySandbox: boolean;
+  source: 'default' | 'verified' | 'required' | 'disabled';
+}
+export function resolveDevelopmentSandbox(
+  options: DevelopmentSandboxOptions,
+): Promise<DevelopmentSandboxSelection>;
+export function rememberSandboxCompatibility(
+  options: DevelopmentSandboxOptions,
+  evidence: {
+    failedAttempt: { code: number | null; timedOut: boolean; log: string };
+    recoveredLog: string;
+    sandboxDisabled: boolean;
+    /** True for the launcher's additional software-rendering recovery attempt. */
+    softwareRendering?: boolean;
+  },
+): Promise<boolean>;
 export function classifyElectronExit(
   result: { code: number | null; timedOut: boolean; log: string },
   retries?: { sandbox?: boolean; software?: boolean },

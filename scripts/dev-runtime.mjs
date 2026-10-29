@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
+import { promises as fs } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
 
 const executeFile = promisify(execFile);
 
@@ -11,7 +13,7 @@ export function hasFatalStartupError(log) {
 
 /** A clean process exit takes precedence over earlier, recovered renderer errors. */
 export function classifyElectronExit(result, retries = {}) {
-  const ready = result.log.includes('window ready');
+  const ready = hasReadyWindow(result.log);
   const fatal = hasFatalStartupError(result.log);
   if (result.code === 0 && !result.timedOut && !fatal) return { retry: null, failed: false, exitCode: 0 };
   const chromiumCrash =
@@ -29,6 +31,107 @@ export function classifyElectronExit(result, retries = {}) {
     return { retry: 'software', failed: true, exitCode: 1 };
   const failed = !ready || fatal || result.code !== 0;
   return { retry: null, failed, exitCode: failed ? result.code || 1 : 0 };
+}
+
+function sandboxOverride(value) {
+  const selected = String(value ?? 'auto')
+    .trim()
+    .toLowerCase();
+  if (!selected || selected === 'auto') return 'auto';
+  if (selected === '1' || selected === 'required') return 'required';
+  if (selected === '0' || selected === 'disabled') return 'disabled';
+  throw new Error('BLODE_DEV_SANDBOX must be auto, 1/required, or 0/disabled.');
+}
+
+/** Only the main-process boot marker proves the interface mounted. */
+export function hasReadyWindow(log) {
+  return /^\d{4}-\d{2}-\d{2}T\S+ window ready(?:\s|$)/m.test(log);
+}
+
+async function sandboxRecord(options, create = false) {
+  if ((options.platform ?? process.platform) !== 'win32') return null;
+  const executable = windowsPath(options.electronExecutable);
+  const profile = windowsPath(options.profile);
+  if (!executable || !profile || !options.electronVersion || options.electronVersion.length > 128)
+    return null;
+  const workspace = await fs.realpath(path.resolve(options.workspaceRoot));
+  const directory = path.join(workspace, '.tools');
+  if (create) await fs.mkdir(directory, { recursive: true });
+  const info = await fs.lstat(directory).catch(() => null);
+  if (!info?.isDirectory() || info.isSymbolicLink()) return null;
+  const profileKey = createHash('sha256').update(profile).digest('hex').slice(0, 20);
+  const key = createHash('sha256')
+    .update(JSON.stringify(['blode-dev-sandbox-v1', 'win32', options.electronVersion, executable, profile]))
+    .digest('hex');
+  return { file: path.join(directory, `dev-sandbox-${profileKey}.json`), key };
+}
+
+/** Compatibility is local to one Windows development checkout/profile and Electron runtime. */
+export async function resolveDevelopmentSandbox(options) {
+  const override = sandboxOverride(options.override);
+  if (override === 'required') return { mode: 'sandbox', canRetrySandbox: false, source: 'required' };
+  if (override === 'disabled') return { mode: 'no-sandbox', canRetrySandbox: false, source: 'disabled' };
+  try {
+    const record = await sandboxRecord(options);
+    if (record) {
+      const info = await fs.lstat(record.file).catch(() => null);
+      if (info?.isFile() && !info.isSymbolicLink() && info.size <= 1024) {
+        const cached = JSON.parse(await fs.readFile(record.file, 'utf8'));
+        if (
+          cached?.mode === 'no-sandbox' &&
+          cached.key === record.key &&
+          Object.keys(cached).sort().join(',') === 'key,mode'
+        )
+          return { mode: 'no-sandbox', canRetrySandbox: false, source: 'verified' };
+      }
+    }
+  } catch {
+    // Missing, damaged or unwritable development caches never block startup.
+  }
+  return { mode: 'sandbox', canRetrySandbox: true, source: 'default' };
+}
+
+/** Store only a crash followed by a mounted no-sandbox attempt, never an ordinary close or GPU retry. */
+export async function rememberSandboxCompatibility(options, evidence) {
+  if (
+    sandboxOverride(options.override) !== 'auto' ||
+    evidence.sandboxDisabled !== true ||
+    evidence.softwareRendering ||
+    evidence.failedAttempt.timedOut ||
+    hasReadyWindow(evidence.failedAttempt.log) ||
+    !hasReadyWindow(evidence.recoveredLog) ||
+    hasFatalStartupError(evidence.recoveredLog)
+  )
+    return false;
+  const failed = evidence.failedAttempt;
+  const rendererCrash = /^\d{4}-\d{2}-\d{2}T\S+ render-process-gone crashed exit=-2147483645\b/m.test(
+    failed.log,
+  );
+  // Electron may return zero after its bootstrap catch calls app.quit(). The
+  // renderer's crash plus a fatal boot marker distinguishes this from a close.
+  if (
+    failed.code !== 0x80000003 &&
+    failed.code !== -2147483645 &&
+    !(hasFatalStartupError(failed.log) && rendererCrash)
+  )
+    return false;
+  let temporary;
+  try {
+    const record = await sandboxRecord(options, true);
+    if (!record) return false;
+    temporary = `${record.file}.${process.pid}-${randomBytes(6).toString('hex')}.tmp`;
+    await fs.writeFile(temporary, JSON.stringify({ mode: 'no-sandbox', key: record.key }) + '\n', {
+      flag: 'wx',
+      mode: 0o600,
+    });
+    await fs.rename(temporary, record.file);
+    temporary = undefined;
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (temporary) await fs.unlink(temporary).catch(() => {});
+  }
 }
 
 function validPid(pid) {

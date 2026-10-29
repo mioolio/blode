@@ -8,6 +8,8 @@
 
 Vite 依赖扫描入口固定为 `index.html`，文件监听忽略 `.tools/`、`tools/`、`dist/`、`release/` 和 `.git/`。工具目录里的 HTML 文档不属于前端入口，新增工具链不应增加开发服务器的扫描范围。
 
+模块语言校验使用的 `zod` 与编辑器依赖一同显式预优化，避免首次请求语言规则时追加依赖优化并刷新页面。冷缓存测试通过真实 Vite HTTP 请求检查首页、语言规则和延迟编辑器，验证加载过程中依赖 hash 稳定、没有优化触发的整页刷新。
+
 终端逐项显示权限检查、进程恢复、构建、Vite 初始化与监听、Electron 尝试的耗时；超过 5 秒会继续报告等待阶段。启动器记录位于 `.tools/dev-launcher.log`，每次 Electron 尝试退出后另存主进程日志为 `.tools/dev-main.log.attempt-N.log`，重试不会覆盖前次失败证据。GPU overlay 警告本身不代表窗口启动失败，仍以界面就绪及退出状态判定。
 
 可运行 `npm run dev -- --diagnose-startup` 检查实际启动准备路径。诊断使用独立 profile、临时端口和全新依赖缓存，不启动 Electron，也不结束已有进程；结果保存在 `.tools/startup-diagnostics/`。该结果包含首个 HTML 响应，不代表完整桌面冷启动时间。权限检查仍可修复开发运行时的 Low 标签。
@@ -43,6 +45,20 @@ Web ZIP 解压后执行 `npm ci --omit=dev` 安装目标平台的 serialport 依
 | BLODE_PORT           | 仅在显式指定时覆盖硬件脚本使用的串口           |
 
 Windows 工作区文件可能继承 Low 完整性标签，使可执行文件以低完整性运行而不能写桌面、下载或 AppData。依赖安装及开发启动前检查已知本地运行时，必要时将低于 Medium 的可执行文件标签恢复为 Medium；也可执行 npm run repair:permissions。该修复保留 DACL 和更高的完整性级别。普通权限、锁或初始化错误不触发 sandbox 降级；仅已知的 Windows 断点启动/渲染崩溃允许一次兼容重试。
+
+### Windows 开发启动兼容
+
+当沙箱中的渲染进程以 `0x80000003` 崩溃时，Electron 主进程可能在处理加载失败后以 `0` 退出。启动器同时检查主进程与渲染器日志，区分正常关闭和真实的启动崩溃。AMD `GetGpuDriverOverlayInfo` 诊断不单独触发重试。
+
+默认 `BLODE_DEV_SANDBOX=auto`。首次发生已知沙箱崩溃后，启动器尝试一次 `--no-sandbox`；只有兼容尝试收到主进程的界面挂载标记，才把结果保存在 `.tools/dev-sandbox-<profile-hash>.json`。之后相同 Electron 版本、程序路径和配置目录直接采用已经成功的模式，减少每次启动前的失败与清理。普通关闭、超时、软件渲染回退或没有显示界面的尝试不生成记录。
+
+| 设置              | 行为                                            |
+| ----------------- | ----------------------------------------------- |
+| `auto` 或未设置   | 首次使用沙箱，复用已验证的 Windows 开发兼容记录 |
+| `1` 或 `required` | 强制使用沙箱，不自动追加 `--no-sandbox`         |
+| `0` 或 `disabled` | 显式使用 `--no-sandbox`                         |
+
+记录只影响开发启动器，不改变发行应用的设置。更换 Electron 版本、程序路径或配置目录后重新检测；删除对应记录可重新尝试默认模式。记录损坏或不可写时，启动流程继续。
 
 开发服务器现在通过 Vite API 在启动器进程内运行。按 profile 获取操作系统级独占会话后，启动器只回收精确匹配本机 Electron 路径和 user-data-dir 的孤儿进程树；仍有活启动器的窗口和其他 profile 不被清理。旧 Vite 子进程也仅在 Node 路径、脚本路径精确匹配且父进程已消失时回收，不全局终止 Electron 或 Node。
 
