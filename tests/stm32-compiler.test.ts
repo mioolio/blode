@@ -96,8 +96,6 @@ async function fixture(t: TestContext) {
     },
   };
   const config = stm32Adapter.createConfig();
-  config.programmer!.serialNumber = '75010001230046504E413836';
-  config.programmer!.targetChipId = '0x410';
   t.after(async () => {
     assert.ok(path.basename(root).startsWith('blode-stm32-compiler-'));
     await fs.rm(root, { recursive: true, force: true });
@@ -282,6 +280,7 @@ test('ELF/binary validation rejects wrong architectures, overflow and invalid Co
 
 test('source compilation keeps compiler selection after probing and flashes the built artifact', async (t) => {
   const { host, config, project } = await fixture(t);
+  config.programmer!.serialNumber = '75010001230046504E413836';
   config.toolchain.armCompilerDirectory = path.join(path.dirname(project), 'tools/armclang');
   let flashed = '';
   const device = {

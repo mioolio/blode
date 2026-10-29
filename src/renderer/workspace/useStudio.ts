@@ -307,10 +307,14 @@ export function useStudio() {
     } catch (error) {
       const message = messageOf(error);
       notify(t(message), true);
-      setLogs((current) => [
-        ...current.slice(-999),
-        { kind: 'log', level: 'error', message, time: new Date().toISOString() },
-      ]);
+      setLogs((current) =>
+        current.at(-1)?.level === 'error' && current.at(-1)?.message === message
+          ? current
+          : [
+              ...current.slice(-999),
+              { kind: 'log', level: 'error', message, time: new Date().toISOString() },
+            ],
+      );
       setTab('output');
       return false;
     } finally {
@@ -394,7 +398,10 @@ export function useStudio() {
     });
   const build = () =>
     perform(validatesFirmware ? 'action.validateFirmware' : 'action.build', async () => {
-      if (!board?.capabilities.some((capability) => capability === 'compile' || capability === 'flash'))
+      if (
+        !isAuto &&
+        !board?.capabilities.some((capability) => capability === 'compile' || capability === 'flash')
+      )
         throw new Error('error.detectBoardFirst');
       setTab('output');
       await saveFiles();

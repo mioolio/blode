@@ -471,7 +471,15 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     async build() {
       return withLock(async () => {
         requireWorkspace();
-        if (config.boardId === 'auto') throw new Error('error.detectBoardFirst');
+        if (config.boardId === 'auto') {
+          const candidates = (
+            await Promise.all(runtimes.map((runtime) => runtime.projectConfig?.(config, projectBuild)))
+          ).filter((value): value is ProjectConfig => !!value);
+          if (candidates.length !== 1) throw new Error('error.selectCompilePlatform');
+          config = parseConfig(candidates[0]);
+          await persistConfig(projectRoot, config);
+          emit('status.offlinePlatformSelected', 'info', 'status');
+        }
         const adapter = getBoardAdapter(config.boardId);
         adapter.validateConfig(config);
         const before = await currentFingerprint();

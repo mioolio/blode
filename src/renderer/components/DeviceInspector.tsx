@@ -120,6 +120,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
             ))}
           </select>
           {config?.boardId === 'auto' && <span className="subtle-note">{t('device.autoHint')}</span>}
+          {isAuto && hasBuildEntry && <span className="subtle-note">{t('device.buildDetectFirst')}</span>}
           {isStm32 && (
             <span className="subtle-note">
               {hasBuildEntry

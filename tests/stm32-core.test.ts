@@ -110,7 +110,7 @@ test('ST-Link discovery, STM32 promotion and validated binary flashing work with
   }
 });
 
-test('STM32 requires an explicitly selected probe and a successful target identification', async () => {
+test('STM32 probing requires an explicit probe while offline validation only requires firmware', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'blode-stm32-selection-'));
   const project = path.join(root, 'project');
   await fs.mkdir(project);
@@ -138,7 +138,7 @@ test('STM32 requires an explicitly selected probe and a successful target identi
   });
   try {
     await assert.rejects(core.probe(), /selectDebugProbe/);
-    await assert.rejects(core.build(), /stm32ProbeRequired/);
+    await assert.rejects(core.build(), /noFirmware/);
     assert.equal(connected, false);
   } finally {
     await core.shutdown();

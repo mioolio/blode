@@ -106,20 +106,20 @@ const uintptr_t g_pfnVectors[] = {
 `;
 }
 
-export function createF1Scatter(appSize: number, firmwareTag = false): string {
+export function createF1Scatter(appSize: number, firmwareTag = false, nativeStartup = false): string {
   return `; Generated only for the identified STM32F1 medium-density target.
 LR_FLASH 0x08000000 0x${appSize.toString(16)} {
   ER_FLASH 0x08000000 0x${appSize.toString(16)} {
-    * (.isr_vector, +First)
+    * (${nativeStartup ? 'RESET' : '.isr_vector'}, +First)
 ${firmwareTag ? '    * (.fwtag)\n' : ''}
     * (InRoot$$Sections)
     .ANY (+RO)
   }
-  RW_RAM 0x20000000 0x4c00 {
+  RW_RAM 0x20000000 ${nativeStartup ? '0x5000' : '0x4c00'} {
     .ANY (+RW +ZI)
   }
   ; The descending stack owns the top 1 KiB; RW/ZI cannot grow into it.
-  ARM_LIB_STACK 0x20005000 EMPTY -0x400 { }
+${nativeStartup ? '' : '  ARM_LIB_STACK 0x20005000 EMPTY -0x400 { }'}
 }
 `;
 }

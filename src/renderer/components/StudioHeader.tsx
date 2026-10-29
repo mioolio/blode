@@ -306,9 +306,10 @@ export function StudioHeader({ studio }: { studio: Studio }) {
           shortcut: 'shortcut.build',
           disabled:
             unavailable ||
-            !studio.board?.capabilities.some(
-              (capability) => capability === 'compile' || capability === 'flash',
-            ),
+            (!studio.isAuto &&
+              !studio.board?.capabilities.some(
+                (capability) => capability === 'compile' || capability === 'flash',
+              )),
         },
         {
           label: 'action.flash',

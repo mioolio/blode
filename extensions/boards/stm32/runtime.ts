@@ -48,6 +48,20 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
     id: stm32Adapter.definition.id,
     transport: 'stlink',
     sourceInputs: [],
+    async projectConfig(config, build) {
+      const device = await compiler.projectDevice(sourceBuild(build));
+      if (!device) return null;
+      const base = stm32Adapter.createConfigForFlash!(/(?:CB|RB|TB)$/i.test(device) ? 131072 : 65536);
+      return {
+        ...base,
+        name: config.name,
+        toolchain: {
+          ...base.toolchain,
+          armCompilerDirectory: config.toolchain.armCompilerDirectory,
+          stlinkDirectory: config.toolchain.stlinkDirectory,
+        },
+      };
+    },
     buildInputs: (_config, build) => compiler.buildInputs(sourceBuild(build)),
     status,
     async install(config) {
@@ -111,7 +125,6 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
     },
     async build(config, build) {
       stm32Adapter.validateConfig(config);
-      if (!config.programmer?.targetChipId) throw new Error('error.stm32ProbeRequired');
       const inputs = sourceBuild(build);
       if (inputs.entry) return compiler.build(config, inputs);
       const binary = await host.resolveWorkspacePath('firmware.bin');

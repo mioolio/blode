@@ -49,6 +49,7 @@ export interface PlatformRuntime {
   readonly transport: 'serial' | 'stlink';
   /** Project-relative binary inputs not represented by the source editor. */
   readonly sourceInputs: readonly string[];
+  projectConfig?(config: ProjectConfig, build: ProjectBuildInputs): Promise<ProjectConfig | null>;
   /** Extra inputs read by a compiler, including sources outside the editor's display limits. */
   buildInputs?(config: ProjectConfig, build: ProjectBuildInputs): Promise<readonly string[]>;
   status(config: ProjectConfig, refresh?: boolean): Promise<ToolchainStatus>;

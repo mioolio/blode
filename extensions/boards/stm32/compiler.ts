@@ -5,6 +5,8 @@ import type { RuntimeHost } from '../../runtime.js';
 import { createF1Scatter, createF1Startup, F1_MEDIUM_DENSITY } from './templates.js';
 import { appRegionSize } from './layout.js';
 import { STM32_FLASH_BASE } from './protocol.js';
+import { parseKeilProject, type KeilInputs } from './keil.js';
+import { migrateLegacyCmsis } from './cmsis.js';
 
 const sourceExtensions = new Set(['.c', '.cpp', '.cc', '.cxx']);
 const inputExtensions = new Set([
@@ -17,6 +19,7 @@ const inputExtensions = new Set([
   '.S',
   '.sct',
   '.ld',
+  '.uvprojx',
 ]);
 const ignored = new Set(['node_modules', 'build', 'dist', 'out', 'objects', 'listings']);
 
@@ -26,6 +29,7 @@ interface CompilationInputs {
   assembly: string[];
   scatter: string[];
   all: string[];
+  keil?: KeilInputs;
 }
 
 /** Arm Compiler 6 host integration; no project script or shell command is executed. */
@@ -112,6 +116,26 @@ export class Stm32Compiler {
     }
     await walk(root, 0);
     all.sort();
+    const projects = all.filter((file) => file.endsWith('.uvprojx'));
+    if (projects.length > 1) throw new Error('error.keilTargetAmbiguous');
+    const keil = projects.length
+      ? parseKeilProject(
+          await fs.readFile(await this.host.resolveWorkspacePath(projects[0]), 'utf8'),
+          projects[0],
+        )
+      : undefined;
+    if (keil) {
+      if (!/^STM32F103(?:C8|CB|R8|RB|T8|TB)$/i.test(keil.device))
+        throw new Error('error.stm32CompilerProfileRequired');
+      for (const file of [
+        ...keil.files,
+        ...keil.includes.filter((p) => p !== '.'),
+        ...(keil.scatter ? [keil.scatter] : []),
+      ])
+        await this.host.resolveWorkspacePath(file);
+      for (const file of keil.files)
+        if (!all.includes(file)) throw new Error('error.projectFileMissing ' + file);
+    }
     // Authorize every discovered input through the same host boundary as an explicit entry.
     for (const relative of all) await this.host.resolveWorkspacePath(relative);
     const inScope = (relative: string) => {
@@ -120,7 +144,9 @@ export class Stm32Compiler {
     };
     const declared = build.files?.length
       ? new Set(build.files.map((file) => file.replaceAll('\\', '/')))
-      : null;
+      : keil
+        ? new Set(keil.files)
+        : null;
     if (declared)
       for (const relative of declared) {
         await this.host.resolveWorkspacePath(relative);
@@ -133,13 +159,17 @@ export class Stm32Compiler {
     );
     if (!sources.length) throw new Error('error.noBuildSources');
     return {
+      keil,
       sources,
       headers: all.filter((relative) => /\.(?:h|hh|hpp|inc)$/i.test(relative)),
       assembly: all.filter(
         (relative) =>
-          /\.s$/i.test(relative) && (selected(relative) || /startup/i.test(path.basename(relative))),
+          /\.s$/i.test(relative) &&
+          (declared ? selected(relative) : selected(relative) || /startup/i.test(path.basename(relative))),
       ),
-      scatter: all.filter((relative) => /\.sct$/i.test(relative) && (!declared || declared.has(relative))),
+      scatter: keil?.scatter
+        ? [keil.scatter]
+        : all.filter((relative) => /\.sct$/i.test(relative) && (!declared || declared.has(relative))),
       all,
     };
   }
@@ -147,14 +177,22 @@ export class Stm32Compiler {
   async buildInputs(build: ProjectBuildInputs): Promise<readonly string[]> {
     return build.entry ? (await this.inputs(build)).all : ['firmware.bin'];
   }
+  async projectDevice(build: ProjectBuildInputs): Promise<string | null> {
+    return build.entry ? ((await this.inputs(build)).keil?.device ?? null) : null;
+  }
 
   async build(config: ProjectConfig, build: ProjectBuildInputs): Promise<BuildResult> {
-    if (!config.programmer?.targetChipId) throw new Error('error.stm32ProbeRequired');
-    const chipId = Number.parseInt(config.programmer.targetChipId, 16);
+    const chipId = config.programmer?.targetChipId
+      ? Number.parseInt(config.programmer.targetChipId, 16)
+      : F1_MEDIUM_DENSITY.chipId;
     if (chipId !== F1_MEDIUM_DENSITY.chipId) throw new Error('error.stm32CompilerProfileRequired');
     const directory = await this.directory(config);
     if (!directory) throw new Error('error.armCompilerMissing');
     const inputs = await this.inputs(build);
+    if (inputs.keil)
+      this.host.emit(
+        `Keil target: ${inputs.keil.name}; device: ${inputs.keil.device}; source files: ${inputs.sources.length}`,
+      );
     if (inputs.scatter.length > 1) throw new Error('error.stm32ScatterAmbiguous');
     const appSize = appRegionSize(config);
     const outputDirectory = await this.host.resetDirectory('.blode/build');
@@ -176,6 +214,7 @@ export class Stm32Compiler {
     const includes = [
       ...new Set([
         this.host.projectRoot(),
+        ...(inputs.keil?.includes.map((file) => path.join(this.host.projectRoot(), file)) ?? []),
         ...inputs.headers.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),
         ...inputs.sources.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),
       ]),
@@ -192,6 +231,7 @@ export class Stm32Compiler {
       '-fno-builtin',
       '-fno-common',
       '-DSTM32F10X_MD',
+      ...(inputs.keil?.defines.map((value) => `-D${value}`) ?? []),
       ...includes.flatMap((include) => ['-I', include]),
     ];
     const objects: string[] = [];
@@ -214,7 +254,18 @@ export class Stm32Compiler {
       firmwareTag ||= (await fs.readFile(await this.host.resolveWorkspacePath(source), 'utf8')).includes(
         '.fwtag',
       );
-      await compile(await this.host.resolveWorkspacePath(source), /\.(?:cpp|cc|cxx)$/i.test(source));
+      let compilePath = await this.host.resolveWorkspacePath(source);
+      const migrated =
+        path.basename(source).toLowerCase() === 'core_cm3.c'
+          ? migrateLegacyCmsis(await fs.readFile(compilePath, 'utf8'))
+          : null;
+      if (migrated) {
+        compilePath = path.join(outputDirectory, 'core_cm3_ac6.c');
+        await fs.writeFile(compilePath, migrated);
+        this.host.emit('status.cmsisAc6Compatibility', 'warning');
+      }
+      this.host.emit(`Compiling ${source}`);
+      await compile(compilePath, /\.(?:cpp|cc|cxx)$/i.test(source));
     }
     const projectStartups: { file: string; native: boolean }[] = [];
     for (const source of inputs.assembly) {
@@ -232,10 +283,19 @@ export class Stm32Compiler {
       }
     }
     const native = projectStartups.filter((startup) => startup.native);
-    if (native.length > 1) throw new Error('error.stm32StartupAmbiguous');
+    if (native.length > 1)
+      throw new Error(
+        'error.stm32StartupAmbiguous ' +
+          native.map((item) => path.relative(this.host.projectRoot(), item.file)).join(', '),
+      );
     let scatter: string;
-    if (native.length && inputs.scatter.length) {
-      scatter = await this.host.resolveWorkspacePath(inputs.scatter[0]);
+    const useNative = native.length > 0 && (inputs.scatter.length > 0 || !!inputs.keil);
+    if (useNative) {
+      if (inputs.scatter.length) scatter = await this.host.resolveWorkspacePath(inputs.scatter[0]);
+      else {
+        scatter = path.join(outputDirectory, 'stm32_keil.sct');
+        await fs.writeFile(scatter, createF1Scatter(config.flashSize, firmwareTag, true));
+      }
       // armlink can execute the command in a scatter-file #! line. This
       // compiler integration only runs the fixed, explicitly selected tools.
       if (/^\s*#!/m.test(await fs.readFile(scatter, 'utf8')))
@@ -266,13 +326,13 @@ export class Stm32Compiler {
       path.join(outputDirectory, 'firmware.map'),
       '--info=sizes',
       '--datacompressor=off',
-      native.length && inputs.scatter.length ? '--keep=*(RESET)' : '--keep=*(.isr_vector)',
+      useNative ? '--keep=*(RESET)' : '--keep=*(.isr_vector)',
       ...(firmwareTag ? ['--keep=*(.fwtag)'] : []),
       ...objects,
       '-o',
       elf,
     ]);
-    const stackReserve = native.length && inputs.scatter.length ? 0 : F1_MEDIUM_DENSITY.stackSize;
+    const stackReserve = useNative ? 0 : F1_MEDIUM_DENSITY.stackSize;
     const usage = inspectStm32Elf(
       await fs.readFile(elf),
       config.flashSize,

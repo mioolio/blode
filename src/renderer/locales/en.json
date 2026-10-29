@@ -470,7 +470,7 @@
   "boards.stm32Description": "Identify STM32 over ST-Link / SWD. Compile STM32F1 medium-density sources, or validate and program complete firmware images.",
   "error.selectDebugProbe": "Select an ST-Link probe first.",
   "error.debugTransportMismatch": "The selected board does not support this debug transport.",
-  "error.stm32ProbeRequired": "Identify the STM32 target through ST-Link before compiling or validating firmware.",
+  "error.stm32ProbeRequired": "Identify the actual STM32 with ST-Link before flashing. Source compilation works offline.",
   "status.stm32Detected": "STM32 identified; target capacity updated.",
   "status.stlinkInstalled": "ST-Link tools are ready.",
   "errors.invalidProbeSerial": "Invalid ST-Link serial number.",
@@ -519,7 +519,7 @@
   "error.stm32CompilerProfileRequired": "Source compilation currently supports identified STM32F1 medium-density targets (0x410). Build other targets externally and validate firmware.bin.",
   "error.stm32ScatterAmbiguous": "Multiple Arm scatter files were found. Select one explicitly through be.build.files.",
   "error.stm32CompileFailed": "STM32 compilation or linking failed. Check the tool output.",
-  "error.stm32StartupAmbiguous": "Multiple Arm startup files were found. Select one explicitly through be.build.files.",
+  "error.stm32StartupAmbiguous": "Multiple startup files remain in the actual build list. Select one, or provide a Keil project with an explicit file list:",
   "status.stm32UsingF1Startup": "Project startup/linker files are incompatible with Arm Compiler or incomplete. Using the platform STM32F1 medium-density startup and linker templates.",
   "error.stm32InvalidElf": "The compiler output is not a valid ARM ELF firmware image.",
   "error.stm32RamOutOfBounds": "The compiled image exceeds the target SRAM capacity.",
@@ -527,5 +527,12 @@
   "error.buildFileOutsideEntry": "be.build.files contains a file outside the entry folder. Update the file list or choose a parent folder as the entry.",
   "memory.ramWithStack": "RAM (including reserved stack)",
   "resource.stm32RamNotice": "Includes static data and stack space reserved by the linker, rather than peak runtime usage.",
-  "error.stm32ScatterPreprocessor": "The scatter file contains an external preprocessing command. Provide an Arm scatter file that does not execute a script."
+  "error.stm32ScatterPreprocessor": "The scatter file contains an external preprocessing command. Provide an Arm scatter file that does not execute a script.",
+  "device.buildDetectFirst": "Compilation works offline. The target can be read from a Keil project; otherwise select a build platform. Identify hardware before flashing.",
+  "error.selectCompilePlatform": "The build target cannot be determined uniquely. Select a platform to compile offline; no device connection is required.",
+  "status.offlinePlatformSelected": "Offline build target selected from the project, without probing hardware.",
+  "error.keilProjectInvalid": "The Keil project configuration is invalid or contains unsupported metadata.",
+  "error.keilTargetAmbiguous": "Multiple Keil projects or targets were found. Provide a single target project before compiling.",
+  "error.keilProjectPath": "The Keil project references external or unresolved paths. Place its dependencies inside the project.",
+  "status.cmsisAc6Compatibility": "A CMSIS 1.30 compatibility copy was generated for Arm Compiler 6 in the build directory. The original file was preserved."
 }
