@@ -1,4 +1,5 @@
 import { getDebuggerProfile, type DebuggerProfile } from '../../shared/debugger-profiles';
+import type { ProjectConfig } from '../../shared/contracts';
 
 export interface DebuggerPresentation {
   id: string;
@@ -10,6 +11,13 @@ export interface DebuggerPresentation {
   frequency: { default: number; min: number; max: number };
   defaultMemory: number;
   patch: boolean;
+  tools: {
+    gdbName: string;
+    serverName: string;
+    scripts: boolean;
+    installKey: string;
+    missingKey: string;
+  };
 }
 
 const presentations: Record<
@@ -37,8 +45,11 @@ const presentations: Record<
   },
 };
 
-export function debuggerPresentation(id: string | undefined): DebuggerPresentation | undefined {
-  const profile = id && getDebuggerProfile(id);
+export function debuggerPresentation(
+  id: string | undefined,
+  baseRuntime?: string,
+): DebuggerPresentation | undefined {
+  const profile = (id && getDebuggerProfile(id)) || (baseRuntime && getDebuggerProfile(baseRuntime));
   if (!profile) return undefined;
   return {
     ...presentations[profile.architecture],
@@ -46,7 +57,25 @@ export function debuggerPresentation(id: string | undefined): DebuggerPresentati
     registers: profile.registerNames,
     patch: profile.canPatchInstructions,
     defaultMemory: profile.memoryRegions.find((region) => region.kind === 'ram')!.start,
+    tools: {
+      gdbName: profile.gdbName,
+      serverName: profile.serverName,
+      scripts: profile.transport === 'usb-jtag',
+      installKey: profile.architecture === 'xtensa' ? 'debugger.installEspTools' : 'debugger.installArmTools',
+      missingKey: profile.architecture === 'xtensa' ? 'debugger.toolsMissingEsp' : 'debugger.toolsMissingArm',
+    },
   };
+}
+
+/** A result for old tool paths must never enable connecting with new paths. */
+export function debuggerToolIdentity(config: ProjectConfig | null | undefined): string {
+  return JSON.stringify([
+    config?.boardId ?? '',
+    config?.debugger?.gdbPath ?? '',
+    config?.debugger?.serverPath ?? '',
+    config?.debugger?.scriptsPath ?? '',
+    config?.toolchain.stlinkDirectory ?? '',
+  ]);
 }
 
 export function debuggerRegister(

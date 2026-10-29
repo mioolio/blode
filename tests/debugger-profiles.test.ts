@@ -10,6 +10,7 @@ import { debuggerProfiles } from '../src/shared/debugger-profiles';
 import { parseConfig } from '../src/core/config';
 import { createWebDebugger } from '../src/core/web-debugger';
 import type { CoreService } from '../src/core/service';
+import { GnuArmToolchain } from '../extensions/boards/STM32F103C8T6/tools/gnu';
 
 const esp = () => getBoardAdapter('Esp32_S3_CAM').createConfig();
 const arm = () => getBoardAdapter('STM32F103C8T6').createConfig();
@@ -181,4 +182,57 @@ test('web state and installation accept the selected target without requiring a 
   await routes.invoke('debuggerState', [esp()]);
   await routes.invoke('debuggerInstallTools', [esp()]);
   assert.deepEqual(calls, [undefined, esp(), esp()]);
+});
+
+test('tool state distinguishes a missing OpenOCD executable from a missing script directory', async (t) => {
+  const debug = new HardwareDebugger('.', '.');
+  let found = { gdb: '/tools/xtensa-gdb', server: '/tools/openocd', scripts: null as string | null };
+  t.mock.method(debug as any, 'tools', async () => found);
+  const missingScripts = await debug.state(esp());
+  assert.equal(missingScripts.tools.server, false);
+  assert.deepEqual(missingScripts.tools.paths, found);
+  found = { ...found, scripts: '/tools/scripts' };
+  const ready = await debug.state();
+  assert.equal(ready.tools.server, true);
+  assert.equal(ready.tools.paths?.scripts, '/tools/scripts');
+  t.mock.method(debug as any, 'tools', async () => ({ gdb: null, server: null, scripts: null }));
+  const absent = await debug.state();
+  assert.equal(absent.tools.server, false);
+  assert.equal(absent.tools.paths?.server, null);
+});
+
+test('an installation validates its original profile even if another client switches target while downloading', async (t) => {
+  const debug = new HardwareDebugger('.', '.');
+  let startInstall!: () => void, finishInstall!: () => void;
+  const started = new Promise<void>((resolve) => {
+    startInstall = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    finishInstall = resolve;
+  });
+  const checked: string[] = [];
+  t.mock.method(GnuArmToolchain.prototype, 'install', async () => {
+    startInstall();
+    await release;
+  });
+  t.mock.method(debug as any, 'tools', async (_config: unknown, profile: { id: string }) => {
+    checked.push(profile.id);
+    return { gdb: profile.id === 'STM32F103C8T6' ? '/tools/gdb' : null, server: null, scripts: null };
+  });
+  const install = debug.install(undefined, undefined, { config: arm() });
+  await started;
+  await debug.state(esp());
+  finishInstall();
+  await install;
+  assert.equal(checked.at(-1), 'STM32F103C8T6');
+  assert.equal((await debug.state()).profile?.id, 'Esp32_S3_CAM');
+});
+
+test('GDB selection rejects a target change while the native file picker was open', async (t) => {
+  const debug = new HardwareDebugger('.', '.');
+  t.mock.method(debug as any, 'tools', async () => ({ gdb: null, server: null, scripts: null }));
+  await debug.state(arm());
+  const original = (await debug.state()).profile!.id;
+  await debug.state(esp());
+  await assert.rejects(debug.selectGdb('/arm-none-eabi-gdb', original), /debuggerSessionChanged/);
 });

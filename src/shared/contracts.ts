@@ -324,7 +324,11 @@ export interface DebuggerState {
   updatedAt?: string;
   programCounter?: string;
   connection: 'disconnected' | 'connecting' | 'stopped' | 'running' | 'error';
-  tools: { gdb: boolean; server: boolean };
+  tools: {
+    gdb: boolean;
+    server: boolean;
+    paths?: { gdb: string | null; server: string | null; scripts?: string | null };
+  };
   message: string;
   symbols: string;
   registers: { name: string; value: string }[];

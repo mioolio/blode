@@ -42,7 +42,13 @@ const debuggerStateSchema = z.object({
     .optional(),
   sessionId: z.string().max(128).optional(),
   connection: z.enum(['disconnected', 'connecting', 'stopped', 'running', 'error']),
-  tools: z.object({ gdb: z.boolean(), server: z.boolean() }),
+  tools: z.object({
+    gdb: z.boolean(),
+    server: z.boolean(),
+    paths: z
+      .object({ gdb: text.nullable(), server: text.nullable(), scripts: text.nullable().optional() })
+      .optional(),
+  }),
   message: text,
   symbols: text,
   registers: z.array(z.object({ name: text, value: text })).max(4096),
@@ -101,6 +107,7 @@ export class RuntimeDebugger extends HardwareDebugger {
   private providerId: string | undefined;
   private providerActive = false;
   private selectedConfig: ProjectConfig | undefined;
+  private configurationRevision = 0;
   constructor(
     root: string,
     dataRoot: string,
@@ -198,9 +205,14 @@ export class RuntimeDebugger extends HardwareDebugger {
     }
   }
   override async state(config?: ProjectConfig): Promise<DebuggerState> {
-    if (config && !this.active) this.selectedConfig = structuredClone(config);
+    if (config && !this.active) {
+      this.selectedConfig = structuredClone(config);
+      this.configurationRevision++;
+    }
+    const revision = this.configurationRevision;
     const current = this.selectedConfig ?? this.config();
     const plugin = await this.selection();
+    if (revision !== this.configurationRevision) return this.state();
     if (!plugin) return super.state(current);
     if (plugin.manifest.debugger.mode === 'none') return empty('error.runtimeDebuggerUnsupported');
     if (plugin.trust === 'required') return empty('error.runtimePluginTrustRequired');
@@ -215,6 +227,7 @@ export class RuntimeDebugger extends HardwareDebugger {
       plugin.manifest.debugger.mode === 'extend' ? [base] : [],
       () => super.state(native),
     );
+    if (revision !== this.configurationRevision) return this.state();
     const parsed = debuggerStateSchema.safeParse(
       plugin.manifest.debugger.mode === 'extend' && result && typeof result === 'object'
         ? { ...base, ...result }
@@ -226,6 +239,7 @@ export class RuntimeDebugger extends HardwareDebugger {
   override async connect(config: ProjectConfig): Promise<void> {
     if (this.active) throw new Error('error.debuggerBusy');
     this.selectedConfig = structuredClone(config);
+    this.configurationRevision++;
     const plugin = await this.selection(config.boardId);
     if (!plugin) return super.connect(config);
     if (plugin.manifest.debugger.mode === 'none') throw new Error('error.runtimeDebuggerUnsupported');
@@ -367,22 +381,28 @@ export class RuntimeDebugger extends HardwareDebugger {
     if (typeof result !== 'string' || result.length > 4096) throw new Error('error.runtimePluginResult');
     return result;
   }
-  override async selectGdb(file: string): Promise<void> {
+  override async selectGdb(file: string, expectedProfileId?: string): Promise<void> {
     const plugin = await this.selection();
-    if (!plugin) return super.selectGdb(file);
-    await this.invoke(plugin, 'selectGdb', [file], () => super.selectGdb(file));
+    if (!plugin) return super.selectGdb(file, expectedProfileId);
+    if (expectedProfileId && (await this.state()).profile?.id !== expectedProfileId)
+      throw new Error('error.debuggerSessionChanged');
+    await this.invoke(plugin, 'selectGdb', [file], () => super.selectGdb(file, expectedProfileId));
   }
   override async install(...args: Parameters<HardwareDebugger['install']>): Promise<void> {
-    if (args[2]?.config && !this.active) this.selectedConfig = structuredClone(args[2].config);
+    if (args[2]?.config && !this.active) {
+      this.selectedConfig = structuredClone(args[2].config);
+      this.configurationRevision++;
+    }
+    const config = this.selectedConfig ?? this.config();
     const plugin = await this.selection();
-    if (!plugin) return super.install(...args);
+    if (!plugin) return super.install(args[0], args[1], { ...args[2], config });
     await this.invoke(plugin, 'install', args, () =>
       super.install(args[0], args[1], {
         ...args[2],
         config:
-          this.selectedConfig && plugin.manifest.compiler.baseRuntime
-            ? { ...this.selectedConfig, boardId: plugin.manifest.compiler.baseRuntime }
-            : args[2]?.config,
+          config && plugin.manifest.compiler.baseRuntime
+            ? { ...config, boardId: plugin.manifest.compiler.baseRuntime }
+            : config,
       }),
     );
   }

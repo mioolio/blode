@@ -24,6 +24,37 @@ const stopped = (): DebuggerState => ({
   programCounter: '0x08000008',
 });
 
+test('an older asynchronous tool refresh cannot restore a previous target', async (t) => {
+  let releaseOld!: () => void;
+  const oldLookup = new Promise<void>((resolve) => {
+    releaseOld = resolve;
+  });
+  let queries = 0;
+  const manager = {
+    state: async () => {
+      if (++queries === 1) await oldLookup;
+      return { plugins: [], errors: [] };
+    },
+  } as unknown as RuntimePlugins;
+  const debug = new RuntimeDebugger(
+    '.',
+    '.',
+    undefined,
+    () => manager,
+    () => undefined,
+  );
+  const configurations: string[] = [];
+  t.mock.method(HardwareDebugger.prototype, 'state', async (config?: ProjectConfig) => {
+    configurations.push(config!.boardId);
+    return stopped();
+  });
+  const older = debug.state(getBoardAdapter('STM32F103C8T6').createConfig());
+  await debug.state(getBoardAdapter('Esp32_S3_CAM').createConfig());
+  releaseOld();
+  await older;
+  assert.deepEqual(configurations, ['Esp32_S3_CAM', 'Esp32_S3_CAM']);
+});
+
 async function fixture(t: TestContext, mode: RuntimePluginManifest['debugger']['mode']) {
   const root = await fs.mkdtemp(path.join(tmpdir(), 'blode-runtime-debugger-'));
   const marker = path.join(root, '.uel');

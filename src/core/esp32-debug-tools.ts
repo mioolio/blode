@@ -18,6 +18,9 @@ interface DiscoveryOptions {
   platform?: NodeJS.Platform;
 }
 const fileExists = async (file: string) => (await fs.stat(file).catch(() => null))?.isFile() === true;
+const hasEsp32Scripts = async (directory: string) =>
+  (await fileExists(path.join(directory, 'board', 'esp32s3-builtin.cfg'))) &&
+  (await fileExists(path.join(directory, 'target', 'esp32s3.cfg')));
 const absolute = (value: string | undefined): value is string =>
   !!value && path.isAbsolute(value) && !/[\r\n\0]/.test(value);
 async function children(directory: string): Promise<string[]> {
@@ -94,10 +97,7 @@ export async function discoverEsp32DebugTools(options: DiscoveryOptions): Promis
     }
   const scriptsAt = async (directory: string | undefined): Promise<string | null> => {
     if (!absolute(directory)) return null;
-    return (await fileExists(path.join(directory, 'board', 'esp32s3-builtin.cfg'))) &&
-      (await fileExists(path.join(directory, 'target', 'esp32s3.cfg')))
-      ? directory
-      : null;
+    return (await hasEsp32Scripts(directory)) ? directory : null;
   };
   const scriptsFor = async (executable: string) => {
     if (config?.scriptsPath) return scriptsAt(config.scriptsPath);
@@ -324,7 +324,7 @@ export async function installEsp32DebugRelease(
       throw new Error('error.esp32DebugArchive');
     if (
       release.kind === 'openocd-esp32' &&
-      !(await fileExists(path.join(distribution, 'share/openocd/scripts/board/esp32s3-builtin.cfg')))
+      !(await hasEsp32Scripts(path.join(distribution, 'share/openocd/scripts')))
     )
       throw new Error('error.esp32DebugArchive');
     const version = await runner(executable, ['--version'], { signal: options.signal, timeout: 15_000 });

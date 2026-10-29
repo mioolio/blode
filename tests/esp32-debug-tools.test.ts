@@ -245,6 +245,42 @@ test('checksum and archive traversal failures preserve an existing installed too
   }
 });
 
+test('OpenOCD installation rejects incomplete scripts rather than reporting success then unavailable', async () => {
+  const f = await fixture();
+  try {
+    const phases: string[] = [];
+    const runner: typeof runCommand = async (_command, args) => {
+      if (args[0] === '-tf') return { code: 0, output: 'openocd-esp32/bin/openocd.exe\n' };
+      if (args[0] === '-xf') {
+        const distribution = path.join(args[3], 'openocd-esp32');
+        await fs.mkdir(path.join(distribution, 'bin'), { recursive: true });
+        await fs.writeFile(path.join(distribution, 'bin/openocd.exe'), 'mock');
+        const board = path.join(distribution, 'share/openocd/scripts/board');
+        await fs.mkdir(board, { recursive: true });
+        await fs.writeFile(path.join(board, 'esp32s3-builtin.cfg'), 'source target/esp32s3.cfg');
+        return { code: 0, output: '' };
+      }
+      return { code: 0, output: 'Open On-Chip Debugger esp32' };
+    };
+    await assert.rejects(
+      installEsp32DebugRelease(
+        { ...release, kind: 'openocd-esp32' },
+        {
+          ...f.options,
+          runner,
+          fetcher: async () => new Response(bytes),
+          onProgress: (progress) => phases.push(progress.phase),
+        },
+      ),
+      /esp32DebugArchive/,
+    );
+    assert.equal(phases.at(-1), 'failed');
+    assert.equal(phases.includes('completed'), false);
+  } finally {
+    await f.dispose();
+  }
+});
+
 test('cancellation and unsupported platforms do not download or run a tool', async () => {
   const f = await fixture();
   try {

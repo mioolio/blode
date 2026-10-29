@@ -934,13 +934,14 @@ async function bootstrap(): Promise<void> {
     debuggerChooseGdb: {
       args: noArgs,
       run: async () => {
+        const profileId = (await hardwareDebugger!.state()).profile?.id;
         const result = await dialog.showOpenDialog(debuggerWindow ?? window!, {
           title: '选择 GDB / Choose GDB',
           properties: ['openFile'],
           filters: [{ name: 'GDB', extensions: process.platform === 'win32' ? ['exe'] : ['*'] }],
         });
         if (result.canceled || !result.filePaths[0]) return false;
-        await hardwareDebugger!.selectGdb(result.filePaths[0]);
+        await hardwareDebugger!.selectGdb(result.filePaths[0], profileId);
         return true;
       },
     },

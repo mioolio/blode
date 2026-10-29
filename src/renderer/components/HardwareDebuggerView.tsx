@@ -10,7 +10,8 @@ import {
   instructionAssembly,
 } from './debuggerEditing';
 import { DebuggerRequests } from './debuggerRequests';
-import { debuggerPresentation, debuggerRegister } from './debuggerProfiles';
+import { debuggerPresentation, debuggerRegister, debuggerToolIdentity } from './debuggerProfiles';
+import { DebuggerToolsPanel } from './DebuggerToolsPanel';
 import { getDebuggerProfile } from '../../shared/debugger-profiles';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -68,6 +69,10 @@ export function HardwareDebuggerView() {
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installation, setInstallation] = useState<InstallationState>();
+  const installationOwner = useRef<{ requested: boolean; id?: string }>({ requested: false });
+  const [checkedTools, setCheckedTools] = useState<{ identity: string; tools: DebuggerState['tools'] }>();
+  const checkedToolsRef = useRef<typeof checkedTools>(undefined);
+  const [checkingTools, setCheckingTools] = useState<string | null>(null);
   const busyRef = useRef(false);
   const [error, setError] = useState('');
   const [location, setLocation] = useState('main');
@@ -94,8 +99,11 @@ export function HardwareDebuggerView() {
   const connected = debug?.connection === 'stopped' || debug?.connection === 'running';
   const stopped = debug?.connection === 'stopped';
   const attaching = debug?.connection === 'connecting';
+  const selectedRuntime = app?.boards.find((board) => board.id === config?.boardId);
+  const plugin = selectedRuntime?.runtimePlugin;
   const profile = debuggerPresentation(
     (connected || attaching ? debug?.profile?.id : undefined) ?? config?.boardId,
+    plugin?.compiler.baseRuntime,
   );
   const usbJtag = profile?.id === 'Esp32_S3_CAM';
   const record = new Map(
@@ -113,15 +121,15 @@ export function HardwareDebuggerView() {
   const probes = app?.debugProbes ?? [];
   const serialAvailable = probes.some((probe) => probe.serialNumber === serial);
   const selectedSerial = serialAvailable || connected ? serial : '';
-  const selectedRuntime = app?.boards.find((board) => board.id === config?.boardId);
-  const plugin = selectedRuntime?.runtimePlugin;
   const customOnly = plugin?.debugger.mode === 'replace' && !!plugin.debugger.view;
   const pluginDebugger = plugin?.debugger.mode === 'extend' || plugin?.debugger.mode === 'replace';
   const nativeDebugger = !!profile || plugin?.debugger.mode === 'builtin';
   const patchSupported = !!profile?.patch && debug?.profile?.canPatchInstructions !== false;
   const frequency = profile?.frequency ?? { default: 1800, min: 5, max: 4000 };
   const registeredProfile = profile ? getDebuggerProfile(profile.id) : undefined;
-  const toolNames = registeredProfile ?? debug?.profile ?? { gdbName: 'GNU GDB', serverName: 'st-util' };
+  const toolIdentity = debuggerToolIdentity(config);
+  const currentTools = checkedTools?.identity === toolIdentity ? checkedTools.tools : undefined;
+  const toolsLocked = busy || connected || attaching || !config;
   const debugSupported = nativeDebugger || pluginDebugger;
   const builtinPanels = !customOnly && (!config || debugSupported);
   const statusMessage =
@@ -167,13 +175,18 @@ export function HardwareDebuggerView() {
     requests.current.invalidate();
     let disposed = false;
     setMemory(null);
-    setAddress(hexAddress(debuggerPresentation(configRef.current?.boardId)?.defaultMemory ?? 0x20000000));
+    setAddress(hexAddress(profile?.defaultMemory ?? 0x20000000));
     setChangedRegisters(new Set());
     lastRegisters.current.clear();
     lastSample.current = undefined;
     setPatch(null);
     setBatchResults([]);
     setStorage(null);
+    setCheckedTools(undefined);
+    checkedToolsRef.current = undefined;
+    setCheckingTools(null);
+    setInstallation(undefined);
+    installationOwner.current = { requested: false };
     void requests.current
       .read('storage', async () => {
         await window.blode.debuggerState(configRef.current ?? undefined);
@@ -189,13 +202,26 @@ export function HardwareDebuggerView() {
       disposed = true;
     };
   }, [targetIdentity]);
-  const refresh = async () => {
-    const result = await requests.current.read('state', () =>
-      window.blode.debuggerState(configRef.current ?? undefined),
-    );
-    if (!result || !requests.current.current(result.token)) return null;
-    updateDebug(result.value);
-    return result.value;
+  const refresh = async (showChecking = false) => {
+    const selection = configRef.current ?? undefined;
+    const identity = debuggerToolIdentity(selection);
+    const token = requests.current.begin('state');
+    if (showChecking || checkedToolsRef.current?.identity !== identity) setCheckingTools(identity);
+    try {
+      const next = await window.blode.debuggerState(selection);
+      if (!requests.current.current(token) || identity !== debuggerToolIdentity(configRef.current))
+        return null;
+      const checked = { identity, tools: next.tools };
+      checkedToolsRef.current = checked;
+      setCheckedTools(checked);
+      updateDebug(next);
+      return next;
+    } catch (e) {
+      if (requests.current.current(token)) throw e;
+      return null;
+    } finally {
+      if (requests.current.current(token)) setCheckingTools(null);
+    }
   };
   const devices = async () => {
     const token = requests.current.begin('devices');
@@ -206,11 +232,10 @@ export function HardwareDebuggerView() {
     if (!state) return;
     if (!requests.current.current(token)) return;
     setApp(state);
-    setInstallation((current) =>
-      current && (!state.installation || current.updatedAt > state.installation.updatedAt)
-        ? current
-        : state.installation,
-    );
+    if (state.installation && state.installation.id === installationOwner.current.id)
+      setInstallation((current) =>
+        current && current.updatedAt > state.installation!.updatedAt ? current : state.installation,
+      );
     setConfig((current) => {
       if (
         busyRef.current ||
@@ -240,7 +265,17 @@ export function HardwareDebuggerView() {
     let pending = false;
     const unsubscribe = window.blode.onEvent((event) => {
       if (disposed) return;
-      if (event.installation)
+      const progress = event.installation;
+      const owner = installationOwner.current;
+      if (
+        progress &&
+        owner.requested &&
+        !owner.id &&
+        progress.tool === 'GDB / debug server' &&
+        progress.phase === 'starting'
+      )
+        owner.id = progress.id;
+      if (progress && progress.id === owner.id)
         setInstallation((current) => ({
           ...event.installation!,
           logs: event.progressOnly
@@ -263,12 +298,10 @@ export function HardwareDebuggerView() {
     const tick = async () => {
       if (pending || busyRef.current) return;
       pending = true;
-      const token = requests.current.begin('state');
       try {
-        const next = await window.blode.debuggerState(configRef.current ?? undefined);
-        if (!disposed && requests.current.current(token)) updateDebug(next);
+        await refresh();
       } catch (e) {
-        if (!disposed && requests.current.current(token)) setError(String(e));
+        if (!disposed) setError(String(e));
       } finally {
         pending = false;
       }
@@ -387,13 +420,26 @@ export function HardwareDebuggerView() {
     });
   const installTools = () =>
     void dialogAct(async () => {
+      installationOwner.current = { requested: true };
+      setInstallation(undefined);
       setInstalling(true);
       try {
         await window.blode.debuggerInstallTools(configRef.current ?? undefined);
       } finally {
+        installationOwner.current.requested = false;
         setInstalling(false);
       }
     });
+  const changeToolPath = (key: 'gdbPath' | 'serverPath' | 'scriptsPath', value: string) => {
+    if (toolsLocked || !configRef.current) return;
+    requests.current.begin('state');
+    const next = { ...configRef.current, debugger: { ...configRef.current.debugger, [key]: value } };
+    configRef.current = next;
+    setConfig(next);
+    checkedToolsRef.current = undefined;
+    setCheckedTools(undefined);
+    setCheckingTools(null);
+  };
   const menus: DebuggerMenu[] = [
     {
       label: t('debugger.menu.connection'),
@@ -840,7 +886,7 @@ export function HardwareDebuggerView() {
           attaching ||
           busy ||
           !debugSupported ||
-          (!pluginDebugger && ((!usbJtag && !selectedSerial) || !debug?.tools.gdb || !debug?.tools.server))
+          (!pluginDebugger && ((!usbJtag && !selectedSerial) || !currentTools?.gdb || !currentTools?.server))
         }
         onClick={() =>
           config &&
@@ -878,72 +924,42 @@ export function HardwareDebuggerView() {
             <>
               {selectedRuntime && <p className="debug-dialog-target">{selectedRuntime.name}</p>}
               {connectionForm}
-              {nativeDebugger && debug && (!debug.tools.gdb || !debug.tools.server) && (
+              {nativeDebugger && currentTools && (!currentTools.gdb || !currentTools.server) && (
                 <button onClick={() => openDialog('tools')}>
-                  {t('debugger.toolsMissing')} · {t('debugger.toolSettings')}
+                  {t(profile?.tools.missingKey ?? 'debugger.toolsMissing')} · {t('debugger.toolSettings')}
                 </button>
               )}
             </>
           )}
           {dialog === 'tools' && (
             <>
-              <div className="debug-tool-row">
-                <span>{toolNames.gdbName}</span>
-                <span>{debug?.tools.gdb ? '✓' : '—'}</span>
-              </div>
-              <div className="debug-tool-row">
-                <span>{toolNames.serverName}</span>
-                <span>{debug?.tools.server ? '✓' : '—'}</span>
-              </div>
-              {(['gdbPath', 'serverPath', ...(usbJtag ? (['scriptsPath'] as const) : [])] as const).map(
-                (key) => (
-                  <label className="debug-dialog-field" key={key}>
-                    {t(`debugger.${key}`)}
-                    <input
-                      value={config?.debugger?.[key] ?? ''}
-                      placeholder={t('debugger.managedPath')}
-                      spellCheck={false}
-                      disabled={busy || connected || attaching}
-                      onChange={(event) =>
-                        setConfig((current) =>
-                          current
-                            ? { ...current, debugger: { ...current.debugger, [key]: event.target.value } }
-                            : current,
-                        )
-                      }
-                    />
-                  </label>
-                ),
-              )}
-              <div className="debug-dialog-actions">
-                <button disabled={busy || connected || attaching} onClick={() => void dialogAct(refresh)}>
-                  {t('debugger.discoverTools')}
-                </button>
-                {!isWeb && (
-                  <button
-                    disabled={busy || connected || attaching}
-                    onClick={() =>
-                      void dialogAct(async () => {
-                        await refresh();
-                        const chosen = await window.blode.debuggerChooseGdb();
-                        if (chosen && configRef.current) {
-                          const next = {
-                            ...configRef.current,
-                            debugger: { ...configRef.current.debugger, gdbPath: '' },
-                          };
-                          configRef.current = next;
-                          setConfig(next);
-                        }
-                      })
+              <DebuggerToolsPanel
+                profile={profile}
+                tools={currentTools}
+                checking={checkingTools === toolIdentity}
+                disabled={toolsLocked}
+                web={isWeb}
+                paths={config?.debugger}
+                onChange={changeToolPath}
+                onCheck={() => void dialogAct(() => refresh(true))}
+                onChooseGdb={() =>
+                  void dialogAct(async () => {
+                    if (!(await refresh(true))) return;
+                    const chosen = await window.blode.debuggerChooseGdb();
+                    if (chosen && configRef.current) {
+                      const next = {
+                        ...configRef.current,
+                        debugger: { ...configRef.current.debugger, gdbPath: '' },
+                      };
+                      configRef.current = next;
+                      setConfig(next);
+                      checkedToolsRef.current = undefined;
+                      setCheckedTools(undefined);
                     }
-                  >
-                    {t('debugger.chooseGdb')}
-                  </button>
-                )}
-                <button className="primary" disabled={busy || connected || attaching} onClick={installTools}>
-                  {t('debugger.installTools')}
-                </button>
-              </div>
+                  })
+                }
+                onInstall={installTools}
+              />
               {(installation || installing) && (
                 <InstallationOutput installation={installation} pending={installing} />
               )}

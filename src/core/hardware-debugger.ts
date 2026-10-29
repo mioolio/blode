@@ -99,14 +99,13 @@ export class HardwareDebugger {
         return file;
     return null;
   }
-  private async tools(config?: ProjectConfig) {
-    config ??= this.debugConfig;
-    if (this.profile.architecture === 'xtensa') {
+  private async tools(config?: ProjectConfig, profile = this.profile) {
+    if (profile.architecture === 'xtensa') {
       const found = await discoverEsp32DebugTools({
         root: this.root,
         dataRoot: this.dataRoot,
         config,
-        gdbPath: this.gdbOverrides.get(this.profile.id),
+        gdbPath: this.gdbOverrides.get(profile.id),
       });
       return { gdb: found.gdb, server: found.openocd, scripts: found.scripts };
     }
@@ -116,8 +115,8 @@ export class HardwareDebugger {
       ? await configuredFile(config.debugger.gdbPath)
       : await this.find('arm-none-eabi-gdb', [
           ...(config?.debugger?.gdbPath ? [config.debugger.gdbPath] : []),
-          ...(this.gdbOverrides.get(this.profile.id) || this.gdbOverride
-            ? [this.gdbOverrides.get(this.profile.id) || this.gdbOverride]
+          ...(this.gdbOverrides.get(profile.id) || this.gdbOverride
+            ? [this.gdbOverrides.get(profile.id) || this.gdbOverride]
             : []),
           path.join(this.root, 'armgcc', 'bin', 'arm-none-eabi-gdb.exe'),
           path.join(this.root, 'armgcc', 'bin', 'arm-none-eabi-gdb'),
@@ -148,18 +147,21 @@ export class HardwareDebugger {
     const profile = this.profile,
       session = this.session,
       selection = this.debugConfig;
-    const tools = await this.tools();
+    const tools = await this.tools(selection, profile);
     if (profile !== this.profile || session !== this.session || selection !== this.debugConfig)
       return this.state();
     this.snapshot.tools = {
       gdb: !!tools.gdb,
       server: !!tools.server && (this.profile.transport !== 'usb-jtag' || !!tools.scripts),
+      paths: { gdb: tools.gdb, server: tools.server, scripts: tools.scripts },
     };
     this.snapshot.profile = this.profile;
     return structuredClone(this.snapshot);
   }
-  async selectGdb(file: string) {
+  async selectGdb(file: string, expectedProfileId?: string) {
     if (this.active) throw new Error('error.debuggerBusy');
+    if (expectedProfileId && expectedProfileId !== this.profile.id)
+      throw new Error('error.debuggerSessionChanged');
     if (!/gdb(?:-no-python)?(?:\.exe)?$/i.test(path.basename(file)))
       throw new Error('error.debuggerToolsMissing');
     this.gdbOverrides.set(this.profile.id, file);
@@ -253,7 +255,9 @@ export class HardwareDebugger {
   ) {
     if (this.active) throw new Error('error.debuggerBusy');
     this.configure(network.config);
-    if (this.profile.architecture === 'xtensa') {
+    const profile = this.profile;
+    const config = this.debugConfig ? structuredClone(this.debugConfig) : undefined;
+    if (profile.architecture === 'xtensa') {
       await installEsp32DebugTools({
         root: this.root,
         dataRoot: this.dataRoot,
@@ -274,7 +278,7 @@ export class HardwareDebugger {
       onProgress,
       ...network,
     }).install();
-    if (!(await this.tools()).gdb) throw new Error('error.debuggerGdbChoose');
+    if (!(await this.tools(config, profile)).gdb) throw new Error('error.debuggerGdbChoose');
   }
   private consume(line: string) {
     this.log(line);
@@ -639,7 +643,7 @@ export class HardwareDebugger {
     if (!this.profile.canAssemble) throw new Error('error.debuggerArchitectureUnsupported');
     const parsed = debuggerAssembleSchema.safeParse({ address, source });
     if (!parsed.success) throw new Error('error.invalidArguments');
-    const gdb = (await this.tools()).gdb;
+    const gdb = (await this.tools(this.debugConfig)).gdb;
     if (!gdb) throw new Error('error.debuggerToolsMissing');
     return assembleThumbInstruction(await assemblerToolsFromGdb(gdb), address, source);
   }

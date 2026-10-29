@@ -12,8 +12,15 @@ import {
   validMemoryRange,
 } from '../src/renderer/components/debuggerEditing';
 import { DebuggerRequests } from '../src/renderer/components/debuggerRequests';
-import { debuggerPresentation, debuggerRegister } from '../src/renderer/components/debuggerProfiles';
+import {
+  debuggerPresentation,
+  debuggerRegister,
+  debuggerToolIdentity,
+} from '../src/renderer/components/debuggerProfiles';
+import { DebuggerToolsPanel } from '../src/renderer/components/DebuggerToolsPanel';
 import { getDebuggerProfile } from '../src/shared/debugger-profiles';
+import { getBoardAdapter } from '../extensions/registry';
+import { translate } from '../src/renderer/i18n';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -183,4 +190,107 @@ test('STM32 register aliases and patch capability stay isolated from unknown pla
   assert.equal(debuggerRegister(new Map([['r15', '0x08001234']]), 'pc', profile), '0x08001234');
   assert.equal(debuggerPresentation('unknown'), undefined);
   assert.equal(debuggerRegister(new Map([['r15', '0x08001234']]), 'pc'), '—');
+});
+
+const toolPanelProps = {
+  checking: false,
+  disabled: false,
+  web: false,
+  onChange() {},
+  onCheck() {},
+  onChooseGdb() {},
+  onInstall() {},
+};
+
+test('ESP tool dialog renders matching installer and separate executable/scripts findings', () => {
+  const html = renderToStaticMarkup(
+    createElement(DebuggerToolsPanel, {
+      ...toolPanelProps,
+      profile: debuggerPresentation('Esp32_S3_CAM'),
+      tools: {
+        gdb: true,
+        server: false,
+        paths: { gdb: '/tools/xtensa-gdb', server: '/tools/openocd', scripts: null },
+      },
+    }),
+  );
+  assert.match(html, /xtensa-esp-elf-gdb/);
+  assert.match(html, /OpenOCD ESP32<\/span><span title="\/tools\/openocd">已找到/);
+  assert.match(html, /OpenOCD scripts 目录<\/span><span>未找到/);
+  assert.match(html, /安装 Xtensa GDB 与 OpenOCD/);
+  assert.doesNotMatch(html, /安装 GNU|st-util|—|✓/);
+  assert.equal((html.match(/<input/g) ?? []).length, 3);
+  assert.match(html, /选择 GDB 程序/);
+});
+
+test('tool status distinguishes unchecked, checking and missing without retaining stale paths', () => {
+  const profile = debuggerPresentation('Esp32_S3_CAM');
+  const unchecked = renderToStaticMarkup(createElement(DebuggerToolsPanel, { ...toolPanelProps, profile }));
+  assert.equal((unchecked.match(/待检查/g) ?? []).length, 3);
+  const checking = renderToStaticMarkup(
+    createElement(DebuggerToolsPanel, {
+      ...toolPanelProps,
+      profile,
+      checking: true,
+      disabled: true,
+      tools: {
+        gdb: true,
+        server: true,
+        paths: { gdb: '/old/gdb', server: '/old/openocd', scripts: '/old/scripts' },
+      },
+    }),
+  );
+  assert.match(checking, /aria-busy="true"/);
+  assert.equal((checking.match(/检查中/g) ?? []).length, 3);
+  assert.doesNotMatch(checking, /title="\/old|已找到/);
+  assert.equal((checking.match(/disabled=""/g) ?? []).length, 6);
+  const missing = renderToStaticMarkup(
+    createElement(DebuggerToolsPanel, {
+      ...toolPanelProps,
+      profile,
+      tools: { gdb: false, server: false },
+    }),
+  );
+  assert.equal((missing.match(/未找到/g) ?? []).length, 3);
+});
+
+test('STM32 and packaged ESP tool profiles remain separate and web hides the native picker', () => {
+  const arm = debuggerPresentation('STM32F103C8T6')!;
+  const html = renderToStaticMarkup(
+    createElement(DebuggerToolsPanel, {
+      ...toolPanelProps,
+      profile: arm,
+      web: true,
+      disabled: true,
+      tools: { gdb: false, server: true },
+    }),
+  );
+  assert.match(html, /arm-none-eabi-gdb/);
+  assert.match(html, /st-util/);
+  assert.match(html, /安装 GNU Arm GDB/);
+  assert.doesNotMatch(html, /Xtensa|OpenOCD|选择 GDB/);
+  assert.equal((html.match(/<input/g) ?? []).length, 2);
+  assert.equal((html.match(/disabled=""/g) ?? []).length, 4);
+  const packaged = debuggerPresentation('Esp32_S3_CAM_Module', 'Esp32_S3_CAM')!;
+  assert.equal(packaged.id, 'Esp32_S3_CAM');
+  assert.equal(packaged.defaultMemory, 0x3fc88000);
+  assert.equal(packaged.tools.scripts, true);
+  assert.match(translate('zh-CN', packaged.tools.missingKey), /Xtensa GDB.*OpenOCD/);
+  assert.match(translate('zh-CN', arm.tools.missingKey), /GNU Arm GDB 与 st-util/);
+});
+
+test('a tool result belongs to its exact platform and configured lookup paths', () => {
+  const config = getBoardAdapter('Esp32_S3_CAM').createConfig();
+  const identity = debuggerToolIdentity(config);
+  assert.equal(debuggerToolIdentity(structuredClone(config)), identity);
+  for (const key of ['gdbPath', 'serverPath', 'scriptsPath'] as const)
+    assert.notEqual(debuggerToolIdentity({ ...config, debugger: { [key]: '/custom/tool' } }), identity);
+  assert.notEqual(debuggerToolIdentity({ ...config, boardId: 'STM32F103C8T6' }), identity);
+  assert.notEqual(
+    debuggerToolIdentity({
+      ...config,
+      toolchain: { ...config.toolchain, stlinkDirectory: '/custom/stlink' },
+    }),
+    identity,
+  );
 });
