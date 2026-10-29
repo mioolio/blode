@@ -83,7 +83,7 @@ const hostMethods = new Set([
   'firmwareFlash',
 ]);
 const isHostMethod = (method: string) =>
-  /^(?:git|toolVersion|host|projectPackage|terminal|language|runtimePlugin)/.test(method) ||
+  /^(?:components|git|toolVersion|host|projectPackage|terminal|language|runtimePlugin)/.test(method) ||
   hostMethods.has(method);
 
 function lanEndpoint(port: number): string {

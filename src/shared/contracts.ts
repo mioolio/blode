@@ -8,6 +8,7 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { ComponentLibrariesApi } from './components';
 import type { DesktopLifecycleApi } from './desktop-lifecycle';
 import type {
   RuntimePluginManifest,
@@ -128,6 +129,14 @@ export interface DetectionScan {
   unavailablePlatforms: string[];
 }
 export interface ProjectBuildInputs {
+  /** Host-derived component paths; not a be field or executable hook. */
+  components?: {
+    roots: string[];
+    sources: string[];
+    includeDirectories: string[];
+    arduinoLibraries: string[];
+    inputs: string[];
+  };
   settings?: BuildSettings;
   /** C language rules and compiler dialect. C++ keeps its own platform settings. */
   cStandard?: 'c99' | 'c11' | 'c17' | 'c23';
@@ -357,6 +366,7 @@ export interface DesktopApi
     LanguageApi,
     DesktopLifecycleApi,
     RuntimePluginsApi,
+    ComponentLibrariesApi,
     TerminalApi {
   /** Notify the native shell after the first workspace frame has mounted. */
   setTerminalFocus?(focused: boolean): void;

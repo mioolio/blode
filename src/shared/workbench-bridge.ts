@@ -7,6 +7,7 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { ComponentLibrariesApi } from './components';
 import { APP_CLOSE_REQUEST_CHANNEL, type DesktopLifecycleApi } from './desktop-lifecycle';
 import type { RuntimePluginsApi } from './plugins';
 import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from './contracts';
@@ -24,9 +25,15 @@ export function createWorkbenchBridge(
   LanguageApi &
   DesktopLifecycleApi &
   RuntimePluginsApi &
+  ComponentLibrariesApi &
   TerminalApi {
   const invoke = call as <T>(method: string, args: unknown[]) => Promise<T>;
   return {
+    componentsState: () => invoke('componentsState', []),
+    componentsSearch: (query) => invoke('componentsSearch', [query]),
+    componentsInstall: (request) => invoke('componentsInstall', [request]),
+    componentsImport: (request) => invoke('componentsImport', [request]),
+    componentsRemove: (request) => invoke('componentsRemove', [request]),
     desktopLifecycleState: () => invoke('desktopLifecycleState', []),
     desktopLifecycleConfigure: (request) => invoke('desktopLifecycleConfigure', [request]),
     desktopCloseReply: (request) => invoke('desktopCloseReply', [request]),

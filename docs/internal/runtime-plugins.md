@@ -4,6 +4,8 @@ Status: development preview based on 0.2.3.6. The display version is `0.2.3.6-in
 
 ## Module and debugger follow-up — 2026-10-30
 
+The source now includes a [project component library manager](../COMPONENT-LIBRARIES.md), preserving ESP32 Arduino recipe flags during compilation and correcting debugger startup error reporting. Actual firmware and isolated UI validation are recorded in the [component and ESP32 update](components-and-esp32-recovery.md). No application binaries were built for this update.
+
 The latest source update reorganizes both boards into ten responsibility directories, adds module-owned language declarations, and introduces standalone JavaScript module packaging for binary hosts. ESP32-S3 USB-JTAG debugging and debug tool installation are implemented, with physical acceptance pending. Current validation and migration details are in the [module update](module-packaging.md) and [hardware debugging guide](../HARDWARE-DEBUGGING.md). No new application release was built for this follow-up.
 
 ## Earlier workbench follow-up — 2026-10-30

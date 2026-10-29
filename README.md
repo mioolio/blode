@@ -15,6 +15,8 @@
 
 ### 本次内部更新
 
+- **组件库**：运行菜单管理工程依赖；搜索 Arduino 库并选择版本，递归安装依赖，或从目标电脑文件夹／ZIP 导入。组件随工程保存，详见[组件库指南](docs/COMPONENT-LIBRARIES.md)。
+- **ESP32 修复**：调试允许留空 USB 序列号自动选择；编译选项追加到平台 `extra_flags`，保留 `-c` 等原有参数。
 - **ESP32-S3 硬件调试**：通过 USB-JTAG、Espressif OpenOCD 和 Xtensa GDB 查看寄存器、反汇编、调用栈与内存，支持暂停、单步及断点。
 - **调试工作区**：顶部连接／调试／视图／工具菜单，批量断点，醒目的内存读取入口；STM32 支持汇编预览及 SRAM 指令修改。
 - **退出修复**：正常关闭不再触发开发启动器的沙箱重试，关闭期间的已销毁帧与预期取消不再输出多余错误。
@@ -52,6 +54,8 @@ npm run web:start
 
 主进程、平台包或 preload 修改后需要重启开发版；界面源码支持热更新。启动诊断见[开发说明](docs/DEVELOPMENT.md)。
 
+需要第三方源码时，从 **运行 → 组件库** 安装或导入。项目依赖与平台内置库分开显示；桌面版和 Web 版都读取目标电脑的目录与 ZIP。
+
 ## 支持范围
 
 ### 目标芯片
@@ -83,6 +87,7 @@ ESP32-S3 摄像头接线由工程配置。旧工程的 `esp32-s3`、`stm32` 标�
 | 编辑器     | C/C++ 定义、声明、引用和头文件跳转；多标签、预览标签、拆分编辑、草稿恢复                         |
 | 语言扩展   | C99／C11／C17／C23 独立 JSON 规则；工作区增量索引；自定义补全与诊断                              |
 | 编译与交付 | 分平台／语言工具版本；调试与发布模式；固件体积优化；BIN／HEX／S-record／ELF 导出；可迁移工程 ZIP |
+| 组件库     | Arduino 在线索引与版本依赖；目标电脑目录／ZIP 导入；工程内源码与清单；修改和依赖删除保护         |
 | 硬件       | 串口 UTF-8／HEX 收发；预备固件烧录；寄存器、指令、内存、调用栈及断点调试                         |
 | 团队协作   | 共享标签、用户颜色、阅读范围、最新日志；独立修改合并、冲突提示及按用户撤销                       |
 | Git 与终端 | 图形化差异、暂存、提交、分支和远端操作；持久 PowerShell／系统 Shell                              |
@@ -92,6 +97,8 @@ ESP32-S3 摄像头接线由工程配置。旧工程的 `esp32-s3`、`stm32` 标�
 ## 工程与扩展
 
 `be` 保存工程配置。右键 **高级设置** 可编辑入口、文件清单和语言标准；`be.build.settings` 维护通用、平台与语言层级的编译选项。工程示例和迁移规则见[工程与编译设置](docs/PROJECTS.md)。
+
+`blode.components.json` 管理工程组件，源码保存在 `libraries/` 或 `components/`，可随工程复制与提交。编译时宿主派生组件路径，不需要在 `be` 中填写 `build.components`。
 
 ```text
 extensions/
@@ -140,7 +147,7 @@ npm run package:web
 | 任务          | 文档                                                                                                                                                                         |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 安装与升级    | [发行说明](docs/releases/0.2.3.6.md) · [Web 宿主](docs/WEB-HOST.md) · [开发说明](docs/DEVELOPMENT.md)                                                                        |
-| 编译与硬件    | [工程配置](docs/PROJECTS.md) · [硬件调试](docs/HARDWARE-DEBUGGING.md) · [工具版本](docs/TOOL-VERSIONS.md) · [STM32](docs/STM32.md)                                           |
+| 编译与硬件    | [工程配置](docs/PROJECTS.md) · [组件库](docs/COMPONENT-LIBRARIES.md) · [硬件调试](docs/HARDWARE-DEBUGGING.md) · [工具版本](docs/TOOL-VERSIONS.md) · [STM32](docs/STM32.md)   |
 | 编辑与团队    | [语言规则](docs/LANGUAGE-RULES.md) · [多人协作](docs/COLLABORATION.md) · [Git](docs/GIT.md) · [工程打包](docs/PROJECT-PACKAGING.md)                                          |
 | AI 与插件开发 | [AI 接口](docs/AI-PIPE.md) · [AI 补全](docs/AI-COMPLETIONS.md) · [运行时插件](docs/RUNTIME-PLUGINS.md) · [模块语言](docs/MODULE-LANGUAGES.md) · [架构](docs/ARCHITECTURE.md) |
 | 支持与计划    | [平台支持](docs/PLATFORM-SUPPORT.md) · [硬件验证](docs/HARDWARE-VALIDATION.md) · [路线图](docs/ROADMAP.md) · [更新记录](CHANGELOG.md)                                        |

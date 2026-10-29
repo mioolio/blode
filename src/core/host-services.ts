@@ -10,6 +10,8 @@ import { GitService, createGitRoutes } from './git';
 import { ToolVersions } from './tool-versions';
 import { ProjectPackages } from './project-package';
 import { HostTerminal } from './terminal';
+import { ComponentLibraries } from './components';
+import type { ComponentLibrariesState } from '../shared/components';
 import { browseHost } from './host-files';
 import { runCommand } from './process';
 import { configSchema, parseProjectBuild } from './config';
@@ -48,6 +50,43 @@ export function createHostServices(options: Options) {
   const language = new LanguageIndexService(core);
   const git = new GitService({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
   const terminal = new HostTerminal({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
+  const projectBuild = async () => {
+    const marker = (await core.workspaceSnapshot()).files.find((file) => file.path === 'be');
+    if (!marker?.content.trim()) return {};
+    try {
+      return parseProjectBuild(JSON.parse(marker.content).build);
+    } catch {
+      return {};
+    }
+  };
+  const components = new ComponentLibraries({
+    projectRoot: () => core.currentProjectRoot(),
+    config: () => core.currentConfig(),
+    build: projectBuild,
+    dataRoot: options.dataRoot,
+    toolchainRoot: options.toolchainRoot,
+    fetcher: options.fetcher,
+    env: options.toolchainEnv,
+  });
+  const componentAction = async (
+    action: (
+      hooks: Parameters<Parameters<CoreService['runInstallation']>[1]>[0],
+    ) => Promise<ComponentLibrariesState>,
+  ) =>
+    collaboration.workspaceAction(async () => {
+      let result!: ComponentLibrariesState;
+      await core.runInstallation('components', async (hooks) => {
+        result = await action(hooks);
+      });
+      await core.workspaceSnapshot(true);
+      options.emit({
+        kind: 'status',
+        level: 'success',
+        message: 'status.workspaceChanged',
+        time: new Date().toISOString(),
+      });
+      return result;
+    });
   const packages = new ProjectPackages({
     dataRoot: options.dataRoot,
     projectRoot: () => core.currentProjectRoot(),
@@ -58,15 +97,7 @@ export function createHostServices(options: Options) {
     root: options.toolchainRoot,
     dataRoot: options.dataRoot,
     config: () => core.currentConfig(),
-    build: async () => {
-      const marker = (await core.workspaceSnapshot()).files.find((file) => file.path === 'be');
-      if (!marker?.content.trim()) return {};
-      try {
-        return parseProjectBuild(JSON.parse(marker.content).build);
-      } catch {
-        return {};
-      }
-    },
+    build: projectBuild,
     runner: toolRunner,
     env: options.toolchainEnv,
     fetcher: options.fetcher,
@@ -75,6 +106,28 @@ export function createHostServices(options: Options) {
   const noArgs = z.tuple([]),
     nativePath = z.string().min(1).max(4096);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    componentsState: { args: noArgs, run: () => components.list() },
+    componentsSearch: {
+      args: z.tuple([hostParameterSchemas['components.search'].shape.query]),
+      run: (query) => components.search(query),
+    },
+    componentsInstall: {
+      args: z.tuple([hostParameterSchemas['components.install']]),
+      run: (request) => componentAction((hooks) => components.install(request, hooks)),
+    },
+    componentsImport: {
+      args: z.tuple([hostParameterSchemas['components.import']]),
+      run: (request) =>
+        componentAction((hooks) =>
+          request.kind === 'archive'
+            ? components.importArchive(request.path, request.expectedProjectRoot, hooks)
+            : components.importDirectory(request.path, request.expectedProjectRoot, hooks),
+        ),
+    },
+    componentsRemove: {
+      args: z.tuple([hostParameterSchemas['components.remove']]),
+      run: (request) => componentAction(() => components.remove(request)),
+    },
     runtimePluginViewInfo: {
       args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80)]),
       run: async (id, viewId) => {
@@ -357,6 +410,11 @@ export function createHostServices(options: Options) {
     return route.run(...(parsed.data as unknown[]));
   };
   const aliases: Record<string, [string, (params: any) => unknown[]]> = {
+    'components.state': ['componentsState', () => []],
+    'components.search': ['componentsSearch', (p) => [p.query]],
+    'components.install': ['componentsInstall', (p) => [p]],
+    'components.import': ['componentsImport', (p) => [p]],
+    'components.remove': ['componentsRemove', (p) => [p]],
     'runtime.plugins': ['runtimePluginsState', () => []],
     'runtime.context': ['runtimePluginContext', (p) => [p.id]],
     'runtime.configure': ['runtimePluginConfigure', (p) => [p.id, p.value]],

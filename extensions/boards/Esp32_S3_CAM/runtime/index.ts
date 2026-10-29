@@ -7,6 +7,7 @@ import { esp32S3Adapter } from '../device/adapter.js';
 import { Toolchains } from '../tools/toolchain.js';
 import { buildFlashArgs, buildProbeArgs } from '../device/programmer.js';
 import { toPartitionCsv } from '../layout/index.js';
+import { arduinoExtraProperties } from '../compiler/arduino-properties.js';
 import {
   compilerChoice,
   compilerConfig,
@@ -187,22 +188,64 @@ export function createEsp32S3Runtime(host: RuntimeHost): PlatformRuntime {
       }
       await fs.writeFile(path.join(stage, 'partitions.csv'), toPartitionCsv(config.partitions));
       const outputDirectory = await host.resetDirectory('.blode/build');
+      const componentSources = new Set(buildInputs.components?.sources ?? []);
+      for (const relative of buildInputs.components?.inputs ?? []) {
+        const componentRoot = buildInputs.components?.roots.find((root) => relative.startsWith(root + '/'));
+        if (!componentRoot || componentRoot.startsWith('libraries/')) continue;
+        if (/\.(?:c|cpp|cc|cxx|s)$/i.test(relative) && !componentSources.has(relative)) continue;
+        const source = await host.resolveWorkspacePath(relative);
+        const destination = path.join(stage, 'src', 'blode_components', relative);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.copyFile(source, destination);
+      }
+      const libraryArgs = (
+        await Promise.all(
+          (buildInputs.components?.arduinoLibraries ?? []).map((relative) =>
+            host.resolveWorkspacePath(relative),
+          ),
+        )
+      ).flatMap((directory) => ['--libraries', directory]);
+      const includeFlags = (
+        await Promise.all(
+          (buildInputs.components?.includeDirectories ?? []).map((relative) =>
+            host.resolveWorkspacePath(relative),
+          ),
+        )
+      ).map((directory) => `"-I${directory.replaceAll('\\', '/')}"`);
+      const fqbn = esp32S3Adapter.getFqbn(config);
+      const properties = await toolchains.runCli(
+        cppConfig,
+        [
+          'compile',
+          '--fqbn',
+          fqbn,
+          '--build-path',
+          outputDirectory,
+          ...libraryArgs,
+          '--show-properties=expanded',
+          stage,
+        ],
+        120_000,
+        true,
+      );
+      if (properties.code !== 0) throw new Error(properties.output || 'error.arduinoBuildProperties');
+      const additions = arduinoExtraProperties(
+        properties.stdout ?? properties.output,
+        [...optimizationFlags(buildInputs.settings), ...includeFlags],
+        buildInputs.cStandard,
+      );
       const result = await toolchains.runCli(
         cppConfig,
         [
           'compile',
           '--fqbn',
-          esp32S3Adapter.getFqbn(config),
+          fqbn,
           '--build-path',
           outputDirectory,
           '--warnings',
           'all',
-          '--build-property',
-          `compiler.c.extra_flags=${[...(buildInputs.cStandard ? [`-std=gnu${buildInputs.cStandard.slice(1)}`] : []), ...optimizationFlags(buildInputs.settings)].join(' ')}`,
-          '--build-property',
-          `compiler.cpp.extra_flags=${optimizationFlags(buildInputs.settings).join(' ')}`,
-          '--build-property',
-          'compiler.c.elf.extra_flags=-Wl,--gc-sections',
+          ...libraryArgs,
+          ...additions.flatMap((property) => ['--build-property', property]),
           '--build-property',
           `upload.maximum_size=${config.partitions.find((partition) => partition.type === 'app')!.size}`,
           stage,

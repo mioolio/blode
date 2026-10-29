@@ -106,6 +106,12 @@ async function fixture(t: TestContext, sourceId: 'STM32F103C8T6' | 'Esp32_S3_CAM
     async runCommand(command, args) {
       const tool = path.basename(command).replace(/\.exe$/i, '');
       commands.push({ tool, command, args });
+      if (args.includes('--show-properties=expanded'))
+        return {
+          code: 0,
+          output:
+            'compiler.cpp.flags=-Os\nrecipe.cpp.o.pattern=compile\ncompiler.c.extra_flags=-MMD -c\ncompiler.cpp.extra_flags=-MMD -c',
+        };
       if (tool.startsWith('st-'))
         return {
           code: 0,

@@ -30,12 +30,18 @@ test('ESP32 file/folder entries preserve local includes and refuse declared file
     versions: {},
   }));
   t.mock.method(Toolchains.prototype, 'runCli', async (_config: ProjectConfig, args: string[]) => {
+    if (args.includes('--show-properties=expanded'))
+      return {
+        code: 0,
+        output:
+          'compiler.cpp.flags=-Os\nrecipe.cpp.o.pattern=compile\ncompiler.c.extra_flags=-MMD -c\ncompiler.cpp.extra_flags=-MMD -c\ncompiler.c.elf.extra_flags=-Wl,--Map=firmware.map',
+      };
     compileCalls++;
     assert.equal(args[0], 'compile');
     const optimization = compileCalls === 1 ? '-Os' : compileCalls === 2 ? '-O0' : '-O2';
-    assert.ok(args.includes(`compiler.c.extra_flags=${optimization} -g`));
-    assert.ok(args.includes(`compiler.cpp.extra_flags=${optimization} -g`));
-    assert.ok(args.includes('compiler.c.elf.extra_flags=-Wl,--gc-sections'));
+    assert.ok(args.includes(`compiler.c.extra_flags=-MMD -c ${optimization} -g`));
+    assert.ok(args.includes(`compiler.cpp.extra_flags=-MMD -c ${optimization} -g`));
+    assert.ok(args.includes('compiler.c.elf.extra_flags=-Wl,--Map=firmware.map -Wl,--gc-sections'));
     assert.ok(args.every((value) => !value.includes('-flto')));
     const stage = args.at(-1)!;
     assert.match(await fs.readFile(path.join(stage, `${path.basename(stage)}.ino`), 'utf8'), /local.h/);

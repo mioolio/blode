@@ -32,6 +32,7 @@ const str = (v: MiValue | undefined) => (typeof v === 'string' ? v : '');
 
 /** Owns an explicit SWD attach session. Code edits use verified SRAM writes, never GDB load. */
 export class HardwareDebugger {
+  private spawnProcess: typeof spawn = spawn;
   private gdb: ChildProcessWithoutNullStreams | null = null;
   private server: ReturnType<typeof spawn> | null = null;
   private sequence = 0;
@@ -349,16 +350,27 @@ export class HardwareDebugger {
     this.snapshot.connection = 'connecting';
     this.snapshot.sessionId = randomUUID();
     const session = ++this.session;
+    let processFailure: Error | undefined;
+    const assertSession = () => {
+      if (processFailure) throw processFailure;
+      if (session !== this.session) throw new Error('error.operationCancelled');
+    };
+    const processFailed = (error: Error) => {
+      if (session !== this.session) return;
+      processFailure ??= error;
+      this.snapshot.message = processFailure.message;
+      void this.disconnect('error').catch((failure) => this.log(String(failure)));
+    };
     this.snapshot.message = '';
     this.snapshot.registers = [];
     this.snapshot.stack = [];
     this.snapshot.breakpoints = [];
     try {
       const tools = await this.tools(config);
-      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+      assertSession();
       if (!tools.gdb || !tools.server) throw new Error('error.debuggerToolsMissing');
       const command = (text: string) => {
-        if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+        assertSession();
         return this.command(text);
       };
       const reservation = net.createServer();
@@ -368,34 +380,41 @@ export class HardwareDebugger {
       });
       const port = (reservation.address() as net.AddressInfo).port;
       await new Promise<void>((r) => reservation.close(() => r()));
-      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
-      this.server = spawn(tools.server, debuggerServerArguments(profile, config, port, tools.scripts), {
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      this.server.stdout?.on('data', (b) => {
-        if (session === this.session) this.log(String(b));
-      });
-      this.server.stderr?.on('data', (b) => {
-        if (session === this.session) this.log(String(b));
-      });
-      this.server.once('error', (e) => {
-        if (this.session !== session) return;
-        this.snapshot.message = e.message;
-        void this.disconnect('error');
-      });
-      this.server.once('exit', () => {
-        if (this.session !== session) return;
-        if (this.active && this.snapshot.connection !== 'disconnected') {
-          this.snapshot.message = 'error.debuggerServerExited';
-          void this.disconnect('error');
-        }
-      });
+      assertSession();
+      this.server = this.spawnProcess(
+        tools.server,
+        debuggerServerArguments(profile, config, port, tools.scripts),
+        {
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      let serverOutput = '';
+      const serverLine = (bytes: Buffer) => {
+        if (session !== this.session) return;
+        serverOutput = (serverOutput + String(bytes)).slice(-8192);
+        this.log(String(bytes));
+      };
+      this.server.stdout?.on('data', serverLine);
+      this.server.stderr?.on('data', serverLine);
+      this.server.once('error', processFailed);
+      // close follows drained stdout/stderr, so the final USB/driver diagnostic is available.
+      this.server.once('close', (code, signal) =>
+        processFailed(
+          new Error(
+            serverOutput.trim()
+              ? `${profile.serverName}: ${serverOutput.trim()}`
+              : `${profile.serverName} exited (${signal ?? code ?? 'unknown'}).`,
+          ),
+        ),
+      );
       await new Promise<void>((resolve, reject) => {
         let tries = 0;
         const attempt = () => {
-          if (session !== this.session) {
-            reject(new Error('error.debuggerSessionChanged'));
+          try {
+            assertSession();
+          } catch (error) {
+            reject(error);
             return;
           }
           const socket = net.createConnection({ host: '127.0.0.1', port });
@@ -405,14 +424,14 @@ export class HardwareDebugger {
           });
           socket.once('error', () => {
             socket.destroy();
-            if (++tries >= 40) reject(new Error('error.debuggerServerStart'));
+            if (++tries >= 40) reject(new Error(serverOutput.trim() || 'error.debuggerServerStart'));
             else setTimeout(attempt, 150);
           });
         };
         attempt();
       });
-      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
-      this.gdb = spawn(tools.gdb, ['--interpreter=mi2', '--nx', '--quiet'], {
+      assertSession();
+      this.gdb = this.spawnProcess(tools.gdb, ['--interpreter=mi2', '--nx', '--quiet'], {
         windowsHide: true,
         stdio: 'pipe',
       });
@@ -425,25 +444,25 @@ export class HardwareDebugger {
         buffer = lines.pop() ?? '';
         for (const line of lines) this.consume(line);
       });
+      let gdbError = '';
       this.gdb.stderr.on('data', (b) => {
-        if (session === this.session) this.log(String(b));
-      });
-      this.gdb.stdin.on('error', (error) => {
         if (session !== this.session) return;
-        this.snapshot.message = error.message;
-        void this.disconnect('error');
+        gdbError = (gdbError + String(b)).slice(-8192);
+        this.log(String(b));
       });
-      this.gdb.once('error', (e) => {
-        if (this.session !== session) return;
-        this.snapshot.message = e.message;
-        void this.disconnect('error');
-      });
-      this.gdb.once('exit', () => {
-        if (this.session !== session) return;
-        if (this.snapshot.connection !== 'disconnected') void this.disconnect('error');
-      });
+      this.gdb.stdin.on('error', processFailed);
+      this.gdb.once('error', processFailed);
+      this.gdb.once('close', (code, signal) =>
+        processFailed(
+          new Error(
+            gdbError.trim()
+              ? `${profile.gdbName}: ${gdbError.trim()}`
+              : `${profile.gdbName} exited (${signal ?? code ?? 'unknown'}).`,
+          ),
+        ),
+      );
       await command('-gdb-set pagination off');
-      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+      assertSession();
       await command('-gdb-set mi-async on');
       await command('-gdb-set auto-load safe-path /nonexistent');
       if (profile.architecture === 'xtensa') {
@@ -453,15 +472,34 @@ export class HardwareDebugger {
       if (this.symbols)
         await command('-file-exec-and-symbols ' + JSON.stringify(this.symbols.replaceAll('\\', '/')));
       await command('-target-select extended-remote 127.0.0.1:' + port);
-      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+      assertSession();
       this.snapshot.connection = 'stopped';
-      await this.refresh();
+      // GDB may emit additional stop notifications after ^connected (including one per core).
+      // Restart a stale sample within this session; it is not a disconnect/reconnect conflict.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await this.refresh();
+          break;
+        } catch (error) {
+          assertSession();
+          if (
+            attempt >= 3 ||
+            this.snapshot.connection !== 'stopped' ||
+            !(error instanceof Error) ||
+            error.message !== 'error.debuggerSessionChanged'
+          )
+            throw error;
+        }
+      }
+      assertSession();
+      this.snapshot.message = '';
     } catch (e) {
+      const error = processFailure ?? (session !== this.session ? new Error('error.operationCancelled') : e);
       if (session === this.session) {
-        this.snapshot.message = e instanceof Error ? e.message : String(e);
+        this.snapshot.message = error instanceof Error ? error.message : String(error);
         await this.disconnect('error');
       }
-      throw e;
+      throw error;
     }
   }
   private refresh(): Promise<void> {
@@ -790,6 +828,7 @@ export class HardwareDebugger {
     for (const waiter of this.stopWaiters) waiter.reject(new Error('error.debuggerDisconnected'));
     this.stopWaiters.clear();
     this.snapshot.connection = state;
+    if (state === 'disconnected') this.snapshot.message = '';
     delete this.snapshot.sessionId;
     this.snapshot.registers = [];
     this.snapshot.instructions = [];

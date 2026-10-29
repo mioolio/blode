@@ -8,6 +8,8 @@ import zh from './locales/zh-CN.json';
 import en from './locales/en-US.json';
 
 const readOnly = new Set<RouteName>([
+  'components.state',
+  'components.search',
   'state.get',
   'ports.list',
   'probes.list',
@@ -37,6 +39,7 @@ const readOnly = new Set<RouteName>([
   'runtime.view.info',
 ]);
 const destructive = new Set<RouteName>([
+  'components.remove',
   'flash.run',
   'file.write',
   'config.set',

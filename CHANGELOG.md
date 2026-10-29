@@ -8,6 +8,9 @@
 
 ### 新增
 
+- **运行 → 组件库**：查看工程依赖与平台内置库；显式搜索 Arduino 官方库索引，选择版本并解析递归依赖；从宿主目录或 ZIP 导入。
+- 工程组件保存在 `libraries/`、`components/` 与 `blode.components.json`，构建前由宿主派生源码及包含目录；移除前检查文件变更与依赖者。
+- `components.state/search/install/import/remove` JSON-RPC／MCP 接口；写操作要求 `expectedProjectRoot` 和 `confirm: true`。
 - ESP32-S3 USB-JTAG 调试后端：Xtensa GDB、Espressif OpenOCD、架构对应的寄存器/内存、批量硬件断点和工具安装；实机验收待完成。
 - 模块独立语言声明：固定语言或语言列表，模块内 JSON 补全及 C 标准目录，不修改宿主全局语言清单。
 - `package:runtime` 生成可安装到二进制宿主的 JavaScript 模块目录和 ZIP，包含资源、语言清单、文件摘要及许可证；保留 Linux 工具执行权限。
@@ -36,6 +39,8 @@
 
 ### 修复
 
+- ESP32-S3 USB-JTAG 序列号留空时不再发送无效的显式设备选择；OpenOCD 自动选择，指定序列号时仍绑定对应设备。
+- ESP32 编译追加优化、语言标准和链接 `extra_flags`，保留 Arduino 平台原有编译配方及 `-c` 等必要选项。
 - ESP32 调试工具窗口误用 GNU Arm 安装文案、未找到状态仅显示横线；现在按平台显示工具，并分别检查 OpenOCD 程序与脚本。
 - 调试工具检查与安装过程中的平台切换、过期路径结果和无关安装历史串入当前窗口。
 - Windows 开发启动重复经历已知沙箱崩溃：仅在兼容模式真实挂载界面后保存本机记录，后续复用；支持显式强制沙箱。
@@ -50,6 +55,8 @@
 本轮使用方式和验收范围见[工作台交互更新](docs/internal/workbench-interaction.md)。
 
 详细契约与兼容边界见[运行时插件开发指南](docs/RUNTIME-PLUGINS.md)。
+
+组件安装、可迁移目录、删除保护与平台范围见[组件库指南](docs/COMPONENT-LIBRARIES.md)。本轮不将模拟界面或协议验证记为实机 USB-JTAG 验收。
 
 ## 0.2.3.6 — 2026-10-29
 

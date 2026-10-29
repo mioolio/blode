@@ -211,6 +211,26 @@ USB 或物理设备用 `DetectionCandidate.deviceId` 和 `config.runtime.deviceI
 
 遇到问题时，查看输出中的命令阶段和诊断，调整工程 `be.build.settings` 或插件 `manifest.json` 的工具参数。修改插件自身文件后须重启，并重新完成包内容对应的执行确认。不要在工程 ZIP 中分发本机绝对工具路径或 `.uel`。
 
+### 项目组件构建输入
+
+**运行 → 组件库**管理工程源码依赖。Arduino 库写入 `libraries/<name>/`，原生组件写入 `components/<name>/`，工程根目录的 `blode.components.json` 保存元数据与文件摘要。宿主在调用 `build(config, build)` 前派生可选的 `build.components`：
+
+| 字段                 | 含义                                                                  |
+| -------------------- | --------------------------------------------------------------------- |
+| `roots`              | 受管组件的工程相对根目录                                              |
+| `sources`            | 原生组件需要编译的工程相对源文件路径                                  |
+| `includeDirectories` | 原生组件的工程相对头文件搜索目录                                      |
+| `arduinoLibraries`   | 交给 Arduino CLI `--libraries` 的工程相对库容器目录，例如 `libraries` |
+| `inputs`             | 参与构建指纹的清单和实际组件文件，用于识别编译结果是否过期            |
+
+这些字段由宿主根据清单、文件和路径检查生成，**不能写入 `be.build.components`**，也不是插件清单里的编译 hook。插件应通过 `host.resolveWorkspacePath()` 解析路径，用参数数组调用工具，并将需要的原生源码加入自己的构建流程。未实现 Arduino 框架兼容的编译器应对非空 `arduinoLibraries` 返回明确错误。
+
+内置 ESP32 后端把原生组件复制到临时 sketch 的 `src/blode_components/`，添加头文件目录，并将 Arduino 工程库交给 CLI。内置 STM32 后端加入原生源码和头文件目录，排除组件目录的重复扫描；它不接受 Arduino 框架库。第三方 `plugin`／`runtime` 编译实现需要自行消费这些输入，复用 `host` 基底的模块沿用基底处理。
+
+组件管理只复制和索引库文件，不执行库中的脚本。AI 或宿主 UI 使用 `components.install/import/remove` 时仍需 `expectedProjectRoot` 与 `confirm: true`；组件并不替代运行时插件的代码授权和编译工具声明。操作与接口见[组件库](COMPONENT-LIBRARIES.md)和[AI 接口](AI-PIPE.md#组件库接口)。
+
+ESP32 模块维护者追加优化或语言选项时，应读取平台展开的编译属性，保留配方中的 `compiler.c.flags`／`compiler.cpp.flags` 及 `-c` 等参数，向对应 `extra_flags` 追加内容。标准 ESP32 模块已修复覆盖基础 flags 导致的编译问题。
+
 ## 调试与自定义界面
 
 内置 ESP32-S3 通过 USB-JTAG、Xtensa GDB 和 Espressif OpenOCD 提供调试；STM32F103C8T6 使用 ST-Link/SWD 和 Arm GDB。模块可通过 `baseRuntime` 复用这些架构，也可实现自己的后端。功能矩阵和实机验证状态见[硬件调试指南](HARDWARE-DEBUGGING.md)。

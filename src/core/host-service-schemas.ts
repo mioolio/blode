@@ -5,6 +5,31 @@ import { configSchema } from './config';
 import { RUNTIME_VIEW_KIND_PATTERN } from '../shared/plugins';
 const empty = z.object({}).strict();
 export const hostParameterSchemas = {
+  'components.state': empty,
+  'components.search': z.object({ query: z.string().trim().min(1).max(200) }).strict(),
+  'components.install': z
+    .object({
+      name: z.string().trim().min(1).max(160),
+      version: z.string().trim().min(1).max(80),
+      expectedProjectRoot: z.string().min(1).max(4096),
+      confirm: z.literal(true),
+    })
+    .strict(),
+  'components.import': z
+    .object({
+      path: z.string().min(1).max(4096),
+      kind: z.enum(['directory', 'archive']),
+      expectedProjectRoot: z.string().min(1).max(4096),
+      confirm: z.literal(true),
+    })
+    .strict(),
+  'components.remove': z
+    .object({
+      id: z.string().min(1).max(160),
+      expectedProjectRoot: z.string().min(1).max(4096),
+      confirm: z.literal(true),
+    })
+    .strict(),
   'runtime.plugins': empty,
   'runtime.context': z.object({ id: z.string().min(1).max(80) }).strict(),
   'runtime.configure': z

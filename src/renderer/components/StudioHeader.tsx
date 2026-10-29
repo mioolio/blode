@@ -309,6 +309,11 @@ export function StudioHeader({ studio }: { studio: Studio }) {
           run: () => window.dispatchEvent(new CustomEvent('blode:build-settings')),
           disabled: unavailable,
         },
+        {
+          label: 'components.title',
+          run: () => window.dispatchEvent(new CustomEvent('blode:component-libraries')),
+          disabled: !!busy,
+        },
         separator,
         {
           label: 'firmware.export',

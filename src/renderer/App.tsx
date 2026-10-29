@@ -15,6 +15,7 @@ import { HostFilePicker } from './components/HostFilePicker';
 import { ProjectPackageDialog } from './components/ProjectPackageDialog';
 import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { BuildSettingsLauncher } from './components/BuildSettingsLauncher';
+import { ComponentLibrariesLauncher } from './components/ComponentLibrariesLauncher';
 import { RuntimePluginTrustDialog } from './components/RuntimePluginTrustDialog';
 import { RuntimeContributions } from './components/RuntimeContributions';
 import { DesktopLifecycle } from './components/DesktopLifecycle';
@@ -131,6 +132,7 @@ function WorkspaceApp() {
       <ProjectPackageDialog studio={studio} />
       <ProjectSettingsDialog studio={studio} />
       <BuildSettingsLauncher studio={studio} />
+      <ComponentLibrariesLauncher studio={studio} />
       <RuntimePluginTrustDialog studio={studio} />
       <RuntimeContributions studio={studio} />
       <DesktopLifecycle studio={studio} />

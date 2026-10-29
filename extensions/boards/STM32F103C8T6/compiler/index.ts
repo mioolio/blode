@@ -32,6 +32,7 @@ const inputExtensions = new Set([
 const ignored = new Set(['node_modules', 'build', 'dist', 'out', 'objects', 'listings']);
 
 interface CompilationInputs {
+  includeDirectories?: string[];
   settings?: BuildSettings;
   tools?: { c: SelectedCompiler; cpp: SelectedCompiler; link: SelectedCompiler };
   cStandard?: ProjectBuildInputs['cStandard'];
@@ -346,6 +347,7 @@ export class Stm32Compiler {
   }
 
   private async inputs(build: ProjectBuildInputs): Promise<CompilationInputs> {
+    if (build.components?.arduinoLibraries.length) throw new Error('error.componentRequiresArduino');
     if (!build.entry) throw new Error('error.noBuildEntry');
     const root = this.host.projectRoot();
     const entry = build.entry === '.' ? root : await this.host.resolveWorkspacePath(build.entry);
@@ -361,6 +363,7 @@ export class Stm32Compiler {
       for (const item of await fs.readdir(directory, { withFileTypes: true })) {
         if (item.name.startsWith('.') || ignored.has(item.name.toLowerCase())) continue;
         const full = path.join(directory, item.name);
+        if (build.components?.roots.includes(path.relative(root, full).replaceAll('\\', '/'))) continue;
         if (item.isSymbolicLink()) continue;
         if (item.isDirectory()) await walk(full, depth + 1);
         else if (item.isFile() && inputExtensions.has(path.extname(item.name).toLowerCase())) {
@@ -370,6 +373,13 @@ export class Stm32Compiler {
       }
     }
     await walk(root, 0);
+    for (const relative of [
+      ...(build.components?.sources ?? []),
+      ...(build.components?.inputs.filter((file) => /\.(?:h|hh|hpp|inc)$/i.test(file)) ?? []),
+    ]) {
+      await this.host.resolveWorkspacePath(relative);
+      if (!all.includes(relative)) all.push(relative);
+    }
     all.sort();
     const projects = all.filter((file) => file.endsWith('.uvprojx'));
     if (projects.length > 1) throw new Error('error.keilTargetAmbiguous');
@@ -407,12 +417,14 @@ export class Stm32Compiler {
         if (!all.includes(relative)) throw new Error('error.projectFileMissing');
       }
     const selected = (relative: string) =>
-      declared ? declared.has(relative) || path.join(root, relative) === entry : inScope(relative);
+      build.components?.sources.includes(relative) ||
+      (declared ? declared.has(relative) || path.join(root, relative) === entry : inScope(relative));
     const sources = all.filter(
       (relative) => sourceExtensions.has(path.extname(relative).toLowerCase()) && selected(relative),
     );
     if (!sources.length) throw new Error('error.noBuildSources');
     return {
+      includeDirectories: build.components?.includeDirectories,
       keil,
       settings: build.settings,
       cStandard: build.cStandard,
@@ -516,6 +528,7 @@ export class Stm32Compiler {
     const includes = [
       ...new Set([
         this.host.projectRoot(),
+        ...(inputs.includeDirectories?.map((file) => path.join(this.host.projectRoot(), file)) ?? []),
         ...(inputs.keil?.includes.map((file) => path.join(this.host.projectRoot(), file)) ?? []),
         ...inputs.headers.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),
         ...inputs.sources.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),
@@ -729,6 +742,7 @@ export class Stm32Compiler {
     const includes = [
       ...new Set([
         this.host.projectRoot(),
+        ...(inputs.includeDirectories?.map((file) => path.join(this.host.projectRoot(), file)) ?? []),
         ...(inputs.keil?.includes.map((file) => path.join(this.host.projectRoot(), file)) ?? []),
         ...inputs.headers.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),
         ...inputs.sources.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),

@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { withComponentBuildInputs } from './component-build';
 import type {
   AppState,
   BuildResult,
@@ -553,7 +554,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     // The be descriptor repeats the configuration. Normalize its runtime options
     // too, while retaining all build inputs and the expected target chip identity.
     return createHash('sha256')
-      .update('blode-c-standards-v1')
+      .update('blode-components-arduino-recipes-v2')
       .update(
         JSON.stringify(
           (await runtimePlugins.state()).plugins.map(({ id, fingerprint }) => [id, fingerprint]),
@@ -566,9 +567,11 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   const currentFingerprint = async (source?: Awaited<ReturnType<typeof readProjectFiles>>) => {
     let value = await fingerprint(source);
     const runtime = runtimeById.get(config.boardId);
+    const inputs = await withComponentBuildInputs(projectRoot, projectBuild);
     const extra = [
-      ...(runtime?.buildInputs ? await runtime.buildInputs(config, projectBuild) : []),
-      ...(await runtimePlugins.compilerInputs(config, projectBuild)),
+      ...(runtime?.buildInputs ? await runtime.buildInputs(config, inputs) : []),
+      ...(await runtimePlugins.compilerInputs(config, inputs)),
+      ...(inputs.components?.inputs ?? []),
     ];
     for (const input of [...new Set([...(runtime?.sourceInputs ?? []), ...extra])].sort()) {
       const bytes = await fs
@@ -850,7 +853,8 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
           );
         if (languageDiagnostics.some((diagnostic) => diagnostic.severity === 'error'))
           throw new Error('error.languageRulesInvalid');
-        const result = await runtimePlugins.build(runtimeFor(config.boardId), config, projectBuild);
+        const inputs = await withComponentBuildInputs(projectRoot, projectBuild);
+        const result = await runtimePlugins.build(runtimeFor(config.boardId), config, inputs);
         if (result.success && before === (await currentFingerprint())) {
           lastBuild = result;
           builtFingerprint = before;

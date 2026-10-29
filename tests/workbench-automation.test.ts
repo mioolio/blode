@@ -96,3 +96,44 @@ test('UI automation is targeted and only the correct renderer can acknowledge it
   await assert.rejects(() => broker.command({ action: 'home', target: 'missing' }), /uiUnavailable/);
   broker.dispose();
 });
+
+test('component automation validates confirmation and target project before dispatch', async () => {
+  const calls: { method: string; params: unknown }[] = [];
+  const api = {
+    automationInvoke: async (method: string, params: unknown) => {
+      calls.push({ method, params });
+      return null;
+    },
+  } as unknown as CoreApi;
+  const expectedProjectRoot = '/target/project';
+  const requests = [
+    {
+      method: 'components.install',
+      params: { name: 'Fixture', version: '1.0.0', expectedProjectRoot, confirm: true },
+    },
+    {
+      method: 'components.import',
+      params: { path: '/target/library.zip', kind: 'archive', expectedProjectRoot, confirm: true },
+    },
+    {
+      method: 'components.remove',
+      params: { id: 'component-1234567890abcdef', expectedProjectRoot, confirm: true },
+    },
+  ];
+  for (const { method, params } of requests) {
+    const { confirm: _confirm, ...missingConfirmation } = params;
+    await assert.rejects(dispatch(api, new EventBuffer(), method, missingConfirmation));
+    const { expectedProjectRoot: _root, ...missingProject } = params;
+    await assert.rejects(dispatch(api, new EventBuffer(), method, missingProject));
+    await assert.rejects(dispatch(api, new EventBuffer(), method, { ...params, confirm: false }));
+  }
+  assert.deepEqual(calls, []);
+  for (const { method, params } of requests) await dispatch(api, new EventBuffer(), method, params);
+  await dispatch(api, new EventBuffer(), 'components.state', {});
+  await dispatch(api, new EventBuffer(), 'components.search', { query: 'Fixture' });
+  assert.deepEqual(calls, [
+    ...requests,
+    { method: 'components.state', params: {} },
+    { method: 'components.search', params: { query: 'Fixture' } },
+  ]);
+});

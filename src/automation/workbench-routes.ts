@@ -82,6 +82,13 @@ export const workbenchRouteSchemas = {
 export type WorkbenchRouteName = keyof typeof workbenchRouteSchemas;
 
 export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
+  'components.state': 'List project components and platform-provided libraries.',
+  'components.search': 'Search the Arduino library catalog on explicit request.',
+  'components.install':
+    'Install a selected Arduino library version and dependencies into the expected project; requires confirm=true.',
+  'components.import': 'Import a local host folder or ZIP into the expected project; requires confirm=true.',
+  'components.remove':
+    'Remove an unchanged managed component from the expected project; requires confirm=true.',
   'runtime.context': 'Read the runtime device context and declared capabilities.',
   'runtime.configure': 'Update selected runtime device values using its declared configuration constraints.',
   'runtime.device':

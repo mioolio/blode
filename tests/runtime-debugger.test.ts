@@ -55,6 +55,60 @@ test('an older asynchronous tool refresh cannot restore a previous target', asyn
   assert.deepEqual(configurations, ['Esp32_S3_CAM', 'Esp32_S3_CAM']);
 });
 
+test('pending provider connection pins the target, rejects parallel attach, and cannot revive after cancellation', async (t) => {
+  let attachStarted!: () => void, finishAttach!: () => void;
+  const started = new Promise<void>((resolve) => {
+    attachStarted = resolve;
+  });
+  const finish = new Promise<void>((resolve) => {
+    finishAttach = resolve;
+  });
+  const arm = getBoardAdapter('STM32F103C8T6').createConfig();
+  const config = { ...arm, boardId: 'Pending_Plugin' };
+  const calls: string[] = [];
+  const plugin = {
+    id: config.boardId,
+    trust: 'permanent',
+    manifest: {
+      debugger: { mode: 'replace' },
+      compiler: {},
+    },
+  } as RuntimePluginInfo;
+  const manager = {
+    state: async () => ({ plugins: [plugin], errors: [] }),
+    assertTrusted: async () => {},
+    invokeDebug: async (_id: string, method: string) => {
+      calls.push(method);
+      if (method === 'connect') {
+        attachStarted();
+        await finish;
+      }
+      if (method === 'state') return stopped();
+    },
+  } as unknown as RuntimePlugins;
+  const debug = new RuntimeDebugger(
+    '.',
+    '.',
+    undefined,
+    () => manager,
+    () => config,
+  );
+  t.mock.method(HardwareDebugger.prototype, 'disconnect', async () => {});
+  const connecting = debug.connect(config);
+  const cancelled = assert.rejects(connecting, /operationCancelled/);
+  await started;
+  await assert.rejects(debug.connect(arm), /debuggerBusy/);
+  await debug.state(getBoardAdapter('Esp32_S3_CAM').createConfig());
+  assert.equal((debug as any).selectedConfig.boardId, config.boardId);
+  await debug.disconnect();
+  await assert.rejects(debug.connect(arm), /debuggerBusy/);
+  finishAttach();
+  await cancelled;
+  assert.equal(debug.active, false);
+  assert.equal((debug as any).providerId, undefined);
+  assert.equal(calls.filter((method) => method === 'disconnect').length, 2);
+});
+
 async function fixture(t: TestContext, mode: RuntimePluginManifest['debugger']['mode']) {
   const root = await fs.mkdtemp(path.join(tmpdir(), 'blode-runtime-debugger-'));
   const marker = path.join(root, '.uel');

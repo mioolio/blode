@@ -18,6 +18,10 @@ The latest internal update also adds ESP32-S3 native USB-JTAG debugging with Xte
 
 Both standard modules now use ten responsibility directories: support, device, runtime, constraints, UI, compiler, debugger, layout, languages and tools. Modules own their language declarations and JSON data. `package:runtime` produces standalone JavaScript packages for compatible binary hosts; users install them under the host data directory's `plugins/<id>/`, without host source code or TypeScript. New manifest fields require a host containing this internal update; this change does not produce a new release binary. See the [module guide](RUNTIME-PLUGINS.md) and [module language contract](MODULE-LANGUAGES.md).
 
+**Run → Component libraries** now separates project dependencies from platform-provided libraries. Search the official Arduino library index, select a version and install its dependencies, or import a folder or ZIP from the host computer. Managed sources live in `libraries/` or `components/`, alongside a portable `blode.components.json` manifest. Removal refuses modified libraries or libraries still required by another component. ESP32 uses Arduino libraries and native components; STM32 native builds accept native C/C++ components, not Arduino framework libraries. See the [component library guide](COMPONENT-LIBRARIES.md).
+
+This update also fixes ESP32-S3 debug connections with an empty USB serial selection and preserves platform compiler flags, including `-c`, when appending project `extra_flags`. Physical USB-JTAG acceptance remains pending; no new release binaries are produced by this source update.
+
 To try the source build:
 
 ```sh
@@ -62,6 +66,8 @@ Build a selected file or directory without connecting a device. Firmware operati
 Serial communication supports UTF-8/HEX, configurable framing, flow control and line endings. The debugger opens a separate desktop window or browser tab for STM32/ST-Link or ESP32-S3 USB-JTAG, with registers, disassembly, stack, breakpoints, memory and local ELF inspection.
 
 Portable project ZIP export collects supported external dependencies, rewrites archive-copy paths and includes a dependency manifest. JSON-RPC and MCP expose validated project, Git, build, firmware, debugger, language-index and UI actions.
+
+Component library APIs add explicit search, installation, host-folder/ZIP import and guarded removal. Every mutation requires `expectedProjectRoot` and `confirm: true`. Build inputs are derived by the host from the component manifest; `build.components` is not a `be` configuration field.
 
 ## Installation
 
@@ -150,7 +156,7 @@ The desktop command aliases the lightweight `package:lite` flow. The Web build c
 
 - [0.2.3.6 release notes](releases/0.2.3.6.md) and [changelog](../CHANGELOG.md)
 - [Language rules](LANGUAGE-RULES.md), [AI completion](AI-COMPLETIONS.md), [collaboration](COLLABORATION.md)
-- [Git](GIT.md), [project and build settings](PROJECTS.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
+- [Git](GIT.md), [project and build settings](PROJECTS.md), [component libraries](COMPONENT-LIBRARIES.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
 - [STM32](STM32.md), [ESP32-S3](../extensions/boards/Esp32_S3_CAM/README.md), [toolchains](TOOLCHAINS.md)
 - [Web host](WEB-HOST.md), [development](DEVELOPMENT.md), [architecture](ARCHITECTURE.md)
 - [Platform support](PLATFORM-SUPPORT.md), [roadmap](ROADMAP.md), [feature guide](NEW-FEATURES.md)

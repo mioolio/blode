@@ -108,6 +108,8 @@ export class RuntimeDebugger extends HardwareDebugger {
   private providerActive = false;
   private selectedConfig: ProjectConfig | undefined;
   private configurationRevision = 0;
+  private connectingProvider = false;
+  private connectionRevision = 0;
   constructor(
     root: string,
     dataRoot: string,
@@ -205,7 +207,7 @@ export class RuntimeDebugger extends HardwareDebugger {
     }
   }
   override async state(config?: ProjectConfig): Promise<DebuggerState> {
-    if (config && !this.active) {
+    if (config && !this.active && !this.connectingProvider) {
       this.selectedConfig = structuredClone(config);
       this.configurationRevision++;
     }
@@ -237,22 +239,36 @@ export class RuntimeDebugger extends HardwareDebugger {
     return parsed.data;
   }
   override async connect(config: ProjectConfig): Promise<void> {
-    if (this.active) throw new Error('error.debuggerBusy');
+    if (this.active || this.connectingProvider) throw new Error('error.debuggerBusy');
+    this.connectingProvider = true;
+    const revision = ++this.connectionRevision;
     this.selectedConfig = structuredClone(config);
     this.configurationRevision++;
-    const plugin = await this.selection(config.boardId);
-    if (!plugin) return super.connect(config);
-    if (plugin.manifest.debugger.mode === 'none') throw new Error('error.runtimeDebuggerUnsupported');
-    this.providerId = plugin.id;
+    let plugin: RuntimePluginInfo | undefined;
     try {
-      await this.invoke(plugin, 'connect', [config], () =>
-        super.connect({ ...config, boardId: plugin.manifest.compiler.baseRuntime! }),
-      );
-      this.providerActive = true;
+      plugin = await this.selection(config.boardId);
+      if (revision !== this.connectionRevision) throw new Error('error.operationCancelled');
+      if (!plugin) {
+        await super.connect(config);
+      } else {
+        if (plugin.manifest.debugger.mode === 'none') throw new Error('error.runtimeDebuggerUnsupported');
+        this.providerId = plugin.id;
+        await this.invoke(plugin, 'connect', [config], () =>
+          super.connect({ ...config, boardId: plugin!.manifest.compiler.baseRuntime! }),
+        );
+        if (revision !== this.connectionRevision) {
+          // A provider may finish attaching after its earlier cancellation callback returned.
+          await this.invoke(plugin, 'disconnect', [], async () => {}).catch(() => {});
+          throw new Error('error.operationCancelled');
+        }
+        this.providerActive = true;
+      }
     } catch (error) {
       this.providerId = undefined;
       this.providerActive = false;
       throw error;
+    } finally {
+      this.connectingProvider = false;
     }
   }
   override async action(action: DebuggerAction): Promise<void> {
@@ -263,6 +279,7 @@ export class RuntimeDebugger extends HardwareDebugger {
     await this.invoke(plugin, 'action', [action], () => super.action(action));
   }
   override async disconnect(state: 'disconnected' | 'error' = 'disconnected'): Promise<void> {
+    this.connectionRevision++;
     const id = this.providerId;
     try {
       const plugin = id ? await this.selection(id) : undefined;
@@ -389,6 +406,7 @@ export class RuntimeDebugger extends HardwareDebugger {
     await this.invoke(plugin, 'selectGdb', [file], () => super.selectGdb(file, expectedProfileId));
   }
   override async install(...args: Parameters<HardwareDebugger['install']>): Promise<void> {
+    if (this.connectingProvider) throw new Error('error.debuggerBusy');
     if (args[2]?.config && !this.active) {
       this.selectedConfig = structuredClone(args[2].config);
       this.configurationRevision++;

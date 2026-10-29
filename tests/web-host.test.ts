@@ -81,6 +81,42 @@ test(
       assert.equal(state.projectRoot, await fs.realpath(workspace));
       assert.ok(state.files.some((file: { path: string }) => file.path === 'main.c'));
       assert.equal(state.recentProjects[0].path, await fs.realpath(workspace));
+      const componentSource = path.join(temporary, 'LocalFixture');
+      await fs.mkdir(componentSource);
+      await fs.writeFile(path.join(componentSource, 'fixture.h'), 'int fixture(void);');
+      await fs.writeFile(path.join(componentSource, 'fixture.c'), 'int fixture(void) { return 42; }');
+      const importRequest = {
+        path: componentSource,
+        kind: 'directory',
+        expectedProjectRoot: state.projectRoot,
+        confirm: true,
+      };
+      const missingConfirmation = await rpc('componentsImport', [{ ...importRequest, confirm: false }]);
+      assert.notEqual(missingConfirmation.status, 200);
+      await missingConfirmation.text();
+      await assert.rejects(fs.access(path.join(workspace, 'blode.components.json')));
+      const wrongProject = await rpc('componentsImport', [
+        { ...importRequest, expectedProjectRoot: temporary },
+      ]);
+      assert.notEqual(wrongProject.status, 200);
+      await wrongProject.text();
+      const componentImport = await rpc('componentsImport', [importRequest]);
+      assert.equal(componentImport.status, 200, await componentImport.clone().text());
+      const imported = await componentImport.json();
+      assert.equal(imported.components.length, 1);
+      assert.equal(imported.components[0].name, 'LocalFixture');
+      const refreshed = await (await rpc('getState', [])).json();
+      assert.ok(
+        refreshed.files.some((file: { path: string }) => file.path === 'components/LocalFixture/fixture.h'),
+      );
+      const componentState = await (await rpc('componentsState', [])).json();
+      assert.equal(componentState.components[0].id, imported.components[0].id);
+      const componentRemove = await rpc('componentsRemove', [
+        { id: imported.components[0].id, expectedProjectRoot: state.projectRoot, confirm: true },
+      ]);
+      assert.equal(componentRemove.status, 200, await componentRemove.clone().text());
+      assert.equal((await componentRemove.json()).components.length, 0);
+      await assert.rejects(fs.access(path.join(workspace, 'components/LocalFixture')));
       const toolsResponse = await rpc('toolVersionsState', []);
       assert.equal(toolsResponse.status, 200);
       const catalog = await toolsResponse.json();
