@@ -3,9 +3,44 @@ import { HardwareDebugger } from './hardware-debugger';
 import type { RuntimePlugins } from './runtime-plugins';
 import type { DebuggerAction, DebuggerState, DebuggerStorage, ProjectConfig } from '../shared/contracts';
 import type { RuntimePluginInfo } from '../shared/plugins';
+import { getDebuggerProfile } from '../shared/debugger-profiles';
+import {
+  breakpointLocationsSchema,
+  debuggerPatchSchema,
+  debuggerAssembleSchema,
+  type DebuggerPatchRequest,
+  type DebuggerPatchResult,
+  type DebuggerBreakpointResult,
+} from '../shared/debugger-edit';
 
 const text = z.string().max(16384);
 const debuggerStateSchema = z.object({
+  profile: z
+    .object({
+      id: z.enum(['STM32F103C8T6', 'Esp32_S3_CAM']),
+      architecture: z.enum(['arm-thumb', 'xtensa']),
+      elfMachine: z.number().int(),
+      gdbName: text,
+      serverName: text,
+      transport: z.enum(['swd', 'usb-jtag']),
+      canPatchInstructions: z.boolean(),
+      canAssemble: z.boolean(),
+      registerNames: z.array(text).max(128),
+      stackPointer: text,
+      statusRegister: text,
+      memoryRegions: z
+        .array(
+          z.object({
+            name: text,
+            start: z.number().int().nonnegative(),
+            end: z.number().int().nonnegative(),
+            kind: z.enum(['ram', 'flash']),
+          }),
+        )
+        .max(32),
+    })
+    .optional(),
+  sessionId: z.string().max(128).optional(),
   connection: z.enum(['disconnected', 'connecting', 'stopped', 'running', 'error']),
   tools: z.object({ gdb: z.boolean(), server: z.boolean() }),
   message: text,
@@ -19,7 +54,15 @@ const debuggerStateSchema = z.object({
   breakpoints: z.array(z.object({ id: text, location: text })).max(4096),
   log: z.array(text).max(4096),
   instructions: z
-    .array(z.object({ address: text, function: text.optional(), offset: text.optional(), instruction: text }))
+    .array(
+      z.object({
+        address: text,
+        function: text.optional(),
+        offset: text.optional(),
+        instruction: text,
+        opcodes: text.optional(),
+      }),
+    )
     .max(8192)
     .optional(),
   updatedAt: text.optional(),
@@ -57,6 +100,7 @@ const empty = (message = ''): DebuggerState => ({
 export class RuntimeDebugger extends HardwareDebugger {
   private providerId: string | undefined;
   private providerActive = false;
+  private selectedConfig: ProjectConfig | undefined;
   constructor(
     root: string,
     dataRoot: string,
@@ -93,6 +137,12 @@ export class RuntimeDebugger extends HardwareDebugger {
         return this.memory(z.number().parse(args[0]), z.number().parse(args[1]));
       case 'breakpoint':
         return this.breakpoint(string(0, 1024), args[1] === undefined ? undefined : string(1, 80));
+      case 'breakpoints':
+        return this.breakpoints(breakpointLocationsSchema.parse(args[0]));
+      case 'patch':
+        return this.patch(debuggerPatchSchema.parse(args[0]));
+      case 'assemble':
+        return this.assemble(z.number().parse(args[0]), string(1, 512));
       case 'symbolsFile':
         return this.symbolsFile(string(0));
       case 'selectGdb':
@@ -109,7 +159,7 @@ export class RuntimeDebugger extends HardwareDebugger {
     }
   }
   private async selection(
-    id = this.providerId ?? this.config()?.boardId,
+    id = this.providerId ?? this.selectedConfig?.boardId ?? this.config()?.boardId,
   ): Promise<RuntimePluginInfo | undefined> {
     if (!id) return undefined;
     return (await this.plugins()?.state())?.plugins.find((item) => item.id === id);
@@ -129,7 +179,7 @@ export class RuntimeDebugger extends HardwareDebugger {
     )
       throw new Error('error.runtimePluginCapability');
     if (plugin.manifest.debugger.mode === 'builtin') {
-      if (plugin.manifest.compiler.baseRuntime !== 'STM32F103C8T6')
+      if (!getDebuggerProfile(plugin.manifest.compiler.baseRuntime ?? ''))
         throw new Error('error.runtimeDebuggerUnsupported');
       return fallback();
     }
@@ -139,7 +189,7 @@ export class RuntimeDebugger extends HardwareDebugger {
     } catch (error) {
       if (
         plugin.manifest.debugger.mode === 'extend' &&
-        plugin.manifest.compiler.baseRuntime === 'STM32F103C8T6' &&
+        !!getDebuggerProfile(plugin.manifest.compiler.baseRuntime ?? '') &&
         error instanceof Error &&
         error.message === 'error.runtimePluginCapability'
       )
@@ -147,17 +197,23 @@ export class RuntimeDebugger extends HardwareDebugger {
       throw error;
     }
   }
-  override async state(): Promise<DebuggerState> {
+  override async state(config?: ProjectConfig): Promise<DebuggerState> {
+    if (config && !this.active) this.selectedConfig = structuredClone(config);
+    const current = this.selectedConfig ?? this.config();
     const plugin = await this.selection();
-    if (!plugin) return super.state();
+    if (!plugin) return super.state(current);
     if (plugin.manifest.debugger.mode === 'none') return empty('error.runtimeDebuggerUnsupported');
     if (plugin.trust === 'required') return empty('error.runtimePluginTrustRequired');
-    const base = plugin.manifest.debugger.mode === 'extend' ? await super.state() : empty();
+    const native =
+      current && plugin.manifest.compiler.baseRuntime
+        ? { ...current, boardId: plugin.manifest.compiler.baseRuntime }
+        : current;
+    const base = plugin.manifest.debugger.mode === 'extend' ? await super.state(native) : empty();
     const result = await this.invoke<unknown>(
       plugin,
       'state',
       plugin.manifest.debugger.mode === 'extend' ? [base] : [],
-      () => super.state(),
+      () => super.state(native),
     );
     const parsed = debuggerStateSchema.safeParse(
       plugin.manifest.debugger.mode === 'extend' && result && typeof result === 'object'
@@ -169,6 +225,7 @@ export class RuntimeDebugger extends HardwareDebugger {
   }
   override async connect(config: ProjectConfig): Promise<void> {
     if (this.active) throw new Error('error.debuggerBusy');
+    this.selectedConfig = structuredClone(config);
     const plugin = await this.selection(config.boardId);
     if (!plugin) return super.connect(config);
     if (plugin.manifest.debugger.mode === 'none') throw new Error('error.runtimeDebuggerUnsupported');
@@ -240,6 +297,60 @@ export class RuntimeDebugger extends HardwareDebugger {
     if (!plugin) return super.breakpoint(location, removeId);
     await this.invoke(plugin, 'breakpoint', [location, removeId], () => super.breakpoint(location, removeId));
   }
+  override async breakpoints(locations: string[]): Promise<DebuggerBreakpointResult[]> {
+    const parsed = breakpointLocationsSchema.safeParse(locations);
+    if (!parsed.success) throw new Error('rpc.invalidParams');
+    const plugin = await this.selection();
+    if (!plugin) return super.breakpoints(locations);
+    const result = await this.invoke<unknown>(plugin, 'breakpoints', [locations], () =>
+      super.breakpoints(locations),
+    );
+    const output = z
+      .array(
+        z.object({
+          location: text,
+          id: text.optional(),
+          status: z.enum(['added', 'existing', 'failed']),
+          error: text.optional(),
+        }),
+      )
+      .max(128)
+      .safeParse(result);
+    if (!output.success || output.data.length !== locations.length)
+      throw new Error('error.runtimePluginResult');
+    return output.data;
+  }
+  override async patch(request: DebuggerPatchRequest): Promise<DebuggerPatchResult> {
+    const parsed = debuggerPatchSchema.safeParse(request);
+    if (!parsed.success) throw new Error('rpc.invalidParams');
+    const plugin = await this.selection();
+    if (!plugin) return super.patch(parsed.data);
+    if ((await this.state()).sessionId !== parsed.data.sessionId)
+      throw new Error('error.debuggerSessionChanged');
+    const result = await this.invoke<unknown>(plugin, 'patch', [parsed.data], () => super.patch(parsed.data));
+    const output = z
+      .object({
+        address: z.number().int().nonnegative().max(0xffffffff),
+        before: z.string().regex(/^(?:[\da-fA-F]{4}|[\da-fA-F]{8})$/),
+        after: z.string().regex(/^(?:[\da-fA-F]{4}|[\da-fA-F]{8})$/),
+        resumed: z.boolean(),
+      })
+      .safeParse(result);
+    if (!output.success) throw new Error('error.runtimePluginResult');
+    return output.data;
+  }
+  override async assemble(address: number, source: string): Promise<string> {
+    const parsed = debuggerAssembleSchema.safeParse({ address, source });
+    if (!parsed.success) throw new Error('rpc.invalidParams');
+    const plugin = await this.selection();
+    if (!plugin) return super.assemble(address, source);
+    const result = await this.invoke<unknown>(plugin, 'assemble', [address, source], () =>
+      super.assemble(address, source),
+    );
+    if (typeof result !== 'string' || !/^(?:[\da-fA-F]{4}|[\da-fA-F]{8})$/.test(result))
+      throw new Error('error.runtimePluginResult');
+    return result;
+  }
   override async symbolsFile(file: string): Promise<string> {
     const plugin = await this.selection();
     if (!plugin) return super.symbolsFile(file);
@@ -262,8 +373,17 @@ export class RuntimeDebugger extends HardwareDebugger {
     await this.invoke(plugin, 'selectGdb', [file], () => super.selectGdb(file));
   }
   override async install(...args: Parameters<HardwareDebugger['install']>): Promise<void> {
+    if (args[2]?.config && !this.active) this.selectedConfig = structuredClone(args[2].config);
     const plugin = await this.selection();
     if (!plugin) return super.install(...args);
-    await this.invoke(plugin, 'install', args, () => super.install(...args));
+    await this.invoke(plugin, 'install', args, () =>
+      super.install(args[0], args[1], {
+        ...args[2],
+        config:
+          this.selectedConfig && plugin.manifest.compiler.baseRuntime
+            ? { ...this.selectedConfig, boardId: plugin.manifest.compiler.baseRuntime }
+            : args[2]?.config,
+      }),
+    );
   }
 }

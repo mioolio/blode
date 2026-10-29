@@ -4,6 +4,11 @@ import { aiParameterSchemas } from '../core/ai-schemas';
 import { collaborationSchemas } from '../core/collaboration-schemas';
 import { uiCommandSchema } from '../core/ui-commands';
 import { hostParameterSchemas } from '../core/host-service-schemas';
+import {
+  breakpointLocationsSchema,
+  debuggerPatchSchema,
+  debuggerAssembleSchema,
+} from '../shared/debugger-edit';
 
 const empty = z.object({}).strict();
 const path = z.string().min(1).max(4096);
@@ -33,7 +38,7 @@ export const workbenchRouteSchemas = {
       confirm,
     })
     .strict(),
-  'debugger.state': empty,
+  'debugger.state': z.object({ config: configSchema.optional() }).strict(),
   'debugger.open': empty,
   'debugger.symbols.set': z.object({ path }).strict(),
   'debugger.connect': z.object({ config: configSchema }).strict(),
@@ -46,8 +51,11 @@ export const workbenchRouteSchemas = {
   'debugger.memory': z
     .object({ address: z.number().int().min(0).max(0xffffffff), length: z.number().int().min(1).max(4096) })
     .strict(),
+  'debugger.breakpoints': z.object({ locations: breakpointLocationsSchema }).strict(),
+  'debugger.patch': debuggerPatchSchema,
+  'debugger.assemble': debuggerAssembleSchema,
   'debugger.storage': empty,
-  'debugger.tools.install': z.object({ confirm }).strict(),
+  'debugger.tools.install': z.object({ confirm, config: configSchema.optional() }).strict(),
   'debugger.gdb.set': z.object({ path }).strict(),
   'ui.state': empty,
   'ui.command': uiCommandSchema,
@@ -106,13 +114,22 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
   'firmware.export':
     'Export the verified build to an absolute path. Existing files require confirmOverwrite=true.',
   'firmware.flash': 'Flash a prepared selection after target validation; confirm=true is required.',
-  'debugger.state': 'Read the shared hardware debugger state.',
+  'debugger.state':
+    'Read shared debugger state and architecture capabilities; config selects a target and tools before connecting.',
   'debugger.open': 'Open the separate hardware debugger window.',
-  'debugger.symbols.set': 'Select ARM ELF symbols using an absolute native path, without flashing.',
-  'debugger.connect': 'Attach the debugger to the selected ST-Link; never downloads firmware.',
+  'debugger.symbols.set':
+    'Select an ELF matching the chosen target architecture, using an absolute native path without flashing.',
+  'debugger.connect':
+    'Attach to STM32 ST-Link or ESP32-S3 USB-JTAG using the supplied config; never downloads firmware.',
   'debugger.action': 'Continue, pause, step or disconnect the shared debugger.',
   'debugger.breakpoint': 'Add a breakpoint or remove its numeric identifier.',
   'debugger.memory': 'Read up to 4096 bytes of real target memory while paused.',
+  'debugger.breakpoints':
+    'Add up to 128 breakpoints while paused; return individual added/existing/failed results.',
+  'debugger.patch':
+    'Replace one SRAM Thumb instruction with expected-byte comparison and readback verification. Requires confirm=true. Running targets require pauseAndResume=true; failures remain paused. Flash is not rewritten.',
+  'debugger.assemble':
+    'Assemble one Thumb instruction at an address using the selected GNU tools and return bytes without writing hardware.',
   'debugger.storage': 'Inspect the selected local ELF file and segments.',
   'debugger.tools.install': 'Install GNU debugger tools with confirm=true.',
   'debugger.gdb.set': 'Set a trusted native GDB executable path.',

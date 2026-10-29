@@ -45,7 +45,8 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
     (board) => board.id === session?.draft.config.boardId,
   )?.runtimePlugin;
   const compilerPlugins = (studio.state?.boards ?? []).flatMap((board) =>
-    board.runtimePlugin?.compiler.mode === 'plugin' && board.runtimePlugin.compiler.defaultTool
+    (board.runtimePlugin?.compiler.mode === 'plugin' && board.runtimePlugin.compiler.defaultTool) ||
+    (board.runtimePlugin?.compiler.mode === 'runtime' && board.runtimePlugin.compiler.managedTools?.length)
       ? [board.runtimePlugin]
       : [],
   );
@@ -197,8 +198,10 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
               <optgroup label={t('buildSettings.pluginCompilers')}>
                 {compilerPlugins.map((plugin) => (
                   <option key={plugin.id} value={`plugin:${plugin.id}`}>
-                    {plugin.name} · {plugin.compiler.defaultTool!.id}
-                    {plugin.compiler.defaultTool!.version ? ` ${plugin.compiler.defaultTool!.version}` : ''}
+                    {plugin.name} ·{' '}
+                    {plugin.compiler.defaultTool?.id ??
+                      plugin.compiler.managedTools?.map((tool) => tool.name).join(' / ')}
+                    {plugin.compiler.defaultTool?.version ? ` ${plugin.compiler.defaultTool.version}` : ''}
                   </option>
                 ))}
               </optgroup>

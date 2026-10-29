@@ -2,7 +2,11 @@
 
 Status: development preview based on 0.2.3.6. The display version is `0.2.3.6-internal`, with `developmentChannel: internal-runtime-plugins`; the base release/package versions remain `0.2.3.6`/`0.2.3-6`. This is not a stable release. The integration branch is `codex/runtime-plugins-internal`; `main` remains the stable source at `193cda2ea5b2705732755f25b8a621d860b52101`.
 
-## Workbench follow-up — 2026-10-30
+## Module and debugger follow-up — 2026-10-30
+
+The latest source update reorganizes both boards into ten responsibility directories, adds module-owned language declarations, and introduces standalone JavaScript module packaging for binary hosts. ESP32-S3 USB-JTAG debugging and debug tool installation are implemented, with physical acceptance pending. Current validation and migration details are in the [module update](module-packaging.md) and [hardware debugging guide](../HARDWARE-DEBUGGING.md). No new application release was built for this follow-up.
+
+## Earlier workbench follow-up — 2026-10-30
 
 The branch now includes a real PowerShell/ConPTY terminal, declared plugin windows and bottom-panel views, attention-aware collaboration recovery, transactional save/discard on exit, an optional system tray, and a compact UI/copy pass. Setup, behavior and manual acceptance steps are in the [workbench interaction update](workbench-interaction.md).
 

@@ -45,6 +45,13 @@ export interface ProjectConfig {
     disabledCapabilities?: string[];
   };
   partitions: Partition[];
+  debugger?: {
+    gdbPath?: string;
+    serverPath?: string;
+    scriptsPath?: string;
+    serialNumber?: string;
+    frequencyKhz?: number;
+  };
   /** Debug transport is separate from the COM port used by the serial monitor. */
   programmer?: {
     transport: 'auto' | RuntimeTransport;
@@ -220,6 +227,7 @@ export interface InstallationState extends InstallationProgress {
   logs: LogEvent[];
 }
 export interface AppState {
+  language?: import('./module-languages').ModuleLanguageState;
   runtimePlugins?: RuntimePluginsState;
   /** Initial desktop discovery is running; tool/driver absence is not yet known. */
   initializing?: boolean;
@@ -304,7 +312,15 @@ export interface FirmwareExportResult {
   path?: string;
 }
 export interface DebuggerState {
-  instructions?: { address: string; function?: string; offset?: string; instruction: string }[];
+  profile?: import('./debugger-profiles').DebuggerProfile;
+  sessionId?: string;
+  instructions?: {
+    address: string;
+    function?: string;
+    offset?: string;
+    instruction: string;
+    opcodes?: string;
+  }[];
   updatedAt?: string;
   programCounter?: string;
   connection: 'disconnected' | 'connecting' | 'stopped' | 'running' | 'error';
@@ -352,13 +368,18 @@ export interface DesktopApi
   firmwareChoose(): Promise<PreparedFirmware | null>;
   firmwareFlash(request: FirmwareFlashRequest): Promise<void>;
   openDebugger(): Promise<void>;
-  debuggerState(): Promise<DebuggerState>;
+  debuggerState(config?: ProjectConfig): Promise<DebuggerState>;
   debuggerSymbols(): Promise<string | null>;
   debuggerConnect(config: ProjectConfig): Promise<void>;
   debuggerAction(action: DebuggerAction): Promise<void>;
   debuggerBreakpoint(location: string, removeId?: string): Promise<void>;
+  debuggerBreakpoints(locations: string[]): Promise<import('./debugger-edit').DebuggerBreakpointResult[]>;
+  debuggerPatch(
+    request: import('./debugger-edit').DebuggerPatchRequest,
+  ): Promise<import('./debugger-edit').DebuggerPatchResult>;
+  debuggerAssemble(address: number, source: string): Promise<string>;
   debuggerMemory(address: number, length: number): Promise<string>;
-  debuggerInstallTools(): Promise<void>;
+  debuggerInstallTools(config?: ProjectConfig): Promise<void>;
   debuggerChooseGdb(): Promise<boolean>;
   debuggerStorage(): Promise<DebuggerStorage | null>;
   /** Native save dialog on desktop; browser clients initiate a download. */

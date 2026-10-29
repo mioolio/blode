@@ -5,8 +5,8 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { ToolVersions, arduinoCliAsset } from '../src/core/tool-versions';
-import { GnuArmToolchain, gnuRelease } from '../extensions/boards/STM32F103C8T6/gnu';
-import { Toolchains } from '../extensions/boards/Esp32_S3_CAM/toolchain';
+import { GnuArmToolchain, gnuRelease } from '../extensions/boards/STM32F103C8T6/tools/gnu';
+import { Toolchains } from '../extensions/boards/Esp32_S3_CAM/tools/toolchain';
 import { getBoardAdapter } from '../extensions/registry';
 
 test('version catalog resolves real Windows and Linux architecture asset names', () => {

@@ -21,9 +21,13 @@ class WindowDouble extends EventEmitter {
   messages: AppCloseRequest[] = [];
   webContents = {
     isDestroyed: () => this.destroyed,
-    send: (channel: string, request: AppCloseRequest) => {
-      assert.equal(channel, APP_CLOSE_REQUEST_CHANNEL);
-      this.messages.push(request);
+    mainFrame: {
+      detached: false,
+      isDestroyed: () => this.destroyed,
+      send: (channel: string, request: AppCloseRequest) => {
+        assert.equal(channel, APP_CLOSE_REQUEST_CHANNEL);
+        this.messages.push(request);
+      },
     },
   };
   isDestroyed() {

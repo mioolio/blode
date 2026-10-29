@@ -5,12 +5,12 @@
   "apiVersion": 2,
   "runtimeApiVersion": 2,
   "kind": "board",
-  "entry": "adapter.ts",
-  "runtime": "runtime.ts",
+  "entry": "device/adapter.ts",
+  "runtime": "runtime/index.ts",
   "transport": "serial",
   "vendor": "Espressif",
   "descriptionKey": "boards.esp32s3Description",
-  "capabilities": ["compile", "flash", "probe", "serial", "layout", "partitions"],
+  "capabilities": ["compile", "flash", "probe", "serial", "layout", "partitions", "debug"],
   "sourceInputs": [],
   "support": {
     "chips": ["ESP32-S3"],
@@ -89,7 +89,7 @@
     "baseRuntime": "Esp32_S3_CAM"
   },
   "debugger": {
-    "mode": "none"
+    "mode": "builtin"
   },
   "layout": {
     "flashBaseAddress": 0,
@@ -103,5 +103,29 @@
   "ui": {
     "fields": [],
     "hiddenCapabilities": []
+  },
+  "languages": {
+    "mode": "declared",
+    "default": "cpp",
+    "entries": [
+      {
+        "id": "c",
+        "editorLanguage": "cpp",
+        "extensions": [".c"],
+        "catalogs": [],
+        "standards": {
+          "c99": ["languages/C/c99/catalog.json"],
+          "c11": ["languages/C/c11/catalog.json"],
+          "c17": ["languages/C/c17/catalog.json"],
+          "c23": ["languages/C/c23/catalog.json"]
+        }
+      },
+      {
+        "id": "cpp",
+        "editorLanguage": "cpp",
+        "extensions": [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".ino", ".h"],
+        "catalogs": ["languages/C++/c-basics.json", "languages/C++/arduino.json"]
+      }
+    ]
   }
 }

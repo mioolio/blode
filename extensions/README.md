@@ -1,6 +1,6 @@
 # 扩展与运行时包
 
-设备逻辑按完整目录组织，语言补全与规则放在独立的 `completions/` 目录。
+设备模块按十个职责目录组织，并通过自己的 `languages/` 声明语言、补全和规则。`completions/` 保留未声明模块语言时的宿主默认行为。
 
 | 目录                    | 责任范围                                                                         |
 | ----------------------- | -------------------------------------------------------------------------------- |
@@ -8,7 +8,7 @@
 | `boards/STM32F103C8T6/` | STM32F103C8T6 的 Arm／GNU 构建、ST-Link、目标模板与布局                          |
 | `boards/auto/`          | 中性扫描配置；未选定运行时没有 Flash 分配                                        |
 | `boards/<第三方 ID>/`   | 包含清单与 JavaScript 入口的 API v2 运行时插件                                   |
-| `completions/`          | 按语言与标准隔离的 JSON 补全、语义规则及适配逻辑                                 |
+| `completions/`          | 宿主通用语言基础、旧模块默认补全及共享规则解析；不作为新设备模块的数据存储       |
 
 ## 配置与运行时
 
@@ -28,10 +28,18 @@ API v2 包放在 `extensions/boards/<id>/` 或宿主应用数据的 `plugins/<id
 
 完整的目录、清单示例、编译器替换、调试接口、更新策略和测试要求见[运行时插件开发指南](../docs/RUNTIME-PLUGINS.md)。本次属于[内部开发预览](../docs/internal/runtime-plugins.md)。
 
+## 标准目录与独立分发
+
+两个平台均采用 `support/`、`device/`、`runtime/`、`constraints/`、`ui/`、`compiler/`、`debugger/`、`layout/`、`languages/`、`tools/`。源码适配器位于 `device/adapter.ts`，运行时位于 `runtime/index.ts`；清单集中在模块根目录。
+
+使用 `npm run package:runtime -- extensions/boards/Esp32_S3_CAM --output ./release/modules --zip` 生成独立模块，STM32 使用对应目录。默认输出 ID 加上 `_Module`，避免覆盖内置实现。生成包包含 `.mjs`、声明和资源，安装到宿主数据目录 `plugins/<id>/` 后重启即可，用户不需要主程序源码或 TypeScript。
+
+模块声明的语言可以是列表，也可以固定一种。C99/C11/C17/C23 的目录独立，补全与构建检查不会自动加载宿主的 C/Arduino 数据。详细格式见[模块语言指南](../docs/MODULE-LANGUAGES.md)。
+
 ## 其他扩展
 
 - completions/ 按语言和版本保存 JSON 规则：C/c99、c11、c17、c23 各自独立，C++/arduino 保存 Arduino 数据。片段、符号、成员和悬停通过显式目录注册；工程可在 languages/C/<标准>/ 添加规则。工作区符号由增量索引提供，旧 blode.completions.json 继续兼容。格式见 [语言规则](../docs/LANGUAGE-RULES.md)。
 - menus/explorer.ts 声明右键菜单的标题、显示条件和命令 ID，renderer 执行实际动作。编译入口选择只写入 be.build.entry，可指文件或目录，不立即编译。
-- drivers/types.ts 与 drivers/index.ts 提供描述和注册；ST-Link 事实来自 boards/STM32F103C8T6/driver.ts，归档位于应用 tools/STSW-LINK/。
+- drivers/types.ts 与 drivers/index.ts 提供描述和注册；ST-Link 事实来自 boards/STM32F103C8T6/tools/driver.ts，归档位于应用 tools/STSW-LINK/。
 
 平台细节见 [ESP32-S3](boards/Esp32_S3_CAM/README.md) 与 [STM32](boards/STM32F103C8T6/README.md)，通用约定见 [架构说明](../docs/ARCHITECTURE.md)。

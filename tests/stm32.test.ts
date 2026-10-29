@@ -9,9 +9,12 @@ import {
   buildStlinkProbeArgs,
   parseStlinkProbes,
   STM32_FLASH_BASE,
-} from '../extensions/boards/STM32F103C8T6/protocol';
-import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/adapter';
-import { StlinkProgrammer, STLINK_WINDOWS_RELEASE } from '../extensions/boards/STM32F103C8T6/programmer';
+} from '../extensions/boards/STM32F103C8T6/device/protocol';
+import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/device/adapter';
+import {
+  StlinkProgrammer,
+  STLINK_WINDOWS_RELEASE,
+} from '../extensions/boards/STM32F103C8T6/device/programmer';
 import { runCommand } from '../src/core/process';
 
 const serialA = '0672FF485650755087074224';

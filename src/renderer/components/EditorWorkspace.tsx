@@ -236,9 +236,13 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
         path: file.path,
         content: drafts[file.path] ?? file.content,
       })),
-      { projectRoot: state?.projectRoot ?? '', cStandard: state?.build?.cStandard },
+      {
+        projectRoot: state?.projectRoot ?? '',
+        cStandard: state?.build?.cStandard,
+        language: state?.language,
+      },
     );
-  }, [drafts, state?.files, state?.projectRoot, state?.build?.cStandard]);
+  }, [drafts, state?.files, state?.projectRoot, state?.build?.cStandard, state?.language]);
   useEffect(() => {
     if (!state?.workspaceOpen || !window.blode.languageIndex) return;
     // Saved-source cache is maintained off the typing path; buffers stay local.

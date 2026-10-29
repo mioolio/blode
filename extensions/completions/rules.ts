@@ -61,7 +61,7 @@ function position(content: string, offset: number) {
 export function resolveCCompletionPack(
   files: readonly LanguageRuleFile[],
   standard: CStandard = 'c17',
-  options: { useBuiltins?: boolean } = {},
+  options: { useBuiltins?: boolean; useBuiltinRules?: boolean } = {},
 ): CCompletionPack {
   const diagnostics: LanguageRuleDiagnostic[] = [];
   const snippets = new Map<string, CompletionEntry>();
@@ -231,11 +231,12 @@ export function resolveCCompletionPack(
       }
     }
   };
-  load(cRulePacks[standard]);
+  if (options.useBuiltins !== false || options.useBuiltinRules !== false) load(cRulePacks[standard]);
   if (options.useBuiltins === false) {
     snippets.clear();
     symbols.clear();
   }
+  if (options.useBuiltinRules === false) rules.clear();
   const prefix = `languages/C/${standard}/`;
   const custom = files.filter(
     (file) =>

@@ -1,0 +1,633 @@
+{
+  "language": "cpp",
+  "triggerCharacters": [".", "#"],
+  "snippets": [
+    {
+      "name": "setup",
+      "kind": "snippet",
+      "detail": "void setup()",
+      "documentation": "Runs once after reset. Initialise pins, buses and serial ports here.",
+      "insertText": "void setup() {\n\t${1}\n}",
+      "sortText": "0-setup"
+    },
+    {
+      "name": "loop",
+      "kind": "snippet",
+      "detail": "void loop()",
+      "documentation": "Runs repeatedly after `setup()` finishes.",
+      "insertText": "void loop() {\n\t${1}\n}",
+      "sortText": "0-loop"
+    },
+    {
+      "name": "for",
+      "kind": "snippet",
+      "detail": "for (init; condition; step)",
+      "documentation": "Counted loop with an editable index variable.",
+      "insertText": "for (int ${1:i} = 0; ${1:i} < ${2:count}; ${1:i}++) {\n\t${3}\n}",
+      "sortText": "0-for"
+    },
+    {
+      "name": "if",
+      "kind": "snippet",
+      "detail": "if (condition)",
+      "documentation": "Conditional block.",
+      "insertText": "if (${1:condition}) {\n\t${2}\n}",
+      "sortText": "0-if"
+    },
+    {
+      "name": "ifelse",
+      "kind": "snippet",
+      "detail": "if / else",
+      "documentation": "Two-branch conditional block.",
+      "insertText": "if (${1:condition}) {\n\t${2}\n} else {\n\t${3}\n}",
+      "sortText": "0-ifelse"
+    },
+    {
+      "name": "while",
+      "kind": "snippet",
+      "detail": "while (condition)",
+      "documentation": "Loop until the condition becomes false.",
+      "insertText": "while (${1:condition}) {\n\t${2}\n}",
+      "sortText": "0-while"
+    },
+    {
+      "name": "switch",
+      "kind": "snippet",
+      "detail": "switch / case",
+      "documentation": "Multi-branch selection on an integer expression.",
+      "insertText": "switch (${1:value}) {\n\tcase ${2:option}:\n\t\t${3:break;}\n\tdefault:\n\t\t${4}\n}",
+      "sortText": "0-switch"
+    },
+    {
+      "name": "include",
+      "kind": "snippet",
+      "detail": "#include <library.h>",
+      "documentation": "Includes an installed Arduino library header.",
+      "insertText": "#include <${1:Arduino.h}>",
+      "sortText": "0-include"
+    },
+    {
+      "name": "serialEvent",
+      "kind": "snippet",
+      "detail": "void serialEvent()",
+      "documentation": "Optional callback invoked when serial data is available.",
+      "insertText": "void serialEvent() {\n\twhile (Serial.available()) {\n\t\t${1:char c = Serial.read();}\n\t}\n}",
+      "sortText": "0-serialEvent"
+    }
+  ],
+  "symbols": [
+    {
+      "name": "pinMode",
+      "kind": "function",
+      "detail": "void pinMode(uint8_t pin, uint8_t mode)",
+      "documentation": "Configures a GPIO pin as `INPUT`, `OUTPUT`, `INPUT_PULLUP` or `INPUT_PULLDOWN`.",
+      "insertText": "pinMode(${1:pin}, ${2:OUTPUT})"
+    },
+    {
+      "name": "digitalWrite",
+      "kind": "function",
+      "detail": "void digitalWrite(uint8_t pin, uint8_t value)",
+      "documentation": "Drives a digital pin `HIGH` or `LOW`. The pin must be an output.",
+      "insertText": "digitalWrite(${1:pin}, ${2:HIGH})"
+    },
+    {
+      "name": "digitalRead",
+      "kind": "function",
+      "detail": "int digitalRead(uint8_t pin)",
+      "documentation": "Reads a digital pin and returns `HIGH` or `LOW`.",
+      "insertText": "digitalRead(${1:pin})"
+    },
+    {
+      "name": "analogRead",
+      "kind": "function",
+      "detail": "uint16_t analogRead(uint8_t pin)",
+      "documentation": "Reads an ADC channel. ESP32-S3 returns a 12-bit value by default.",
+      "insertText": "analogRead(${1:pin})"
+    },
+    {
+      "name": "analogWrite",
+      "kind": "function",
+      "detail": "void analogWrite(uint8_t pin, int value)",
+      "documentation": "Writes a PWM duty cycle (0–255 by default) to a pin.",
+      "insertText": "analogWrite(${1:pin}, ${2:value})"
+    },
+    {
+      "name": "delay",
+      "kind": "function",
+      "detail": "void delay(unsigned long ms)",
+      "documentation": "Blocks the current task for the given number of milliseconds.",
+      "insertText": "delay(${1:ms})"
+    },
+    {
+      "name": "delayMicroseconds",
+      "kind": "function",
+      "detail": "void delayMicroseconds(unsigned int us)",
+      "documentation": "Busy-waits for a short interval in microseconds.",
+      "insertText": "delayMicroseconds(${1:us})"
+    },
+    {
+      "name": "millis",
+      "kind": "function",
+      "detail": "unsigned long millis()",
+      "documentation": "Returns milliseconds since boot. Wraps after roughly 49 days.",
+      "insertText": "millis()"
+    },
+    {
+      "name": "micros",
+      "kind": "function",
+      "detail": "unsigned long micros()",
+      "documentation": "Returns microseconds since boot.",
+      "insertText": "micros()"
+    },
+    {
+      "name": "tone",
+      "kind": "function",
+      "detail": "void tone(uint8_t pin, unsigned int frequency, unsigned long duration = 0)",
+      "documentation": "Generates a square wave on a pin.",
+      "insertText": "tone(${1:pin}, ${2:frequency}, ${3:duration})"
+    },
+    {
+      "name": "noTone",
+      "kind": "function",
+      "detail": "void noTone(uint8_t pin)",
+      "documentation": "Stops a tone previously started with `tone()`.",
+      "insertText": "noTone(${1:pin})"
+    },
+    {
+      "name": "attachInterrupt",
+      "kind": "function",
+      "detail": "void attachInterrupt(uint8_t interrupt, void (*isr)(), int mode)",
+      "documentation": "Attaches an ISR to an interrupt number. Modes: `RISING`, `FALLING`, `CHANGE`.",
+      "insertText": "attachInterrupt(digitalPinToInterrupt(${1:pin}), ${2:isr}, ${3:RISING})"
+    },
+    {
+      "name": "detachInterrupt",
+      "kind": "function",
+      "detail": "void detachInterrupt(uint8_t interrupt)",
+      "documentation": "Removes the handler attached to an interrupt number.",
+      "insertText": "detachInterrupt(digitalPinToInterrupt(${1:pin}))"
+    },
+    {
+      "name": "map",
+      "kind": "function",
+      "detail": "long map(long value, long fromLow, long fromHigh, long toLow, long toHigh)",
+      "documentation": "Re-maps a number from one range to another without clamping.",
+      "insertText": "map(${1:value}, ${2:fromLow}, ${3:fromHigh}, ${4:toLow}, ${5:toHigh})"
+    },
+    {
+      "name": "constrain",
+      "kind": "function",
+      "detail": "T constrain(T value, T low, T high)",
+      "documentation": "Clamps a value between `low` and `high`.",
+      "insertText": "constrain(${1:value}, ${2:low}, ${3:high})"
+    },
+    {
+      "name": "min",
+      "kind": "function",
+      "detail": "T min(T a, T b)",
+      "documentation": "Returns the smaller of two values.",
+      "insertText": "min(${1:a}, ${2:b})"
+    },
+    {
+      "name": "max",
+      "kind": "function",
+      "detail": "T max(T a, T b)",
+      "documentation": "Returns the larger of two values.",
+      "insertText": "max(${1:a}, ${2:b})"
+    },
+    {
+      "name": "abs",
+      "kind": "function",
+      "detail": "T abs(T value)",
+      "documentation": "Returns the absolute value.",
+      "insertText": "abs(${1:value})"
+    },
+    {
+      "name": "random",
+      "kind": "function",
+      "detail": "long random(long max) / long random(long min, long max)",
+      "documentation": "Returns a pseudo-random number. Seed it with `randomSeed()`.",
+      "insertText": "random(${1:min}, ${2:max})"
+    },
+    {
+      "name": "randomSeed",
+      "kind": "function",
+      "detail": "void randomSeed(unsigned long seed)",
+      "documentation": "Seeds the pseudo-random generator, often with `analogRead()` noise.",
+      "insertText": "randomSeed(${1:seed})"
+    },
+    {
+      "name": "Serial",
+      "kind": "variable",
+      "detail": "HardwareSerial Serial",
+      "documentation": "Primary UART object. Type `Serial.` to list its methods."
+    },
+    {
+      "name": "Wire",
+      "kind": "variable",
+      "detail": "TwoWire Wire",
+      "documentation": "I²C bus object. Type `Wire.` to list its methods."
+    },
+    {
+      "name": "ESP",
+      "kind": "variable",
+      "detail": "EspClass ESP",
+      "documentation": "ESP32 system information and reset helpers."
+    },
+    {
+      "name": "HIGH",
+      "kind": "constant",
+      "detail": "const uint8_t HIGH = 0x1",
+      "documentation": "Digital high level."
+    },
+    {
+      "name": "LOW",
+      "kind": "constant",
+      "detail": "const uint8_t LOW = 0x0",
+      "documentation": "Digital low level."
+    },
+    {
+      "name": "INPUT",
+      "kind": "constant",
+      "detail": "const uint8_t INPUT = 0x01",
+      "documentation": "High-impedance input mode for `pinMode()`."
+    },
+    {
+      "name": "OUTPUT",
+      "kind": "constant",
+      "detail": "const uint8_t OUTPUT = 0x03",
+      "documentation": "Push-pull output mode for `pinMode()`."
+    },
+    {
+      "name": "INPUT_PULLUP",
+      "kind": "constant",
+      "detail": "const uint8_t INPUT_PULLUP = 0x05",
+      "documentation": "Input mode with the internal pull-up enabled."
+    },
+    {
+      "name": "LED_BUILTIN",
+      "kind": "constant",
+      "detail": "const uint8_t LED_BUILTIN",
+      "documentation": "Board-specific built-in LED pin. The Blink example avoids relying on it."
+    },
+    {
+      "name": "true",
+      "kind": "constant",
+      "detail": "const bool true",
+      "documentation": "Boolean true."
+    },
+    {
+      "name": "false",
+      "kind": "constant",
+      "detail": "const bool false",
+      "documentation": "Boolean false."
+    },
+    {
+      "name": "PI",
+      "kind": "constant",
+      "detail": "const double PI = 3.1415926535897932384626433832795",
+      "documentation": "Circle constant from `Arduino.h`."
+    },
+    {
+      "name": "bool",
+      "kind": "type",
+      "detail": "bool",
+      "documentation": "Boolean type (`true` / `false`)."
+    },
+    {
+      "name": "byte",
+      "kind": "type",
+      "detail": "typedef uint8_t byte",
+      "documentation": "8-bit unsigned integer."
+    },
+    {
+      "name": "int",
+      "kind": "type",
+      "detail": "int",
+      "documentation": "Signed integer; 32-bit on ESP32-S3."
+    },
+    {
+      "name": "unsigned int",
+      "kind": "type",
+      "detail": "unsigned int",
+      "documentation": "Unsigned integer; 32-bit on ESP32-S3."
+    },
+    {
+      "name": "long",
+      "kind": "type",
+      "detail": "long",
+      "documentation": "Signed long integer; 32-bit on ESP32-S3."
+    },
+    {
+      "name": "unsigned long",
+      "kind": "type",
+      "detail": "unsigned long",
+      "documentation": "Unsigned long integer; used by `millis()` and `micros()`."
+    },
+    {
+      "name": "float",
+      "kind": "type",
+      "detail": "float",
+      "documentation": "32-bit floating point value."
+    },
+    {
+      "name": "double",
+      "kind": "type",
+      "detail": "double",
+      "documentation": "Floating point value. On ESP32 this is 64-bit."
+    },
+    {
+      "name": "char",
+      "kind": "type",
+      "detail": "char",
+      "documentation": "Single 8-bit character."
+    },
+    {
+      "name": "String",
+      "kind": "type",
+      "detail": "class String",
+      "documentation": "Arduino heap-backed text class."
+    },
+    {
+      "name": "uint8_t",
+      "kind": "type",
+      "detail": "uint8_t",
+      "documentation": "8-bit unsigned integer."
+    },
+    {
+      "name": "uint16_t",
+      "kind": "type",
+      "detail": "uint16_t",
+      "documentation": "16-bit unsigned integer."
+    },
+    {
+      "name": "uint32_t",
+      "kind": "type",
+      "detail": "uint32_t",
+      "documentation": "32-bit unsigned integer."
+    },
+    {
+      "name": "int8_t",
+      "kind": "type",
+      "detail": "int8_t",
+      "documentation": "8-bit signed integer."
+    },
+    {
+      "name": "int16_t",
+      "kind": "type",
+      "detail": "int16_t",
+      "documentation": "16-bit signed integer."
+    },
+    {
+      "name": "int32_t",
+      "kind": "type",
+      "detail": "int32_t",
+      "documentation": "32-bit signed integer."
+    },
+    {
+      "name": "size_t",
+      "kind": "type",
+      "detail": "size_t",
+      "documentation": "Unsigned size type used by buffers and lengths."
+    },
+    {
+      "name": "void",
+      "kind": "keyword",
+      "detail": "void",
+      "documentation": "Marks a function that returns no value."
+    },
+    {
+      "name": "const",
+      "kind": "keyword",
+      "detail": "const",
+      "documentation": "Declares a value that cannot be modified."
+    },
+    {
+      "name": "static",
+      "kind": "keyword",
+      "detail": "static",
+      "documentation": "Gives a symbol internal linkage or function-local lifetime."
+    },
+    {
+      "name": "volatile",
+      "kind": "keyword",
+      "detail": "volatile",
+      "documentation": "Prevents the compiler from caching a value changed by an ISR or hardware."
+    },
+    {
+      "name": "return",
+      "kind": "keyword",
+      "detail": "return",
+      "documentation": "Returns from the current function."
+    },
+    {
+      "name": "break",
+      "kind": "keyword",
+      "detail": "break",
+      "documentation": "Exits the nearest loop or switch."
+    },
+    {
+      "name": "continue",
+      "kind": "keyword",
+      "detail": "continue",
+      "documentation": "Skips to the next loop iteration."
+    },
+    {
+      "name": "struct",
+      "kind": "keyword",
+      "detail": "struct",
+      "documentation": "Declares a value type with public members."
+    },
+    {
+      "name": "enum",
+      "kind": "keyword",
+      "detail": "enum",
+      "documentation": "Declares a named set of integer constants."
+    },
+    {
+      "name": "typedef",
+      "kind": "keyword",
+      "detail": "typedef",
+      "documentation": "Creates an alias for an existing type."
+    }
+  ],
+  "members": [
+    {
+      "owner": "Serial",
+      "members": [
+        {
+          "name": "begin",
+          "kind": "method",
+          "detail": "void begin(unsigned long baud)",
+          "documentation": "Starts the UART at the given baud rate.",
+          "insertText": "begin(${1:115200})"
+        },
+        {
+          "name": "end",
+          "kind": "method",
+          "detail": "void end()",
+          "documentation": "Releases the UART peripheral.",
+          "insertText": "end()"
+        },
+        {
+          "name": "print",
+          "kind": "method",
+          "detail": "size_t print(value)",
+          "documentation": "Writes a value without a trailing newline.",
+          "insertText": "print(${1:value})"
+        },
+        {
+          "name": "println",
+          "kind": "method",
+          "detail": "size_t println(value)",
+          "documentation": "Writes a value followed by `\\r\\n`.",
+          "insertText": "println(${1:value})"
+        },
+        {
+          "name": "printf",
+          "kind": "method",
+          "detail": "size_t printf(const char *format, ...)",
+          "documentation": "Formatted output on ESP32 Arduino cores.",
+          "insertText": "printf(${1:format}, ${2:args})"
+        },
+        {
+          "name": "write",
+          "kind": "method",
+          "detail": "size_t write(uint8_t data)",
+          "documentation": "Writes raw bytes to the UART.",
+          "insertText": "write(${1:data})"
+        },
+        {
+          "name": "read",
+          "kind": "method",
+          "detail": "int read()",
+          "documentation": "Reads one byte, or returns `-1` when the buffer is empty.",
+          "insertText": "read()"
+        },
+        {
+          "name": "available",
+          "kind": "method",
+          "detail": "int available()",
+          "documentation": "Returns the number of bytes waiting in the receive buffer.",
+          "insertText": "available()"
+        },
+        {
+          "name": "flush",
+          "kind": "method",
+          "detail": "void flush()",
+          "documentation": "Waits until outgoing data has been transmitted.",
+          "insertText": "flush()"
+        }
+      ]
+    },
+    {
+      "owner": "Wire",
+      "members": [
+        {
+          "name": "begin",
+          "kind": "method",
+          "detail": "bool begin()",
+          "documentation": "Initialises the I²C master on the board default pins.",
+          "insertText": "begin()"
+        },
+        {
+          "name": "beginTransmission",
+          "kind": "method",
+          "detail": "void beginTransmission(uint8_t address)",
+          "documentation": "Starts a write transaction to a 7-bit I²C address.",
+          "insertText": "beginTransmission(${1:address})"
+        },
+        {
+          "name": "endTransmission",
+          "kind": "method",
+          "detail": "uint8_t endTransmission(bool stop = true)",
+          "documentation": "Ends the write transaction and returns the bus status.",
+          "insertText": "endTransmission()"
+        },
+        {
+          "name": "requestFrom",
+          "kind": "method",
+          "detail": "size_t requestFrom(uint8_t address, size_t quantity)",
+          "documentation": "Requests bytes from an I²C device into the receive buffer.",
+          "insertText": "requestFrom(${1:address}, ${2:quantity})"
+        },
+        {
+          "name": "write",
+          "kind": "method",
+          "detail": "size_t write(uint8_t data)",
+          "documentation": "Queues one byte for the current I²C transaction.",
+          "insertText": "write(${1:data})"
+        },
+        {
+          "name": "available",
+          "kind": "method",
+          "detail": "int available()",
+          "documentation": "Returns the number of bytes available to read.",
+          "insertText": "available()"
+        },
+        {
+          "name": "read",
+          "kind": "method",
+          "detail": "int read()",
+          "documentation": "Reads one byte from the receive buffer.",
+          "insertText": "read()"
+        },
+        {
+          "name": "setClock",
+          "kind": "method",
+          "detail": "bool setClock(uint32_t frequency)",
+          "documentation": "Sets the I²C bus clock, for example `400000` for fast mode.",
+          "insertText": "setClock(${1:400000})"
+        }
+      ]
+    },
+    {
+      "owner": "ESP",
+      "members": [
+        {
+          "name": "getFreeHeap",
+          "kind": "method",
+          "detail": "uint32_t getFreeHeap()",
+          "documentation": "Returns the current free heap in bytes.",
+          "insertText": "getFreeHeap()"
+        },
+        {
+          "name": "getHeapSize",
+          "kind": "method",
+          "detail": "uint32_t getHeapSize()",
+          "documentation": "Returns the total heap size in bytes.",
+          "insertText": "getHeapSize()"
+        },
+        {
+          "name": "getChipModel",
+          "kind": "method",
+          "detail": "const char *getChipModel()",
+          "documentation": "Returns the detected chip model name.",
+          "insertText": "getChipModel()"
+        },
+        {
+          "name": "getCpuFreqMHz",
+          "kind": "method",
+          "detail": "uint32_t getCpuFreqMHz()",
+          "documentation": "Returns the current CPU frequency in MHz.",
+          "insertText": "getCpuFreqMHz()"
+        },
+        {
+          "name": "getSdkVersion",
+          "kind": "method",
+          "detail": "const char *getSdkVersion()",
+          "documentation": "Returns the ESP-IDF SDK version string.",
+          "insertText": "getSdkVersion()"
+        },
+        {
+          "name": "restart",
+          "kind": "method",
+          "detail": "void restart()",
+          "documentation": "Resets the microcontroller.",
+          "insertText": "restart()"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 1
+}

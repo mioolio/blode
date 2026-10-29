@@ -62,7 +62,11 @@ test('desktop renders before proxy/services finish and queues early RPC behind i
           this.attentionEvents = [];
           const owner = this;
           this.webContents = Object.assign(new EventEmitter(), {
-            mainFrame: {},
+            mainFrame: {
+              detached: false,
+              isDestroyed() { return false; },
+              send(channel, value) { if(channel === 'blode:window-attention') owner.attentionEvents.push(value); },
+            },
             session: { setPermissionRequestHandler() {} },
             setWindowOpenHandler() {},
             isDestroyed() { return false; },
@@ -124,7 +128,7 @@ test('desktop renders before proxy/services finish and queues early RPC behind i
               this.close();
               for(const name of ['lock-screen','unlock-screen','suspend','resume'])
                 assert.equal(powerMonitor.listenerCount(name), 0, 'a closed window releases power listeners');
-              await assert.rejects(early, /error.operationCancelled/);
+              assert.deepEqual(await early, {__blodeIpcCancelled:true}, 'shutdown cancellation is returned without an ipcMain handler error');
               console.log('startup-order-ok');
               process.exit(0);
             } catch (error) { console.error(error); process.exit(1); }

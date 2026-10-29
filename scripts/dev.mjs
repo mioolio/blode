@@ -9,6 +9,7 @@ import { createServer } from 'vite';
 import { developmentRuntimeExecutables, ensureWindowsRuntimeIntegrity } from './windows-runtime.mjs';
 import {
   hasFatalStartupError,
+  classifyElectronExit,
   recoverStaleDevProcesses,
   recoverStaleElectron,
   stopProcessTree,
@@ -149,6 +150,10 @@ const launch = async (args, softwareRendering = false) => {
       electron.once('error', reject);
       electron.once('exit', (code) => resolve(code));
     });
+    // Cleanup can cross the startup deadline after a perfectly normal close.
+    // Stop startup observation at exit, before the process inventory await.
+    clearInterval(startupWatch);
+    clearTimeout(startupDeadline);
     const log = readStartupLog();
     // Keep failed-attempt evidence: the next launch resets the current log.
     try {
@@ -239,40 +244,30 @@ try {
   while (!stopping) {
     const result = await launch(sandboxRetried ? ['--no-sandbox'] : [], softwareRetried);
     if (stopping) break;
-    const early = !result.log.includes('window ready');
     const startupFailed = hasFatalStartupError(result.log);
-    const chromiumCrash =
-      result.code === 0x80000003 ||
-      result.code === -2147483645 ||
-      /render-process-gone crashed exit=-2147483645\b/.test(result.log);
-    if (early && chromiumCrash && !sandboxRetried) {
+    const outcome = classifyElectronExit(result, { sandbox: sandboxRetried, software: softwareRetried });
+    if (outcome.retry === 'sandbox') {
       sandboxRetried = true;
       console.warn(
         '\nChromium failed during startup. Its processes have been stopped; retrying once with --no-sandbox.\n',
       );
       continue;
     }
-    if (
-      early &&
-      (chromiumCrash ||
-        result.timedOut ||
-        /(?:gpu-process|child-process-gone GPU).*?(?:crashed|abnormal-exit)/i.test(result.log)) &&
-      !softwareRetried
-    ) {
+    if (outcome.retry === 'software') {
       softwareRetried = true;
       console.warn('\nThe window could not start. Retrying once with software rendering.\n');
       continue;
     }
-    if (early || startupFailed) {
+    if (outcome.failed) {
       console.error(
         startupFailed
           ? `\nBlode Studio initialization failed (code ${result.code ?? 'unknown'}).`
-          : `\nBlode Studio exited before its window was ready (code ${result.code ?? 'unknown'}).`,
+          : `\nBlode Studio exited unexpectedly (code ${result.code ?? 'unknown'}).`,
       );
       console.error(result.log || 'Electron exited before writing its startup log.');
       console.error(`User data: ${devUserData}`);
     }
-    await quit(early || startupFailed ? 1 : (result.code ?? 0));
+    await quit(outcome.exitCode);
   }
 } catch (error) {
   console.error(error.message);

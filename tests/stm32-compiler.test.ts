@@ -7,11 +7,14 @@ import {
   Stm32Compiler,
   inspectStm32Elf,
   validateStm32Binary,
-} from '../extensions/boards/STM32F103C8T6/compiler';
-import { createF1GnuLinkerScript, createF1GnuStartup } from '../extensions/boards/STM32F103C8T6/templates';
-import { GNU_WINDOWS_RELEASE, GnuArmToolchain } from '../extensions/boards/STM32F103C8T6/gnu';
-import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/adapter';
-import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime';
+} from '../extensions/boards/STM32F103C8T6/compiler/index';
+import {
+  createF1GnuLinkerScript,
+  createF1GnuStartup,
+} from '../extensions/boards/STM32F103C8T6/compiler/templates';
+import { GNU_WINDOWS_RELEASE, GnuArmToolchain } from '../extensions/boards/STM32F103C8T6/tools/gnu';
+import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/device/adapter';
+import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime/index';
 import { safeWorkspacePath } from '../src/core/workspace';
 import type { RuntimeHost } from '../extensions/runtime';
 import type { BuildResult } from '../src/shared/contracts';

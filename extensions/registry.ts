@@ -1,6 +1,6 @@
 import { autoAdapter } from './boards/auto/adapter.js';
-import { esp32S3Adapter } from './boards/Esp32_S3_CAM/adapter.js';
-import { stm32Adapter } from './boards/STM32F103C8T6/adapter.js';
+import { esp32S3Adapter } from './boards/Esp32_S3_CAM/device/adapter.js';
+import { stm32Adapter } from './boards/STM32F103C8T6/device/adapter.js';
 import type { BoardAdapter } from './types.js';
 import { canonicalBoardId } from '../src/shared/runtime-identity.js';
 export { canonicalBoardId };

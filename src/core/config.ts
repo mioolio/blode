@@ -51,6 +51,19 @@ export const configSchema = z
       .strict()
       .optional(),
     partitions: z.array(partitionSchema).max(32),
+    debugger: z
+      .object({
+        gdbPath: z.string().max(4096).optional(),
+        serverPath: z.string().max(4096).optional(),
+        scriptsPath: z.string().max(4096).optional(),
+        serialNumber: z
+          .string()
+          .regex(/^[A-Za-z0-9:_-]{0,128}$/)
+          .optional(),
+        frequencyKhz: z.number().int().min(5).max(40000).optional(),
+      })
+      .strict()
+      .optional(),
     programmer: z
       .object({
         transport: z.enum(['auto', 'serial', 'stlink', 'usb', 'physical', 'custom']),

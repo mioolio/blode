@@ -9,6 +9,28 @@ export function hasFatalStartupError(log) {
   return /^\d{4}-\d{2}-\d{2}T\S+ fatal(?:\s|$)/m.test(log);
 }
 
+/** A clean process exit takes precedence over earlier, recovered renderer errors. */
+export function classifyElectronExit(result, retries = {}) {
+  const ready = result.log.includes('window ready');
+  const fatal = hasFatalStartupError(result.log);
+  if (result.code === 0 && !result.timedOut && !fatal) return { retry: null, failed: false, exitCode: 0 };
+  const chromiumCrash =
+    result.code === 0x80000003 ||
+    result.code === -2147483645 ||
+    /render-process-gone crashed exit=-2147483645\b/.test(result.log);
+  if (!ready && chromiumCrash && !retries.sandbox) return { retry: 'sandbox', failed: true, exitCode: 1 };
+  if (
+    !ready &&
+    !retries.software &&
+    (chromiumCrash ||
+      result.timedOut ||
+      /(?:gpu-process|child-process-gone GPU).*?(?:crashed|abnormal-exit)/i.test(result.log))
+  )
+    return { retry: 'software', failed: true, exitCode: 1 };
+  const failed = !ready || fatal || result.code !== 0;
+  return { retry: null, failed, exitCode: failed ? result.code || 1 : 0 };
+}
+
 function validPid(pid) {
   return Number.isSafeInteger(pid) && pid > 0;
 }

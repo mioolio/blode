@@ -25,7 +25,7 @@ import {
   type ReopenProjectResult,
 } from '../shared/contracts';
 import { loadAppConfig, installDebugControls } from './debug';
-import { parseConfig } from './config';
+import { parseConfig, configSchema } from './config';
 import { PROJECT_MARKER, safeWorkspacePath } from './workspace';
 import { startWebServer, type WebServerHandle } from './web';
 import { exportProbeLog } from './log-export';
@@ -34,8 +34,15 @@ import { RecentProjects } from './recent-projects';
 import { FirmwareStore, prepareBuildExport } from './firmware';
 import { HardwareDebugger } from './hardware-debugger';
 import { RuntimeDebugger } from './runtime-debugger';
+import {
+  breakpointLocationsSchema,
+  debuggerPatchSchema,
+  debuggerAssembleSchema,
+} from '../shared/debugger-edit';
 import { RuntimeWindows } from './runtime-windows';
 import { DesktopLifecycle } from './desktop-lifecycle';
+import { currentRendererFrame, sendToRenderer } from './renderer-delivery';
+import { IPC_CANCELLED, withIpcCancellation } from '../shared/ipc-response';
 import { isRuntimeViewKind } from '../shared/plugins';
 import { createWebDebugger } from './web-debugger';
 import { AiAssistance } from './ai-assistance';
@@ -226,8 +233,7 @@ async function bootstrap(): Promise<void> {
   const publishAttention = () => {
     void windowAttention()
       .then((value) => {
-        if (window && !window.isDestroyed() && !window.webContents.isDestroyed())
-          window.webContents.send('blode:window-attention', value);
+        if (!closing) sendToRenderer(window, 'blode:window-attention', value);
       })
       .catch((error) => logBoot(`window-attention ${String(error)}`));
   };
@@ -294,11 +300,14 @@ async function bootstrap(): Promise<void> {
     });
   }
   const onRendererReady = (event: Electron.IpcMainEvent) => {
+    const frame = currentRendererFrame(event.sender);
     if (
+      closing ||
       !window ||
       window.isDestroyed() ||
       event.sender !== window.webContents ||
-      event.senderFrame !== event.sender.mainFrame
+      !frame ||
+      event.senderFrame !== frame
     )
       return;
     rendererMounted = true;
@@ -370,73 +379,78 @@ async function bootstrap(): Promise<void> {
     callback(false),
   );
 
-  ipcMain.handle(IPC_CHANNEL, async (event, method: unknown, args: unknown) => {
-    const secondary = event.sender === debuggerWindow?.webContents;
-    const runtimeOwner = runtimeWindows?.owner(event.sender);
-    if (
-      (event.sender !== window?.webContents && !secondary && !runtimeOwner) ||
-      event.senderFrame !== event.sender.mainFrame
-    )
-      throw new Error('error.unauthorized');
-    if (
-      runtimeOwner &&
-      method !== 'windowAction' &&
-      method !== 'runtimePluginsState' &&
-      !(
-        typeof method === 'string' &&
-        method.startsWith('runtimePlugin') &&
-        Array.isArray(args) &&
-        (args[0] === runtimeOwner.pluginId ||
-          (method === 'runtimePluginTrust' && args[0]?.id === runtimeOwner.pluginId))
-      )
-    )
-      throw new Error('error.unauthorized');
-    if (method === 'terminalFocus') {
+  ipcMain.handle(IPC_CHANNEL, (event, method: unknown, args: unknown) =>
+    withIpcCancellation(async () => {
+      if (closing) return IPC_CANCELLED;
+      const secondary = event.sender === debuggerWindow?.webContents;
+      const runtimeOwner = runtimeWindows?.owner(event.sender);
+      if (event.sender !== window?.webContents && !secondary && !runtimeOwner)
+        throw new Error('error.unauthorized');
+      const frame = currentRendererFrame(event.sender);
+      if (!frame) return IPC_CANCELLED;
+      if (event.senderFrame !== frame) throw new Error('error.unauthorized');
       if (
-        event.sender !== window?.webContents ||
-        !Array.isArray(args) ||
-        args.length !== 1 ||
-        typeof args[0] !== 'boolean'
+        runtimeOwner &&
+        method !== 'windowAction' &&
+        method !== 'runtimePluginsState' &&
+        !(
+          typeof method === 'string' &&
+          method.startsWith('runtimePlugin') &&
+          Array.isArray(args) &&
+          (args[0] === runtimeOwner.pluginId ||
+            (method === 'runtimePluginTrust' && args[0]?.id === runtimeOwner.pluginId))
+        )
       )
         throw new Error('error.unauthorized');
-      if (args[0]) terminalFocus.add(event.sender.id);
-      else terminalFocus.delete(event.sender.id);
-      return;
-    }
-    if (method === 'windowAttention') {
-      if (event.sender !== window?.webContents || !Array.isArray(args) || args.length)
+      if (method === 'terminalFocus') {
+        if (
+          event.sender !== window?.webContents ||
+          !Array.isArray(args) ||
+          args.length !== 1 ||
+          typeof args[0] !== 'boolean'
+        )
+          throw new Error('error.unauthorized');
+        if (args[0]) terminalFocus.add(event.sender.id);
+        else terminalFocus.delete(event.sender.id);
+        return;
+      }
+      if (method === 'windowAttention') {
+        if (event.sender !== window?.webContents || !Array.isArray(args) || args.length)
+          throw new Error('error.unauthorized');
+        return windowAttention();
+      }
+      if (
+        secondary &&
+        method !== 'getState' &&
+        method !== 'listDebugProbes' &&
+        method !== 'windowAction' &&
+        method !== 'hostBrowse' &&
+        !(typeof method === 'string' && method.startsWith('runtimePlugin')) &&
+        !(typeof method === 'string' && method.startsWith('debugger'))
+      )
         throw new Error('error.unauthorized');
-      return windowAttention();
-    }
-    if (
-      secondary &&
-      method !== 'getState' &&
-      method !== 'listDebugProbes' &&
-      method !== 'windowAction' &&
-      method !== 'hostBrowse' &&
-      !(typeof method === 'string' && method.startsWith('runtimePlugin')) &&
-      !(typeof method === 'string' && method.startsWith('debugger'))
-    )
-      throw new Error('error.unauthorized');
-    // Frameless controls must remain responsive even while a service is starting.
-    if (method === 'windowAction') {
-      const parsed = windowActionArgs.safeParse(args);
+      // Frameless controls must remain responsive even while a service is starting.
+      if (method === 'windowAction') {
+        const parsed = windowActionArgs.safeParse(args);
+        if (!parsed.success) throw new Error('error.invalidArguments');
+        controlWindow(runtimeOwner?.window ?? (secondary ? debuggerWindow : window), parsed.data[0]);
+        return;
+      }
+      const routes = await rendererRoutes;
+      if (!routes || closing || event.senderFrame !== currentRendererFrame(event.sender))
+        throw new Error('error.operationCancelled');
+      if (typeof method !== 'string' || !Object.hasOwn(routes, method))
+        throw new Error('error.unknownMethod');
+      const route = routes[method];
+      const parsed = route.args.safeParse(args);
       if (!parsed.success) throw new Error('error.invalidArguments');
-      controlWindow(runtimeOwner?.window ?? (secondary ? debuggerWindow : window), parsed.data[0]);
-      return;
-    }
-    const routes = await rendererRoutes;
-    if (!routes || closing || event.sender.isDestroyed() || event.senderFrame !== event.sender.mainFrame)
-      throw new Error('error.operationCancelled');
-    if (typeof method !== 'string' || !Object.hasOwn(routes, method)) throw new Error('error.unknownMethod');
-    const route = routes[method];
-    const parsed = route.args.safeParse(args);
-    if (!parsed.success) throw new Error('error.invalidArguments');
-    return route.run(...(parsed.data as unknown[]));
-  });
+      return route.run(...(parsed.data as unknown[]));
+    }),
+  );
   window.once('ready-to-show', () => {
     // index.html already contains a themed, lightweight startup surface.
-    window?.show();
+    if (closing || !window || window.isDestroyed()) return;
+    window.show();
     logBoot('window first paint');
   });
   window.once('closed', () => debuggerWindow?.close());
@@ -495,9 +509,10 @@ async function bootstrap(): Promise<void> {
   const recentLogs = new RecentLogs();
   const emit = (input: LogEvent) => {
     const event = recentLogs.publish(input);
-    if (window && !window.isDestroyed()) window.webContents.send(EVENT_CHANNEL, event);
-    if (debuggerWindow && !debuggerWindow.isDestroyed())
-      debuggerWindow.webContents.send(EVENT_CHANNEL, event);
+    if (!closing) {
+      sendToRenderer(window, EVENT_CHANNEL, event);
+      sendToRenderer(debuggerWindow, EVENT_CHANNEL, event);
+    }
     pipe?.publish(event);
     web?.publish(event);
   };
@@ -581,13 +596,19 @@ async function bootstrap(): Promise<void> {
     freshWorkspace: () => core!.workspaceSnapshot(true),
     saveFile: originalSaveFile,
     publish: (event) => {
-      if (window && !window.isDestroyed()) window.webContents.send(COLLABORATION_CHANNEL, event);
+      if (!closing) sendToRenderer(window, COLLABORATION_CHANNEL, event);
       web?.publishCollaboration(event);
     },
   });
-  const ai = new AiAssistance({ dataRoot, projectRoot: () => core!.currentProjectRoot(), emit });
+  const ai = new AiAssistance({
+    dataRoot,
+    projectRoot: () => core!.currentProjectRoot(),
+    emit,
+    builtins: async () =>
+      (await core?.languageConfiguration())?.entries.flatMap((entry) => entry.contributions),
+  });
   uiCommands = new UiCommands((request) => {
-    if (window && !window.isDestroyed()) window.webContents.send(UI_COMMAND_CHANNEL, request);
+    if (!closing) sendToRenderer(window, UI_COMMAND_CHANNEL, request);
     web?.publishUiCommand(request);
   });
   const assistance = createAssistanceRoutes(ai, collaboration, uiCommands, true);
@@ -606,6 +627,7 @@ async function bootstrap(): Promise<void> {
     exit: shutdownApplication,
   });
   await desktopLifecycle.initialize();
+  if (closing) return;
   assistance.routes.collaborationPresence.run = (input) => nativePresence!.presence(input);
   assistance.routes.collaborationLeave.run = (input) => nativePresence!.leave(input);
   const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
@@ -674,6 +696,7 @@ async function bootstrap(): Promise<void> {
   if (closing) return;
   if (projectRoot) await recentHistory.remember(projectRoot).catch(() => {});
   const openDebugger = async () => {
+    if (closing) throw new Error('error.operationCancelled');
     if (debuggerWindow && !debuggerWindow.isDestroyed()) {
       debuggerWindow.show();
       debuggerWindow.focus();
@@ -701,7 +724,9 @@ async function bootstrap(): Promise<void> {
     secondary.removeMenu();
     secondary.webContents.setWindowOpenHandler(allowReleaseLink);
     secondary.webContents.on('will-navigate', (e) => e.preventDefault());
-    secondary.once('ready-to-show', () => secondary.show());
+    secondary.once('ready-to-show', () => {
+      if (!closing && !secondary.isDestroyed()) secondary.show();
+    });
     secondary.once('closed', () => {
       debuggerWindow = null;
       void hardwareDebugger?.disconnect();
@@ -851,7 +876,10 @@ async function bootstrap(): Promise<void> {
       },
     },
     openDebugger: { args: noArgs, run: openDebugger },
-    debuggerState: { args: noArgs, run: () => hardwareDebugger!.state() },
+    debuggerState: {
+      args: z.tuple([configSchema.optional()]),
+      run: (config) => hardwareDebugger!.state(config),
+    },
     debuggerStorage: { args: noArgs, run: () => hardwareDebugger!.storage() },
     debuggerSymbols: {
       args: noArgs,
@@ -859,7 +887,7 @@ async function bootstrap(): Promise<void> {
         const result = await dialog.showOpenDialog(debuggerWindow ?? window!, {
           title: '选择调试符号 / ELF symbols',
           properties: ['openFile'],
-          filters: [{ name: 'ARM ELF', extensions: ['elf', 'axf'] }],
+          filters: [{ name: 'ELF symbols', extensions: ['elf', 'axf'] }],
         });
         return result.canceled || !result.filePaths[0]
           ? null
@@ -880,22 +908,34 @@ async function bootstrap(): Promise<void> {
       args: z.tuple([z.string().max(1024), z.string().regex(/^\d+$/).optional()]),
       run: (location, id) => hardwareDebugger!.breakpoint(location, id),
     },
+    debuggerBreakpoints: {
+      args: z.tuple([breakpointLocationsSchema]),
+      run: (locations) => hardwareDebugger!.breakpoints(locations),
+    },
+    debuggerPatch: {
+      args: z.tuple([debuggerPatchSchema]),
+      run: (request) => hardwareDebugger!.patch(request),
+    },
+    debuggerAssemble: {
+      args: z.tuple([debuggerAssembleSchema.shape.address, debuggerAssembleSchema.shape.source]),
+      run: (address, source) => hardwareDebugger!.assemble(address, source),
+    },
     debuggerMemory: {
       args: z.tuple([z.number().int().nonnegative().max(0xffffffff), z.number().int().min(1).max(4096)]),
       run: (address, length) => hardwareDebugger!.memory(address, length),
     },
     debuggerInstallTools: {
-      args: noArgs,
-      run: () =>
-        core!.runInstallation('GNU Arm GCC / GDB', ({ progress, log, fetcher, signal }) =>
-          hardwareDebugger!.install(progress, log, { fetcher, signal }),
+      args: z.tuple([configSchema.optional()]),
+      run: (config) =>
+        core!.runInstallation('GDB / debug server', ({ progress, log, fetcher, signal }) =>
+          hardwareDebugger!.install(progress, log, { fetcher, signal, config }),
         ),
     },
     debuggerChooseGdb: {
       args: noArgs,
       run: async () => {
         const result = await dialog.showOpenDialog(debuggerWindow ?? window!, {
-          title: '选择 arm-none-eabi-gdb',
+          title: '选择 GDB / Choose GDB',
           properties: ['openFile'],
           filters: [{ name: 'GDB', extensions: process.platform === 'win32' ? ['exe'] : ['*'] }],
         });
@@ -1057,6 +1097,10 @@ if (ownLock)
     .whenReady()
     .then(bootstrap)
     .catch((error) => {
+      if (closing) {
+        logBoot(`bootstrap cancelled during shutdown: ${String(error)}`);
+        return;
+      }
       logBoot(`fatal ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
       // The launcher decides whether this attempt is recoverable and reports
       // the complete startup log only if recovery ultimately fails.
@@ -1070,6 +1114,7 @@ app.on('window-all-closed', () => app.quit());
 async function shutdownApplication() {
   if (closing) return;
   closing = true;
+  logBoot('shutdown requested');
   desktopLifecycle?.dispose();
   runtimeWindows?.close();
   collaboration?.dispose();

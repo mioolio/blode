@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { createWorkbenchBridge } from '../shared/workbench-bridge';
+import { unwrapIpcResponse } from '../shared/ipc-response';
 import { createWindowAttentionChannel, type WindowAttention } from './window-attention';
 import {
   DRAFTS_CHANNEL,
@@ -11,7 +12,8 @@ import {
 } from '../shared/contracts';
 
 // Only this typed, explicit surface crosses the sandbox boundary.
-const call = (method: string, ...args: unknown[]) => ipcRenderer.invoke(IPC_CHANNEL, method, args);
+const call = (method: string, ...args: unknown[]) =>
+  ipcRenderer.invoke(IPC_CHANNEL, method, args).then(unwrapIpcResponse);
 const windowAttention = createWindowAttentionChannel({
   listen: (callback) => {
     const listener = (_: unknown, value: WindowAttention) => callback(value);
@@ -22,7 +24,7 @@ const windowAttention = createWindowAttentionChannel({
 });
 const bridge: DesktopApi = {
   setTerminalFocus: (focused) => {
-    void call('terminalFocus', focused);
+    void call('terminalFocus', focused).catch(() => {});
   },
   rendererReady: () => ipcRenderer.send(RENDERER_READY_CHANNEL),
   onWindowAttention: windowAttention.subscribe,
@@ -42,13 +44,17 @@ const bridge: DesktopApi = {
   firmwareChoose: () => call('firmwareChoose'),
   firmwareFlash: (request) => call('firmwareFlash', request),
   openDebugger: () => call('openDebugger'),
-  debuggerState: () => call('debuggerState'),
+  debuggerState: (config) => (config ? call('debuggerState', config) : call('debuggerState')),
   debuggerSymbols: () => call('debuggerSymbols'),
   debuggerConnect: (config) => call('debuggerConnect', config),
   debuggerAction: (action) => call('debuggerAction', action),
   debuggerBreakpoint: (location, removeId) => call('debuggerBreakpoint', location, removeId),
+  debuggerBreakpoints: (locations) => call('debuggerBreakpoints', locations),
+  debuggerPatch: (request) => call('debuggerPatch', request),
+  debuggerAssemble: (address, source) => call('debuggerAssemble', address, source),
   debuggerMemory: (address, length) => call('debuggerMemory', address, length),
-  debuggerInstallTools: () => call('debuggerInstallTools'),
+  debuggerInstallTools: (config) =>
+    config ? call('debuggerInstallTools', config) : call('debuggerInstallTools'),
   debuggerChooseGdb: () => call('debuggerChooseGdb'),
   debuggerStorage: () => call('debuggerStorage'),
   exportProbeLog: (content) => call('exportProbeLog', content),
@@ -92,7 +98,7 @@ const bridge: DesktopApi = {
     };
   },
   windowAction: (action) => {
-    void call('windowAction', action);
+    void call('windowAction', action).catch(() => {});
   },
 };
 if (process.isMainFrame) {

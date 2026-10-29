@@ -10,8 +10,8 @@ import { SerialConnection } from '../src/core/serial';
 import { Drivers } from '../src/core/drivers';
 import { persistConfig, loadProjectDescriptor } from '../src/core/workspace';
 import { getBoardAdapter, listBoards } from '../extensions/registry';
-import { createEsp32S3Runtime } from '../extensions/boards/Esp32_S3_CAM/runtime';
-import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime';
+import { createEsp32S3Runtime } from '../extensions/boards/Esp32_S3_CAM/runtime/index';
+import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime/index';
 import type { DebugProbeInfo, PortInfo } from '../src/shared/contracts';
 
 const device: DebugProbeInfo = {
@@ -197,7 +197,7 @@ for (const [platformId, transport] of [
     try {
       await fs.cp(path.resolve('extensions/boards', platformId), copied, { recursive: true });
       const manifest = JSON.parse(await fs.readFile(path.join(copied, 'manifest.json'), 'utf8'));
-      assert.equal(manifest.runtime, 'runtime.ts');
+      assert.equal(manifest.runtime, 'runtime/index.ts');
       assert.equal(manifest.runtimeApiVersion, 2);
       assert.equal(manifest.apiVersion, 2);
       assert.ok(manifest.support.chips.length > 0);

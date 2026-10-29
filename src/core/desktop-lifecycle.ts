@@ -9,6 +9,7 @@ import {
   type DesktopLifecycleState,
 } from '../shared/desktop-lifecycle';
 import { createTrayIcon } from './tray-icon';
+import { sendToRenderer } from './renderer-delivery';
 
 export interface TraySpecification {
   png: Buffer;
@@ -189,8 +190,7 @@ export class DesktopLifecycle {
   };
   private onClosed = () => this.dispose();
   private send(request: AppCloseRequest) {
-    if (!this.options.window.isDestroyed() && !this.options.window.webContents.isDestroyed())
-      this.options.window.webContents.send(APP_CLOSE_REQUEST_CHANNEL, request);
+    sendToRenderer(this.options.window, APP_CLOSE_REQUEST_CHANNEL, request);
   }
   private finishRequest() {
     if (!this.waiting) return;

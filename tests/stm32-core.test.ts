@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createCore } from '../src/core/service';
-import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime';
+import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime/index';
 import { getBoardAdapter } from '../extensions/registry';
 import { persistConfig } from '../src/core/workspace';
 import type { DebugProbeInfo } from '../src/shared/contracts';

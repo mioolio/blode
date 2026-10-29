@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { DOMParser } from '../../extensions/boards/STM32F103C8T6/vendor/xml.cjs';
+import { DOMParser } from '../../extensions/boards/STM32F103C8T6/compiler/vendor/xml.cjs';
 import { writeZip, type ZipEntry } from './zip';
 import type { ProjectPackagePlan, ProjectPackageResult, PackageWarning } from '../shared/project-package';
 

@@ -14,6 +14,8 @@ export function crc32(bytes: Uint8Array): number {
 export interface ZipEntry {
   path: string;
   data: Buffer;
+  /** Optional regular-file permissions, normally from fs.stat().mode. */
+  mode?: number;
 }
 /** UTF-8 ZIP with standard deflate, CRC32 and central directory; intentionally bounded below ZIP64. */
 export async function writeZip(file: string, entries: AsyncIterable<ZipEntry>): Promise<number> {
@@ -29,6 +31,11 @@ export async function writeZip(file: string, entries: AsyncIterable<ZipEntry>): 
   };
   try {
     for await (const entry of entries) {
+      if (
+        entry.mode !== undefined &&
+        (!Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0xffff)
+      )
+        throw new Error('error.invalidArguments');
       if (
         ++count > 10000 ||
         entry.path.startsWith('/') ||
@@ -58,7 +65,9 @@ export async function writeZip(file: string, entries: AsyncIterable<ZipEntry>): 
       await write(data);
       const directory = Buffer.alloc(46);
       directory.writeUInt32LE(0x02014b50);
-      directory.writeUInt16LE(20, 4);
+      // Unix extraction tools read the upper external-attributes word as st_mode.
+      // Entries are always regular files: never encode symlinks or setuid bits.
+      directory.writeUInt16LE(entry.mode === undefined ? 20 : (3 << 8) | 20, 4);
       directory.writeUInt16LE(20, 6);
       directory.writeUInt16LE(0x800, 8);
       directory.writeUInt16LE(8, 10);
@@ -67,6 +76,8 @@ export async function writeZip(file: string, entries: AsyncIterable<ZipEntry>): 
       directory.writeUInt32LE(data.length, 20);
       directory.writeUInt32LE(entry.data.length, 24);
       directory.writeUInt16LE(name.length, 28);
+      if (entry.mode !== undefined)
+        directory.writeUInt32LE(((0o100000 | (entry.mode & 0o777)) << 16) >>> 0, 38);
       directory.writeUInt32LE(start, 42);
       central.push(directory, name);
     }

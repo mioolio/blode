@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { getBoardAdapter, listBoards } from '../extensions/registry.js';
-import { createDefaultPartitions } from '../extensions/boards/Esp32_S3_CAM/partitions.js';
-import { buildFlashArgs, buildProbeArgs } from '../extensions/boards/Esp32_S3_CAM/programmer.js';
+import { createDefaultPartitions } from '../extensions/boards/Esp32_S3_CAM/layout/partitions.js';
+import { buildFlashArgs, buildProbeArgs } from '../extensions/boards/Esp32_S3_CAM/device/programmer.js';
 import { parseConfig } from '../src/core/config.js';
 
 describe('board adapters', () => {

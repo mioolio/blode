@@ -8,6 +8,12 @@ import { listLanguageCompletions } from '../../../extensions/completions';
 import { parseCustomCCompletions, type CompletionFile } from '../../../extensions/completions/c';
 import { resolveCompletionCatalog } from '../../shared/completion-catalog';
 import type { AiAssistanceState } from '../../shared/ai';
+import {
+  analyzeModuleLanguageRules,
+  moduleLanguageForFile,
+  type ModuleLanguageState,
+} from '../../shared/module-languages';
+import { ModuleLanguageCache } from './moduleLanguageCache';
 import type {
   CompletionEntry,
   CompletionKind,
@@ -140,8 +146,11 @@ interface CompletionScope {
 let projectFiles: readonly CompletionFile[] = [];
 let projectRoot = '';
 let cStandard: CStandard = 'c17';
+let moduleLanguage: ModuleLanguageState | undefined;
+let moduleSignature = '';
 const workspaceIndex = new WorkspaceLanguageIndex();
 const languageRules = new LanguageRuleCache();
+const moduleLanguageCache = new ModuleLanguageCache();
 let catalog: Pick<AiAssistanceState, 'useBuiltins' | 'entries'> = { useBuiltins: true, entries: [] };
 let registeredMonaco: MonacoApi | undefined;
 /** Refreshed immediately after either a user or the external AI edits the catalog. */
@@ -159,8 +168,16 @@ const cCache = new Map<string, CompletionEntry[]>();
 /** The workspace publishes text files + drafts for recursive include parsing. */
 export function setCompletionProject(
   files: readonly CompletionFile[],
-  options: { projectRoot?: string; cStandard?: CStandard } = {},
+  options: { projectRoot?: string; cStandard?: CStandard; language?: ModuleLanguageState } = {},
 ): void {
+  const { state: nextLanguage, signature } = moduleLanguageCache.update(
+    options.language,
+    files,
+    options.cStandard ?? 'c17',
+  );
+  const languageChanged = signature !== moduleSignature;
+  moduleLanguage = nextLanguage;
+  moduleSignature = signature;
   projectFiles = files;
   if (options.projectRoot !== undefined && options.projectRoot !== projectRoot) definitionOrigins.clear();
   projectRoot = options.projectRoot ?? projectRoot;
@@ -176,10 +193,29 @@ export function setCompletionProject(
   languageRules.update(files, cStandard, catalog.useBuiltins, projectRoot);
   cCatalogCache.clear();
   scheduleRuleDiagnostics();
+  if (languageChanged && registeredMonaco) registerCompletions(registeredMonaco);
 }
 
 let legacyContent: string | undefined;
 const cCatalogCache = new Map<string, LanguageCompletions>();
+const moduleContribution = (path: string): LanguageCompletions | undefined => {
+  const entry = moduleLanguage && moduleLanguageForFile(moduleLanguage, path);
+  if (!entry) return undefined;
+  const project = ['c', 'cpp'].includes(entry.id) ? cCompletions(path) : [];
+  return (
+    resolveCompletionCatalog(
+      [
+        ...(catalog.useBuiltins ? entry.contributions : []),
+        ...(entry.userContributions ?? []),
+        { language: entry.editorLanguage, symbols: project },
+      ],
+      catalog.entries
+        .filter((item) => item.language === entry.editorLanguage || item.language === entry.id)
+        .map((item) => ({ ...item, language: entry.editorLanguage })),
+      true,
+    )[0] ?? { language: entry.editorLanguage }
+  );
+};
 const cContribution = (path: string) => {
   let contribution = cCatalogCache.get(path);
   if (!contribution) {
@@ -211,7 +247,15 @@ function scheduleRuleDiagnostics(): void {
     for (const model of monaco.editor.getModels()) {
       const path = activeProjectPath(model.uri.path);
       if (!path) continue;
-      const diagnostics = languageRules.diagnostics(path);
+      const diagnostics = moduleLanguage
+        ? [
+            ...moduleLanguage.diagnostics.filter((item) => item.file === path),
+            ...analyzeModuleLanguageRules(
+              moduleLanguage,
+              projectFiles.filter((file) => file.path === path),
+            ),
+          ]
+        : languageRules.diagnostics(path);
       const state = JSON.stringify(diagnostics);
       if (markerState.get(model) === state) continue;
       markerState.set(model, state);
@@ -341,9 +385,20 @@ export function sourcePathForUri(uriPath: string): string | undefined {
   return projectFiles.some((file) => normalizeSourcePath(file.path) === path) ? path : undefined;
 }
 
-function createCProvider(monaco: MonacoApi): Monaco.languages.CompletionItemProvider {
+function createCProvider(monaco: MonacoApi, language: string): Monaco.languages.CompletionItemProvider {
   return {
-    triggerCharacters: ['.', '#', '>'],
+    triggerCharacters: [
+      ...new Set([
+        ...(['c', 'cpp'].includes(language) ? ['.', '#', '>'] : []),
+        ...(moduleLanguage?.entries
+          .filter((entry) => entry.editorLanguage === language)
+          .flatMap((entry) =>
+            [...entry.contributions, ...(entry.userContributions ?? [])].flatMap(
+              (pack) => pack.triggerCharacters ?? [],
+            ),
+          ) ?? []),
+      ]),
+    ],
     provideCompletionItems(model, position) {
       const word = model.getWordUntilPosition(position);
       const range = new monaco.Range(
@@ -360,7 +415,12 @@ function createCProvider(monaco: MonacoApi): Monaco.languages.CompletionItemProv
       });
       const activePath = activeProjectPath(model.uri.path);
       if (!activePath) return { suggestions: [] };
-      const contribution = isCFile(model.uri.path) ? cContribution(activePath) : undefined;
+      if (moduleLanguage && !moduleLanguageForFile(moduleLanguage, activePath)) return { suggestions: [] };
+      const contribution = moduleLanguage
+        ? moduleContribution(activePath)
+        : isCFile(model.uri.path)
+          ? cContribution(activePath)
+          : undefined;
       const access = /([A-Za-z_]\w*)\s*(?:\.|->)\s*\w*$/.exec(linePrefix);
       if (access)
         return {
@@ -383,9 +443,13 @@ function createCDynamicHover(monaco: MonacoApi): Monaco.languages.HoverProvider 
     provideHover(model, position) {
       const word = model.getWordAtPosition(position);
       if (!word) return null;
-      const contribution = isCFile(model.uri.path)
-        ? cContribution(activeProjectPath(model.uri.path))
-        : undefined;
+      if (moduleLanguage && !moduleLanguageForFile(moduleLanguage, activeProjectPath(model.uri.path)))
+        return null;
+      const contribution = moduleLanguage
+        ? moduleContribution(activeProjectPath(model.uri.path))
+        : isCFile(model.uri.path)
+          ? cContribution(activeProjectPath(model.uri.path))
+          : undefined;
       const prefix = model.getValueInRange({
         startLineNumber: position.lineNumber,
         startColumn: 1,
@@ -423,8 +487,8 @@ export function registerCompletions(monaco: MonacoApi): void {
   const disposables: Monaco.IDisposable[] = [];
   disposables.push(monaco.editor.onDidCreateModel(() => scheduleRuleDiagnostics()));
   for (const contribution of resolveCompletionCatalog(
-    listLanguageCompletions(),
-    catalog.entries,
+    moduleLanguage ? [] : listLanguageCompletions(),
+    moduleLanguage ? [] : catalog.entries,
     catalog.useBuiltins,
   )) {
     disposables.push(
@@ -443,9 +507,16 @@ export function registerCompletions(monaco: MonacoApi): void {
   // Project-aware C/C++ symbols are dynamic: the parser sees current drafts and
   // recursively resolves quoted headers, so it is registered separately from
   // the static data packs.
-  for (const language of ['cpp', 'c']) {
-    disposables.push(monaco.languages.registerCompletionItemProvider(language, createCProvider(monaco)));
+  for (const language of new Set([
+    'cpp',
+    'c',
+    ...(moduleLanguage?.entries.map((entry) => entry.editorLanguage) ?? []),
+  ])) {
+    disposables.push(
+      monaco.languages.registerCompletionItemProvider(language, createCProvider(monaco, language)),
+    );
     disposables.push(monaco.languages.registerHoverProvider(language, createCDynamicHover(monaco)));
+    if (!['cpp', 'c'].includes(language)) continue;
     disposables.push(monaco.languages.registerDefinitionProvider(language, languageNavigation(monaco)));
     const declaration = languageNavigation(monaco, true);
     disposables.push(

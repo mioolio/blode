@@ -20,6 +20,10 @@ export interface DevRuntimeOptions {
   stopProcessTree?: (pid: number, options?: DevRuntimeOptions) => Promise<boolean>;
 }
 export function hasFatalStartupError(log: string): boolean;
+export function classifyElectronExit(
+  result: { code: number | null; timedOut: boolean; log: string },
+  retries?: { sandbox?: boolean; software?: boolean },
+): { retry: 'sandbox' | 'software' | null; failed: boolean; exitCode: number };
 export function stopProcessTree(pid: number, options?: DevRuntimeOptions): Promise<boolean>;
 export function findStaleElectronProcesses(
   electronExecutable: string,

@@ -12,6 +12,7 @@ import type { RuntimePluginInfo, RuntimePluginManifest } from '../src/shared/plu
 import type { DebuggerState, ProjectConfig } from '../src/shared/contracts';
 
 const stopped = (): DebuggerState => ({
+  sessionId: 'provider-session',
   connection: 'stopped',
   tools: { gdb: true, server: true },
   message: '',
@@ -37,6 +38,7 @@ async function fixture(t: TestContext, mode: RuntimePluginManifest['debugger']['
   const nativeConfigs: ProjectConfig[] = [];
   let nativeDisconnects = 0;
   let result: unknown = stopped();
+  const methodResults = new Map<string, unknown>();
   const plugin: RuntimePluginInfo = {
     id: 'Debug_Fixture',
     name: 'Fixture debugger',
@@ -74,6 +76,7 @@ async function fixture(t: TestContext, mode: RuntimePluginManifest['debugger']['
     async invokeDebug(id: string, method: string, args: unknown[]) {
       calls.push({ id, method, args });
       if (!(await trusted())) throw Error('error.runtimePluginTrustRequired');
+      if (methodResults.has(method)) return methodResults.get(method);
       if (mode === 'extend' && !['state', 'memory'].includes(method))
         throw Error('error.runtimePluginCapability');
       if (method === 'state') return mode === 'extend' ? { message: 'plugin extension' } : result;
@@ -123,6 +126,7 @@ async function fixture(t: TestContext, mode: RuntimePluginManifest['debugger']['
     setResult: (next: unknown) => {
       result = next;
     },
+    setMethodResult: (method: string, value: unknown) => methodResults.set(method, value),
     disconnects: () => nativeDisconnects,
     authorize: () => fs.writeFile(marker, 'fixture'),
   };
@@ -185,6 +189,15 @@ test('extend providers merge native state and keep state checks passive while ex
   assert.equal(context.debug.active, false);
 });
 
+test('builtin debug providers can select the ESP32-S3 backend without being forced onto STM32', async (t) => {
+  const context = await fixture(t, 'builtin');
+  context.plugin.manifest.compiler.baseRuntime = 'Esp32_S3_CAM';
+  await context.authorize();
+  await context.debug.connect(context.config);
+  assert.equal(context.nativeConfigs[0].boardId, 'Esp32_S3_CAM');
+  assert.equal(context.debug.active, true);
+});
+
 test('replacement providers retain the connected owner across main target changes and reject invalid state or revoked consent', async (t) => {
   const context = await fixture(t, 'replace');
   await context.authorize();
@@ -212,4 +225,43 @@ test('replacement providers retain the connected owner across main target change
   await context.authorize();
   await context.debug.disconnect();
   assert.equal(context.debug.active, false);
+});
+
+test('provider editing validates confirmation, session ownership and typed results', async (t) => {
+  const context = await fixture(t, 'replace');
+  await context.authorize();
+  await context.debug.connect(context.config);
+  const request = {
+    sessionId: 'provider-session',
+    address: 0x20000000,
+    expected: '00bf',
+    bytes: '0120',
+    pauseAndResume: false,
+    confirm: true as const,
+  };
+  const patched = { address: request.address, before: '00bf', after: '0120', resumed: false };
+  context.setMethodResult('patch', patched);
+  context.setMethodResult('assemble', '0120');
+  context.setMethodResult('breakpoints', [{ location: 'main', id: '1', status: 'added' }]);
+  await assert.rejects(
+    context.debug.invokePlugin(context.plugin.id, 'patch', [{ ...request, confirm: false }]),
+  );
+  await assert.rejects(
+    context.debug.patch({ ...request, sessionId: 'previous-session' }),
+    /debuggerSessionChanged/,
+  );
+  assert.equal(context.calls.filter((call) => call.method === 'patch').length, 0);
+  assert.deepEqual(await context.debug.invokePlugin(context.plugin.id, 'patch', [request]), patched);
+  assert.equal(await context.debug.assemble(request.address, 'movs r0, #1'), '0120');
+  assert.deepEqual(await context.debug.breakpoints(['main']), [
+    { location: 'main', id: '1', status: 'added' },
+  ]);
+  context.setMethodResult('patch', { ...patched, after: 'arbitrary' });
+  await assert.rejects(context.debug.patch(request), /runtimePluginResult/);
+  context.setMethodResult('breakpoints', []);
+  await assert.rejects(context.debug.breakpoints(['main']), /runtimePluginResult/);
+  context.setMethodResult('assemble', '00bf00bf00bf');
+  await assert.rejects(context.debug.assemble(request.address, 'nop'), /runtimePluginResult/);
+  await fs.unlink(context.marker);
+  await assert.rejects(context.debug.assemble(request.address, 'nop'), /runtimePluginTrustRequired/);
 });

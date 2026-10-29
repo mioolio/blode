@@ -135,7 +135,8 @@ if (!scope.blode) {
       if (!tab) throw new Error('error.debuggerPopupBlocked');
       tab.opener = null;
     },
-    debuggerState: () => call('debuggerState', []) as ReturnType<DesktopApi['debuggerState']>,
+    debuggerState: (config) =>
+      call('debuggerState', config ? [config] : []) as ReturnType<DesktopApi['debuggerState']>,
     debuggerSymbols: async () => {
       const file = await pickHostPath({ kind: 'file', extensions: ['elf', 'axf'] });
       return file ? (call('debuggerSymbolsPath', [file]) as Promise<string>) : null;
@@ -145,7 +146,11 @@ if (!scope.blode) {
     debuggerBreakpoint: (location, id) =>
       call('debuggerBreakpoint', id === undefined ? [location] : [location, id]) as Promise<void>,
     debuggerMemory: (address, length) => call('debuggerMemory', [address, length]) as Promise<string>,
-    debuggerInstallTools: () => call('debuggerInstallTools', []) as Promise<void>,
+    debuggerBreakpoints: (locations) =>
+      call('debuggerBreakpoints', [locations]) as ReturnType<DesktopApi['debuggerBreakpoints']>,
+    debuggerPatch: (request) => call('debuggerPatch', [request]) as ReturnType<DesktopApi['debuggerPatch']>,
+    debuggerAssemble: (address, source) => call('debuggerAssemble', [address, source]) as Promise<string>,
+    debuggerInstallTools: (config) => call('debuggerInstallTools', config ? [config] : []) as Promise<void>,
     debuggerChooseGdb: async () => {
       const file = await pickHostPath({ kind: 'file' });
       return file ? (call('debuggerChooseGdbPath', [file]) as Promise<boolean>) : false;

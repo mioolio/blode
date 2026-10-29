@@ -124,7 +124,7 @@ export function createWorkbenchAutomation(options: Options) {
     },
     'firmware.flash': (p) =>
       firmware.withImage(p.id, p.config.boardId, p.address, (image) => core.flashPrepared(p.config, image)),
-    'debugger.state': () => debug.state(),
+    'debugger.state': (p) => debug.state(p.config),
     'debugger.open': () => options.openDebugger(),
     'debugger.symbols.set': (p) =>
       core.runHardwareAction(async () => {
@@ -134,10 +134,13 @@ export function createWorkbenchAutomation(options: Options) {
     'debugger.action': (p) => debug.action(p.action),
     'debugger.breakpoint': (p) => debug.breakpoint(p.location, p.removeId),
     'debugger.memory': (p) => debug.memory(p.address, p.length),
+    'debugger.breakpoints': (p) => debug.breakpoints(p.locations),
+    'debugger.patch': (p) => debug.patch(p),
+    'debugger.assemble': (p) => debug.assemble(p.address, p.source),
     'debugger.storage': () => debug.storage(),
-    'debugger.tools.install': () =>
-      core.runInstallation('GNU Arm GCC / GDB', ({ progress, log, fetcher, signal }) =>
-        debug.install(progress, log, { fetcher, signal }),
+    'debugger.tools.install': (p) =>
+      core.runInstallation('GDB / debug server', ({ progress, log, fetcher, signal }) =>
+        debug.install(progress, log, { fetcher, signal, config: p.config }),
       ),
     'debugger.gdb.set': (p) => debug.selectGdb(absolute(p.path)),
     'ui.state': () => ui.state(),

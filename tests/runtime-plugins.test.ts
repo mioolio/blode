@@ -169,6 +169,69 @@ async function authorize(manager: RuntimePlugins, id: string, permanent = false)
   await manager.trust({ id, fingerprint: plugin.fingerprint, confirm: true, permanent });
 }
 
+test('module language catalogs load as bounded metadata without authorizing or executing plugin code', async (t) => {
+  const fixtureValue = await fixture(t, (manifest) => {
+    manifest.languages = {
+      mode: 'fixed',
+      default: 'c',
+      entries: [
+        { id: 'c', editorLanguage: 'cpp', extensions: ['.c'], catalogs: ['languages/C/catalog.json'] },
+      ],
+    };
+  });
+  const { manager, id, directory, marker } = fixtureValue;
+  await fs.mkdir(path.join(directory, 'languages/C'), { recursive: true });
+  await fs.writeFile(
+    path.join(directory, 'languages/C/catalog.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      language: 'cpp',
+      symbols: [{ name: 'plugin_symbol', kind: 'function', detail: 'void plugin_symbol(void)' }],
+    }),
+  );
+  await manager.discover();
+  const state = await manager.languages(id, 'c17');
+  assert.deepEqual(state?.diagnostics, []);
+  assert.equal(state?.entries[0].contributions[0].symbols?.[0].name, 'plugin_symbol');
+  assert.equal((globalThis as any)[marker], undefined);
+  assert.equal((await manager.state()).plugins.find((entry) => entry.id === id)?.trust, 'required');
+  await fs.writeFile(path.join(directory, 'languages/C/catalog.json'), '{invalid json');
+  const invalid = await manager.languages(id, 'c17');
+  assert.ok(
+    invalid?.diagnostics.some(
+      (entry) => entry.file.endsWith('languages/C/catalog.json') && entry.severity === 'error',
+    ),
+  );
+  assert.equal((globalThis as any)[marker], undefined);
+});
+
+test('Node compiler payloads use Electron as Node without launching another desktop window', async (t) => {
+  const context = await fixture(t);
+  const descriptor = Object.getOwnPropertyDescriptor(process.versions, 'electron');
+  Object.defineProperty(process.versions, 'electron', { value: '45.1.0', configurable: true });
+  t.after(() => {
+    if (descriptor) Object.defineProperty(process.versions, 'electron', descriptor);
+    else Reflect.deleteProperty(process.versions, 'electron');
+  });
+  let command = '',
+    env: NodeJS.ProcessEnv | undefined;
+  t.mock.method(
+    context.host,
+    'runCommand',
+    async (executable: string, _args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
+      command = executable;
+      env = options?.env;
+      return { code: 0, output: 'compiler finished' };
+    },
+  );
+  await context.manager.discover();
+  await authorize(context.manager, context.id);
+  const [runtime] = context.manager.attach(context.host, []);
+  await runtime.build(context.config, {});
+  assert.equal(command, process.execPath);
+  assert.equal(env?.ELECTRON_RUN_AS_NODE, '1');
+});
+
 test('declared view paths, ids, sizes and locations stay within the package schema', async (t) => {
   const context = await fixture(t);
   const valid = {

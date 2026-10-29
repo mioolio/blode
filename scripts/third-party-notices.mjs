@@ -64,7 +64,10 @@ sections.push(
   '',
   '```text',
   (
-    await fs.readFile(path.join(root, 'extensions/boards/STM32F103C8T6/vendor/LICENSE.xmldom'), 'utf8')
+    await fs.readFile(
+      path.join(root, 'extensions/boards/STM32F103C8T6/compiler/vendor/LICENSE.xmldom'),
+      'utf8',
+    )
   ).trim(),
   '```',
   '',

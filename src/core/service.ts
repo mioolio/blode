@@ -45,6 +45,11 @@ import { SnapshotCache } from './snapshot-cache';
 import { analyzeCSourceRules, validateProjectLanguageRules } from '../../extensions/completions/rules';
 import { RuntimePlugins } from './runtime-plugins';
 import type { RuntimeViewContribution } from '../shared/plugins';
+import {
+  analyzeModuleLanguageRules,
+  withModuleLanguageOverrides,
+  moduleLanguageForFile,
+} from '../shared/module-languages';
 
 interface InstallationReporter {
   progress: (progress: InstallationProgress) => void;
@@ -79,6 +84,7 @@ export interface CoreService extends CoreApi {
   readonly runtimePlugins: RuntimePlugins;
   currentProjectRoot(): string;
   currentConfig(): ProjectConfig;
+  languageConfiguration(): Promise<import('../shared/module-languages').ModuleLanguageState | undefined>;
   workspaceSnapshot(fresh?: boolean): Promise<Pick<AppState, 'projectRoot' | 'files'>>;
   shutdown(): Promise<void>;
   setProjectRoot(root: string): Promise<void>;
@@ -618,6 +624,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     runtimePlugins,
     currentProjectRoot: () => projectRoot,
     currentConfig: () => structuredClone(config),
+    languageConfiguration: () => runtimePlugins.languages(config.boardId, projectBuild.cStandard ?? 'c17'),
     async workspaceSnapshot(fresh = false) {
       if (fresh) resourceCache.invalidate();
       const root = projectRoot;
@@ -637,10 +644,12 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         : await Promise.all([toolchainStatus(), drivers.statuses()]);
       const connections = { serial: serial.state, probes: structuredClone(probeState) };
       const pluginState = await runtimePlugins.state();
+      const language = await runtimePlugins.languages(config.boardId, projectBuild.cStandard ?? 'c17');
       if (!projectRoot)
         return {
           initializing,
           runtimePlugins: pluginState,
+          language,
           projectRoot: '',
           installation: installation.snapshot(),
           workspaceOpen: false,
@@ -666,13 +675,19 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       return {
         initializing,
         runtimePlugins: pluginState,
+        language,
         projectRoot,
         installation: installation.snapshot(),
         workspaceOpen: true,
         connections,
         config: structuredClone(config),
         build: structuredClone(projectBuild),
-        files,
+        files: language
+          ? files.map((file) => ({
+              ...file,
+              language: moduleLanguageForFile(language, file.path)?.editorLanguage ?? file.language,
+            }))
+          : files,
         inventory,
         boards: listBoards(),
         ports,
@@ -815,10 +830,19 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         const languageFiles = await readProjectFiles(projectRoot);
         const before = await currentFingerprint(languageFiles);
         emit('status.buildStarted', 'info', 'status');
-        const languageDiagnostics = [
-          ...validateProjectLanguageRules(languageFiles, projectBuild.cStandard ?? 'c17'),
-          ...analyzeCSourceRules(languageFiles, projectBuild.cStandard ?? 'c17'),
-        ];
+        const declaredLanguage = await runtimePlugins.languages(
+          config.boardId,
+          projectBuild.cStandard ?? 'c17',
+        );
+        const language =
+          declaredLanguage &&
+          withModuleLanguageOverrides(declaredLanguage, languageFiles, projectBuild.cStandard ?? 'c17');
+        const languageDiagnostics = language
+          ? [...language.diagnostics, ...analyzeModuleLanguageRules(language, languageFiles)]
+          : [
+              ...validateProjectLanguageRules(languageFiles, projectBuild.cStandard ?? 'c17'),
+              ...analyzeCSourceRules(languageFiles, projectBuild.cStandard ?? 'c17'),
+            ];
         for (const diagnostic of languageDiagnostics)
           emit(
             `${diagnostic.file}:${diagnostic.line}:${diagnostic.column}: ${diagnostic.severity}: ${diagnostic.message}`,

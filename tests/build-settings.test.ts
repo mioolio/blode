@@ -7,16 +7,16 @@ import { parseProjectBuild } from '../src/core/config';
 import {
   compilerChoice as stmChoice,
   optimizationFlags as stmFlags,
-} from '../extensions/boards/STM32F103C8T6/build-settings';
+} from '../extensions/boards/STM32F103C8T6/compiler/build-settings';
 import {
   compilerChoice as espChoice,
   compilerConfig,
   compilerIdentity,
   optimizationFlags as espFlags,
-} from '../extensions/boards/Esp32_S3_CAM/build-settings';
-import { esp32S3Adapter } from '../extensions/boards/Esp32_S3_CAM/adapter';
-import { createEsp32S3Runtime } from '../extensions/boards/Esp32_S3_CAM/runtime';
-import { Toolchains } from '../extensions/boards/Esp32_S3_CAM/toolchain';
+} from '../extensions/boards/Esp32_S3_CAM/compiler/build-settings';
+import { esp32S3Adapter } from '../extensions/boards/Esp32_S3_CAM/device/adapter';
+import { createEsp32S3Runtime } from '../extensions/boards/Esp32_S3_CAM/runtime/index';
+import { Toolchains } from '../extensions/boards/Esp32_S3_CAM/tools/toolchain';
 import type { RuntimeHost } from '../extensions/runtime';
 import type { BuildSettings } from '../src/shared/build-settings';
 

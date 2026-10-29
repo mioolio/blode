@@ -125,7 +125,13 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
     publish: (event) => web?.publishCollaboration(event),
   });
   const protection = protectSharedWorkspace(core, collaboration);
-  const ai = new AiAssistance({ dataRoot, projectRoot: () => core.currentProjectRoot(), emit });
+  const ai = new AiAssistance({
+    dataRoot,
+    projectRoot: () => core.currentProjectRoot(),
+    emit,
+    builtins: async () =>
+      (await core.languageConfiguration())?.entries.flatMap((entry) => entry.contributions),
+  });
   // Browser peers cannot claim the trusted local client's global undo permission.
   const assistance = createAssistanceRoutes(ai, collaboration, ui, false);
   const services = createHostServices({

@@ -1,6 +1,6 @@
 # 平台包与宿主架构
 
-设备实现按平台归属。`extensions/boards/<platform>/` 组合该平台的配置、检测、工具链、构建、烧录、布局和驱动描述；`src/core` 提供通用宿主能力，不按厂商拼接工具命令。当前内置检测配置 `auto` 和具体平台 `Esp32_S3_CAM`、`STM32F103C8T6`。
+设备实现按平台归属。`extensions/boards/<platform>/` 组合该平台的配置、检测、工具链、构建、烧录、布局、语言和驱动描述；`src/core` 提供宿主服务及可复用调试后端。当前内置检测配置 `auto` 和具体平台 `Esp32_S3_CAM`、`STM32F103C8T6`。
 
 ## 目录责任
 
@@ -24,7 +24,7 @@
 
 平台 runtime 不导入 core 或另一个平台实现；类型来自 shared，宿主契约来自 `extensions/runtime.ts`。平台内部使用相对导入，复制完整目录即可保留内部依赖。纯 adapter 定义配置，有状态的工具与设备操作由 runtime 组织。
 
-宿主还包含 Electron IPC、网页服务、日志导出和通用驱动安装执行器。这些基础设施不定义厂商 Flash 地址、FQBN、下载源或芯片识别规则。
+宿主还包含 Electron IPC、网页服务、日志导出和通用驱动安装执行器。平台模块负责 FQBN、编译与烧录布局及识别规则；共享调试层通过显式架构 profile 管理寄存器、调试服务参数和地址区域，第三方可扩展或替换该后端。
 
 ## 调用流
 
@@ -57,7 +57,9 @@ PlatformRuntime 包含 `status/install/discover/probe/build/flash/invalidate`；
 
 ## 复制与注册
 
-内置平台 manifest 声明 `entry`、`runtime`、`apiVersion` 和 `runtimeApiVersion`，静态 SDK 契约保留版本 1。内部开发分支另提供版本 2 的动态运行时插件契约，见[运行时插件指南](RUNTIME-PLUGINS.md)。
+两个标准平台分为 `support/device/runtime/constraints/ui/compiler/debugger/layout/languages/tools` 十个职责目录，入口为 `device/adapter.ts` 和 `runtime/index.ts`。清单声明 `entry`、`runtime`、`apiVersion` 和 `runtimeApiVersion`，当前标准模块使用 API v2；`auto` 只提供中性配置。
+
+下列静态注册步骤适用于修改宿主源码。第三方独立分发使用 `package:runtime`，不编辑 registry：生成 `.mjs` 与资源后安装到宿主数据目录 `plugins/<id>/`，经授权加载。编译后的桌面主程序无需源码即可使用兼容包，详见[运行时插件指南](RUNTIME-PLUGINS.md)。
 
 1. 复制完整平台目录，包含工具链、协议、布局、驱动事实和说明。
 2. 在 `extensions/registry.ts` 显式注册 adapter。
@@ -68,6 +70,8 @@ PlatformRuntime 包含 `status/install/discover/probe/build/flash/invalidate`；
 S3 与 STM32 已做单目录复制后的隔离打包检查，不依赖 core 或彼此目录。检查证明源码依赖边界，不能替代工具环境、接线、链接地址和硬件烧录验证。
 
 内置平台随应用静态编译。API v2 插件从宿主插件目录发现声明，经过包指纹对应的用户授权后加载原生业务模块；插件变更需要重启并重新检查授权。原生模块在宿主进程中执行，HTML 视图则使用独立文档、受限消息桥和隔离 iframe。工程目录中的任意脚本不会因此自动加载。
+
+语言数据归模块所有：内置适配器静态导入其 JSON，二进制宿主不反查源码路径；外部模块通过清单加载包内 `languages/`。`AppState.language` 向编辑器提供解析结果，编译前检查使用同一声明；有模块声明时不混入宿主 C/Arduino 默认目录。项目规则、工作区索引和用户 AI 条目保留各自作用域，见[模块语言适配](MODULE-LANGUAGES.md)。
 
 ## 构建、缓存与能力
 

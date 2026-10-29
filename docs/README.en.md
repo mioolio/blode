@@ -12,6 +12,12 @@ Blode Studio is a modular embedded development workbench for editing, collaborat
 
 The latest internal update adds an interactive PowerShell terminal, extension windows and bottom-panel views, save-on-exit decisions and an optional system tray. Collaboration follows foreground attention and refreshes on return. Hardware debugging, Preferences and device controls share more compact wording and controls. See the [workbench interaction update](internal/workbench-interaction.md) for setup and validation details.
 
+The debugger now groups connection and tool settings in a top menu, offers batch breakpoints, and previews single Cortex-M3 instructions from assembly or hex bytes. SRAM instructions can be patched while stopped, or with an explicit pause/write/verify/resume transaction while running. Flash editing still requires rebuilding and flashing firmware. Normal development-window exits no longer trigger a sandbox restart. See the [debugger update](internal/debugger-editing.md) for usage and verification boundaries.
+
+The latest internal update also adds ESP32-S3 native USB-JTAG debugging with Xtensa GDB and Espressif OpenOCD. Windows tool downloads, hashes and version execution were verified; physical JTAG acceptance and Linux testing remain pending. Xtensa instruction editing is not enabled. See [hardware debugging](HARDWARE-DEBUGGING.md).
+
+Both standard modules now use ten responsibility directories: support, device, runtime, constraints, UI, compiler, debugger, layout, languages and tools. Modules own their language declarations and JSON data. `package:runtime` produces standalone JavaScript packages for compatible binary hosts; users install them under the host data directory's `plugins/<id>/`, without host source code or TypeScript. New manifest fields require a host containing this internal update; this change does not produce a new release binary. See the [module guide](RUNTIME-PLUGINS.md) and [module language contract](MODULE-LANGUAGES.md).
+
 To try the source build:
 
 ```sh
@@ -53,7 +59,7 @@ The editor supports preview and pinned tabs, horizontal scrolling, split views a
 
 Build a selected file or directory without connecting a device. Firmware operations include BIN, Intel HEX and S-record export, STM32 ELF export, Flash layout editing and prepared firmware programming without opening a project. Connect and identify the physical target for programming.
 
-Serial communication supports UTF-8/HEX, configurable framing, flow control and line endings. The STM32/ST-Link/GDB workbench opens a separate desktop window or browser tab with registers, disassembly, stack, breakpoints, memory and local ELF inspection.
+Serial communication supports UTF-8/HEX, configurable framing, flow control and line endings. The debugger opens a separate desktop window or browser tab for STM32/ST-Link or ESP32-S3 USB-JTAG, with registers, disassembly, stack, breakpoints, memory and local ELF inspection.
 
 Portable project ZIP export collects supported external dependencies, rewrites archive-copy paths and includes a dependency manifest. JSON-RPC and MCP expose validated project, Git, build, firmware, debugger, language-index and UI actions.
 
@@ -108,7 +114,7 @@ Restart after changing main-process, preload or platform code. Renderer developm
 
 ## Language and project configuration
 
-Built-in data lives in `extensions/completions/C/<standard>/` and `extensions/completions/C++/arduino/`. C version directories are independent; projects can override a selected standard in `languages/C/<standard>/`.
+Standard board modules declare their own data under `extensions/boards/<id>/languages/`, with separate C99/C11/C17/C23 catalogs and C++ contributions. Host defaults in `extensions/completions/` remain available for legacy modules without a language declaration. Projects can add selected-standard rules in `languages/C/<standard>/`; workspace symbols and user AI entries remain available.
 
 Right-click `be` → **Advanced settings** to change the build entry, source list and `build.cStandard`. C17 is the default. Compiler support for a selected standard depends on the installed tool version. Legacy `blode.completions.json` and `.blode/project.json` inputs remain compatible.
 

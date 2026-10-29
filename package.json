@@ -26,7 +26,8 @@
     "web:dev": "tsx scripts/web-server.ts",
     "web:build": "node scripts/build-web.mjs",
     "web:start": "node dist/web-server.cjs",
-    "package:web": "tsx scripts/package-web.ts"
+    "package:web": "tsx scripts/package-web.ts",
+    "package:runtime": "tsx scripts/package-runtime.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

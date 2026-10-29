@@ -1,6 +1,7 @@
 import * as z from 'zod';
 import type { RuntimePluginManifest } from '../shared/plugins';
 import { configSchema } from './config';
+import { moduleLanguagesSchema } from '../shared/module-languages';
 
 const text = z.string().trim().min(1).max(4096);
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/);
@@ -65,6 +66,7 @@ export const runtimePluginManifestSchema = z
     transport: z.enum(['serial', 'stlink', 'usb', 'physical', 'custom']),
     capabilities: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,63}$/)).max(64),
     sourceInputs: z.array(relative).max(200).optional(),
+    languages: moduleLanguagesSchema.optional(),
     support: z
       .object({
         chips: z.array(text).min(1).max(200),
@@ -76,8 +78,13 @@ export const runtimePluginManifestSchema = z
     defaultConfig: configSchema,
     compiler: z
       .object({
-        mode: z.enum(['host', 'plugin']),
+        mode: z.enum(['host', 'plugin', 'runtime']),
         baseRuntime: id.optional(),
+        managedTools: z
+          .array(z.object({ id, name: text, version: text.optional() }).strict())
+          .min(1)
+          .max(32)
+          .optional(),
         defaultTool: z
           .object({
             id,
@@ -151,6 +158,14 @@ export const runtimePluginManifestSchema = z
       context.addIssue({ code: 'custom', message: 'boardId must match id' });
     if (manifest.compiler.mode === 'host' && !manifest.compiler.baseRuntime)
       context.addIssue({ code: 'custom', message: 'host compiler baseRuntime required' });
+    if (manifest.compiler.mode === 'runtime' && !manifest.compiler.managedTools?.length)
+      context.addIssue({ code: 'custom', message: 'runtime compiler managedTools required' });
+    if (
+      manifest.compiler.managedTools &&
+      new Set(manifest.compiler.managedTools.map((tool) => tool.id)).size !==
+        manifest.compiler.managedTools.length
+    )
+      context.addIssue({ code: 'custom', message: 'duplicate managed tool ids' });
     if (
       (manifest.compiler.mode === 'plugin' || manifest.compiler.forceComponent) &&
       !manifest.compiler.defaultTool

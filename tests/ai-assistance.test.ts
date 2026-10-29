@@ -40,6 +40,25 @@ test('prediction starts disabled and creates no request or model connection', ()
     assert.deepEqual(await service.aiPredictionPoll(), { cursor: 0, requests: [] });
   }));
 
+test('AI catalog inspection follows the selected module, including an explicitly empty catalog', () =>
+  fixture(async (_service, directory) => {
+    let empty = false;
+    const service = new AiAssistance({
+      dataRoot: directory,
+      projectRoot: () => 'C:/projects/demo',
+      builtins: async () =>
+        empty
+          ? []
+          : [{ language: 'cpp', symbols: [{ name: 'module_only', kind: 'function', detail: 'Module' }] }],
+    });
+    assert.deepEqual(
+      (await service.aiAssistanceState()).builtins.map((pack) => pack.symbols?.[0].name),
+      ['module_only'],
+    );
+    empty = true;
+    assert.deepEqual((await service.aiAssistanceState()).builtins, []);
+  }));
+
 test('catalog configuration persists atomically and rejects stale revisions', () =>
   fixture(async (service, directory) => {
     const updated = await service.aiAssistanceConfigure({

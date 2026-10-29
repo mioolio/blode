@@ -2,16 +2,22 @@
 
 当前声明范围为 STM32F103C8T6；Keil 工程可写 `STM32F103C8` 或 `STM32F103C8T6`。默认 Flash 为 64 KiB，SRAM 为 20 KiB，用户仍可显式调整 Flash 分配。ST-Link 的 `0x410` 标识属于 F1 中容量组，不能单独证明具体封装或完整料号；该包不据此宣称支持所有 STM32 型号。第三方插件接口见[开发指南](../../../docs/RUNTIME-PLUGINS.md)。
 
-此目录拥有 STM32 / ST-Link 的配置、运行时、协议、工具和驱动事实。它使用 ../../runtime.ts 的 RuntimeHost，不导入 core 或 ESP32-S3 平台实现。
+此目录拥有 STM32 / ST-Link 的配置、运行时、协议、工具和驱动事实。它使用宿主 SDK 的 `RuntimeHost`，不导入 core 或 ESP32-S3 平台实现。
 
-| 文件                              | 责任                                                                 |
-| --------------------------------- | -------------------------------------------------------------------- |
-| adapter.ts、manifest.json         | STM32 配置、平台能力和边界校验                                       |
-| layout.ts                         | 从 ProjectConfig 读取应用区大小，供链接、ELF 与二进制边界共用        |
-| runtime.ts                        | 探针扫描、目标识别、构建/固件验证与烧录分派                          |
-| compiler.ts、templates.ts、gnu.ts | Arm Compiler 6 或 GNU Arm GCC 编译、ELF/向量验证、目标模板、GCC 安装 |
-| programmer.ts、protocol.ts        | st-info/st-flash 工具、输出解析、参数和物理范围校验                  |
-| driver.ts                         | 官方驱动归档、INF、USB ID 和驱动库事实                               |
+| 目录           | 职责                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `support/`     | 支持范围与发布状态说明；声明位于 `manifest.support`                                        |
+| `device/`      | `adapter.ts` 设备配置；`programmer.ts`、`protocol.ts` 探针与烧录协议                       |
+| `runtime/`     | `index.ts` 注册运行时、分派构建与设备操作                                                  |
+| `constraints/` | 芯片、地址与操作约束说明                                                                   |
+| `ui/`          | 界面字段及扩展入口说明                                                                     |
+| `compiler/`    | 编译器选择、Keil 工程解析、CMSIS 兼容、启动与链接模板；`vendor/` 包含 XML 解析依赖及许可证 |
+| `debugger/`    | 硬件调试能力与宿主调试器的集成说明                                                         |
+| `layout/`      | `index.ts` 应用区大小和资源布局计算                                                        |
+| `languages/`   | 本模块的语言规则与补全目录                                                                 |
+| `tools/`       | `gnu.ts` GNU Arm 工具下载；`driver.ts` ST-Link 驱动声明                                    |
+
+源码入口为 `device/adapter.ts` 和 `runtime/index.ts`。目录职责固定，声明以根目录 `manifest.json` 为准，避免维护多份默认配置。
 
 SWD 调试与 UART 串口分开；ST-Link 不需要出现在 COM 列表。平台识别必须确认选定探针、芯片 ID 和物理容量，不能从一个 COM 号或默认容量推断 STM32 型号。
 
@@ -36,3 +42,11 @@ Arm Compiler 6.22 完整工具已从本机 E 盘迁入 tools/armclang，保留�
 内置 TypeScript runtime 随宿主编译，声明与实现必须匹配宿主 SDK；修改内置平台时仍需维护静态 registry 和驱动描述。第三方可复制分享的 API v2 包使用自己的 JavaScript 入口和声明，由宿主发现并在用户确认后加载，见[运行时插件指南](../../../docs/RUNTIME-PLUGINS.md)。平台目录的隔离复制 bundle 检查只验证模块边界；历史实机数据见[硬件记录](../../../docs/HARDWARE-VALIDATION.md)。
 
 连接步骤见 [STM32 使用说明](../../../docs/STM32.md)，工具根目录与缓存见 [工具链说明](../../../docs/TOOLCHAINS.md)。
+
+## 语言与独立分发
+
+本模块自行声明 C/C++ 语言，C99/C11/C17/C23 分别存放在 `languages/C/` 下；`.c` 和 `.h` 属于 C，C++ 后缀使用独立目录，不加载 Arduino 条目。格式与工程覆盖规则见[模块语言适配](../../../docs/MODULE-LANGUAGES.md)。
+
+在仓库根目录执行 `npm run package:runtime -- extensions/boards/STM32F103C8T6 --output ./release/modules --zip`，生成 `STM32F103C8T6_Module`。包中包含 JavaScript、语言和模板资源，使用 `runtime` 编译模式；安装到兼容宿主数据目录 `plugins/STM32F103C8T6_Module/` 后重启。使用者不需要源码仓库或 TypeScript。工具再分发仍遵循各自许可。
+
+调试复用宿主 Cortex-M3/ST-Link 后端，操作与指令修改范围见[硬件调试指南](../../../docs/HARDWARE-DEBUGGING.md)。新模块字段需要包含本次内部更新的宿主；安装、升级和兼容规则见[模块开发指南](../../../docs/RUNTIME-PLUGINS.md)。

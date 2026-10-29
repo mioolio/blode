@@ -18,6 +18,11 @@ import type {
 } from '../shared/plugins';
 import { parseRuntimePluginManifest } from './runtime-plugin-schema';
 import { configSchema } from './config';
+import {
+  moduleLanguagePaths,
+  resolveModuleLanguages,
+  type ModuleLanguageState,
+} from '../shared/module-languages';
 
 interface Options {
   roots: string[];
@@ -104,6 +109,9 @@ const debugMethods = new Set([
   'symbolsBytes',
   'selectGdb',
   'breakpoint',
+  'breakpoints',
+  'patch',
+  'assemble',
   'memory',
   'install',
   'restore',
@@ -144,6 +152,39 @@ export class RuntimePlugins {
   private key?: Buffer;
   private closed = false;
   constructor(private readonly options: Options) {}
+  /** Language JSON is metadata: reading it never imports or executes a runtime. */
+  async languages(id: string, standard = 'c17'): Promise<ModuleLanguageState | undefined> {
+    const record = this.packages.get(id);
+    const adapter = getBoardAdapter(id);
+    const declaration = record?.manifest.languages ?? adapter.definition.runtimePlugin?.languages;
+    if (!declaration) return undefined;
+    const assets: Record<string, unknown> = { ...adapter.languageAssets };
+    const errors: NonNullable<ModuleLanguageState>['diagnostics'] = [];
+    if (record) {
+      let total = 0;
+      for (const relative of moduleLanguagePaths(declaration, standard)) {
+        try {
+          const file = await this.packageFile(record, relative);
+          const size = (await fs.stat(file)).size;
+          if (size > 1024 * 1024 || (total += size) > 8 * 1024 * 1024)
+            throw new Error('Language catalog exceeds size limit.');
+          const content = await fs.readFile(file, 'utf8');
+          assets[relative] = JSON.parse(content);
+        } catch (error) {
+          errors.push({
+            file: `${id}/${relative}`,
+            line: 1,
+            column: 1,
+            severity: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+    const result = resolveModuleLanguages(id, declaration, assets, standard);
+    result.diagnostics.push(...errors);
+    return result;
+  }
   private async packageFile(record: Pick<PackageRecord, 'directory'>, relative: string) {
     if (!relativeFile.safeParse(relative).success || relative.replaceAll('\\', '/') === '.uel')
       fail('error.runtimePluginPath');

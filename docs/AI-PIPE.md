@@ -86,6 +86,7 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 | 驱动       | `drivers.status`、`drivers.install`                                                                                                                                                                          |
 | 固件       | `firmware.prepare`、`firmware.export`、`firmware.flash`                                                                                                                                                      |
 | 独立调试   | `debugger.open`、`debugger.state`、`debugger.symbols.set`、`debugger.connect`、`debugger.action`、`debugger.breakpoint`、`debugger.memory`、`debugger.storage`、`debugger.tools.install`、`debugger.gdb.set` |
+| 调试编辑   | `debugger.assemble` 生成机器码预览；`debugger.breakpoints` 批量断点；`debugger.patch` 使用会话 ID、原字节比较和 `confirm: true` 修改 SRAM 指令                                                               |
 | 界面与日志 | `ui.state`、`ui.command`、`window.action`、`logs.latest`                                                                                                                                                     |
 | 补全与预测 | `ai.state`、`ai.configure`、`ai.predictions.poll`、`ai.prediction.submit`、`ai.prediction.read`、`ai.prediction.request`、`ai.prediction.cancel`                                                             |
 | 多人协作   | `collaboration.state`、`collaboration.open`、`collaboration.presence`、`collaboration.edit`、`collaboration.save`、`collaboration.resolve`、`collaboration.leave`                                            |
@@ -100,6 +101,8 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 文件树操作使用工程相对路径。`project.open`、`firmware.prepare/export`、`debugger.symbols.set` 和 `debugger.gdb.set` 使用桌面服务所在电脑的绝对路径；不通过浏览器任意访问客户端文件。`firmware.prepare` 返回不可变选择 ID，随后将 ID、配置、地址及 `confirm: true` 交给 `firmware.flash`。导出默认不覆盖已有文件，覆盖时另需 `confirmOverwrite: true`。
 
 `flash.run`、`toolchain.install`、`file.delete`、`project.close`、`drivers.install`、`firmware.flash`、`debugger.tools.install` 和 `window.action` 都必须传布尔值 `confirm: true`。软件允许已授权 AI 直接执行这些动作，不额外弹出确认流程；参数校验、设备互斥、构建指纹和目标边界检查仍然生效。
+
+`debugger.patch` 同样要求 `confirm: true`，且必须使用 `debugger.state` 返回的当前 `sessionId`。参数还包括 `address`、原机器码 `expected`、新机器码 `bytes` 和布尔值 `pauseAndResume`。内置实现仅改写 STM32F103C8T6 SRAM 中等长的单条 Thumb 指令；运行中修改需 `pauseAndResume: true`，写入或校验失败后不继续运行。`debugger.assemble` 接收 `address`、`source` 并返回机器码预览，不写入硬件。`debugger.breakpoints` 接收最多 128 项 `locations`，逐项返回状态。详见[调试编辑契约](internal/debugger-editing.md)。
 
 `ui.state` 列出已连接界面的 `clientId`、当前文件、标签、未保存文件及面板状态。`ui.command` 默认作用于桌面端，无桌面端时选择一个活跃网页客户端；也可用 `target` 指定 ID。命令会等待该界面回执。例如：
 

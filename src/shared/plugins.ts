@@ -53,12 +53,15 @@ export interface RuntimePluginManifest {
   };
   defaultConfig: ProjectConfig;
   compiler: {
-    mode: 'host' | 'plugin';
+    mode: 'host' | 'plugin' | 'runtime';
     baseRuntime?: string;
     defaultTool?: RuntimePluginTool;
+    /** Default tools installed and discovered by this runtime's install/status methods. */
+    managedTools?: { id: string; name: string; version?: string }[];
     forceComponent?: boolean;
   };
   debugger: { mode: 'none' | 'builtin' | 'extend' | 'replace'; view?: string };
+  languages?: import('./module-languages').ModuleLanguagesDeclaration;
   layout: {
     flashBaseAddress?: number;
     recommendedFlashSizes: number[];

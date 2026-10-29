@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
+import { randomUUID } from 'node:crypto';
 import type {
   DebuggerState,
   DebuggerAction,
@@ -10,14 +11,26 @@ import type {
   InstallationProgress,
 } from '../shared/contracts';
 import { parseMiValues, type MiValue } from './gdb-mi';
-import { GnuArmToolchain } from '../../extensions/boards/STM32F103C8T6/gnu';
+import { GnuArmToolchain } from '../../extensions/boards/STM32F103C8T6/tools/gnu';
 import { runCommand } from './process';
+import { assembleThumbInstruction, assemblerToolsFromGdb } from './debugger-assembler';
+import { debuggerProfiles, getDebuggerProfile, type DebuggerProfile } from '../shared/debugger-profiles';
+import { debuggerServerArguments, debuggerSegmentKind } from './debugger-target';
+import { discoverEsp32DebugTools, installEsp32DebugTools } from './esp32-debug-tools';
+import {
+  breakpointLocationsSchema,
+  debuggerPatchSchema,
+  debuggerAssembleSchema,
+  type DebuggerPatchRequest,
+  type DebuggerPatchResult,
+  type DebuggerBreakpointResult,
+} from '../shared/debugger-edit';
 
 const object = (v: MiValue | undefined) => (v && !Array.isArray(v) && typeof v === 'object' ? v : {});
 const list = (v: MiValue | undefined) => (Array.isArray(v) ? v : []);
 const str = (v: MiValue | undefined) => (typeof v === 'string' ? v : '');
 
-/** Owns an explicit SWD attach session; never executes GDB load or writes firmware. */
+/** Owns an explicit SWD attach session. Code edits use verified SRAM writes, never GDB load. */
 export class HardwareDebugger {
   private gdb: ChildProcessWithoutNullStreams | null = null;
   private server: ReturnType<typeof spawn> | null = null;
@@ -42,7 +55,20 @@ export class HardwareDebugger {
   };
   private symbols = '';
   private gdbOverride = '';
-  private refreshing = false;
+  private profile: DebuggerProfile = debuggerProfiles.STM32F103C8T6;
+  private debugConfig: ProjectConfig | undefined;
+  private readonly gdbOverrides = new Map<string, string>();
+  private readonly symbolFiles = new Map<string, { file: string; name: string }>();
+  private refreshTask: Promise<void> | undefined;
+  private editing = false;
+  private session = 0;
+  private stopRevision = 0;
+  private keepPaused = false;
+  private permitPauseRequest = false;
+  private stopWaiters = new Set<{
+    resolve: (data: Record<string, MiValue>) => void;
+    reject: (error: Error) => void;
+  }>();
   constructor(
     private readonly root: string,
     private readonly dataRoot: string,
@@ -74,32 +100,84 @@ export class HardwareDebugger {
     return null;
   }
   private async tools(config?: ProjectConfig) {
-    const gdb = await this.find('arm-none-eabi-gdb', [
-      ...(this.gdbOverride ? [this.gdbOverride] : []),
-      path.join(this.root, 'armgcc', 'bin', 'arm-none-eabi-gdb.exe'),
-      path.join(this.root, 'armgcc', 'bin', 'arm-none-eabi-gdb'),
-    ]);
+    config ??= this.debugConfig;
+    if (this.profile.architecture === 'xtensa') {
+      const found = await discoverEsp32DebugTools({
+        root: this.root,
+        dataRoot: this.dataRoot,
+        config,
+        gdbPath: this.gdbOverrides.get(this.profile.id),
+      });
+      return { gdb: found.gdb, server: found.openocd, scripts: found.scripts };
+    }
+    const configuredFile = async (file: string) =>
+      path.isAbsolute(file) && (await fs.stat(file).catch(() => null))?.isFile() ? file : null;
+    const gdb = config?.debugger?.gdbPath
+      ? await configuredFile(config.debugger.gdbPath)
+      : await this.find('arm-none-eabi-gdb', [
+          ...(config?.debugger?.gdbPath ? [config.debugger.gdbPath] : []),
+          ...(this.gdbOverrides.get(this.profile.id) || this.gdbOverride
+            ? [this.gdbOverrides.get(this.profile.id) || this.gdbOverride]
+            : []),
+          path.join(this.root, 'armgcc', 'bin', 'arm-none-eabi-gdb.exe'),
+          path.join(this.root, 'armgcc', 'bin', 'arm-none-eabi-gdb'),
+        ]);
     const custom = config?.toolchain.stlinkDirectory;
-    const server = await this.find('st-util', [
-      ...(custom ? [path.join(custom, 'st-util.exe'), path.join(custom, 'bin', 'st-util.exe')] : []),
-      path.join(this.root, 'stlink', 'bin', 'st-util.exe'),
-      path.join(this.root, 'stlink', 'bin', 'st-util'),
-    ]);
-    return { gdb, server };
+    const server = config?.debugger?.serverPath
+      ? await configuredFile(config.debugger.serverPath)
+      : await this.find('st-util', [
+          ...(config?.debugger?.serverPath ? [config.debugger.serverPath] : []),
+          ...(custom ? [path.join(custom, 'st-util.exe'), path.join(custom, 'bin', 'st-util.exe')] : []),
+          path.join(this.root, 'stlink', 'bin', 'st-util.exe'),
+          path.join(this.root, 'stlink', 'bin', 'st-util'),
+        ]);
+    return { gdb, server, scripts: null };
   }
-  async state() {
+  private configure(config?: ProjectConfig) {
+    if (!config || this.active) return;
+    const profile = getDebuggerProfile(config.boardId);
+    if (!profile) return;
+    this.debugConfig = structuredClone(config);
+    this.profile = profile;
+    const symbols = this.symbolFiles.get(profile.id);
+    this.symbols = symbols?.file ?? '';
+    this.snapshot.symbols = symbols?.name ?? '';
+  }
+  async state(config?: ProjectConfig): Promise<DebuggerState> {
+    this.configure(config);
+    const profile = this.profile,
+      session = this.session,
+      selection = this.debugConfig;
     const tools = await this.tools();
-    this.snapshot.tools = { gdb: !!tools.gdb, server: !!tools.server };
+    if (profile !== this.profile || session !== this.session || selection !== this.debugConfig)
+      return this.state();
+    this.snapshot.tools = {
+      gdb: !!tools.gdb,
+      server: !!tools.server && (this.profile.transport !== 'usb-jtag' || !!tools.scripts),
+    };
+    this.snapshot.profile = this.profile;
     return structuredClone(this.snapshot);
   }
   async selectGdb(file: string) {
     if (this.active) throw new Error('error.debuggerBusy');
-    if (!/gdb(?:\.exe)?$/i.test(path.basename(file))) throw new Error('error.debuggerToolsMissing');
-    this.gdbOverride = file;
+    if (!/gdb(?:-no-python)?(?:\.exe)?$/i.test(path.basename(file)))
+      throw new Error('error.debuggerToolsMissing');
+    this.gdbOverrides.set(this.profile.id, file);
     await fs.mkdir(this.dataRoot, { recursive: true });
-    await fs.writeFile(path.join(this.dataRoot, 'gdb-path.json'), JSON.stringify({ path: file }));
+    await fs.writeFile(
+      path.join(this.dataRoot, 'debugger-tools.json'),
+      JSON.stringify(Object.fromEntries(this.gdbOverrides)),
+    );
   }
   async restore() {
+    try {
+      const paths: unknown = JSON.parse(
+        await fs.readFile(path.join(this.dataRoot, 'debugger-tools.json'), 'utf8'),
+      );
+      if (paths && typeof paths === 'object')
+        for (const [id, file] of Object.entries(paths))
+          if (getDebuggerProfile(id) && typeof file === 'string') this.gdbOverrides.set(id, file);
+    } catch {}
     try {
       this.gdbOverride =
         JSON.parse(await fs.readFile(path.join(this.dataRoot, 'gdb-path.json'), 'utf8')).path ?? '';
@@ -112,21 +190,34 @@ export class HardwareDebugger {
   }
   async symbolsBytes(bytes: Buffer, name: string) {
     if (this.active) throw new Error('error.debuggerBusy');
+    const profile = this.profile;
     if (
       bytes.length < 52 ||
       bytes.length > 128 * 1024 * 1024 ||
       bytes.subarray(0, 4).toString('hex') !== '7f454c46' ||
-      bytes.readUInt16LE(18) !== 40
+      bytes[4] !== 1 ||
+      bytes[5] !== 1 ||
+      bytes.readUInt16LE(18) !== profile.elfMachine
     )
-      throw new Error('error.stm32InvalidElf');
+      throw new Error('error.debuggerElfArchitecture');
     await fs.mkdir(this.dataRoot, { recursive: true });
-    this.symbols = path.join(this.dataRoot, 'symbols.elf');
-    await fs.writeFile(this.symbols, bytes);
+    const file = path.join(this.dataRoot, `${profile.id}-${randomUUID()}.elf`);
+    await fs.writeFile(file, bytes);
+    if (this.active || this.profile !== profile) {
+      await fs.unlink(file).catch(() => {});
+      throw new Error('error.debuggerSessionChanged');
+    }
+    const previous = this.symbolFiles.get(profile.id)?.file;
+    this.symbols = file;
     this.snapshot.symbols = path.basename(name).slice(0, 255);
+    this.symbolFiles.set(profile.id, { file: this.symbols, name: this.snapshot.symbols });
+    if (previous && previous !== file) await fs.unlink(previous).catch(() => {});
     return this.snapshot.symbols;
   }
   async storage(): Promise<DebuggerStorage | null> {
     if (!this.symbols) return null;
+    const profile = this.profile,
+      name = this.snapshot.symbols;
     const bytes = await fs.readFile(this.symbols);
     if (bytes.length < 52 || bytes[4] !== 1 || bytes[5] !== 1) throw new Error('error.stm32InvalidElf');
     const offset = bytes.readUInt32LE(28),
@@ -144,16 +235,11 @@ export class HardwareDebugger {
       segments.push({
         address,
         size,
-        kind:
-          address >= 0x20000000 && address < 0x30000000
-            ? 'ram'
-            : address >= 0x08000000 && address < 0x10000000
-              ? 'flash'
-              : 'other',
+        kind: debuggerSegmentKind(profile, address, size),
       });
     }
     return {
-      name: this.snapshot.symbols,
+      name,
       size: bytes.length,
       segments,
       preview: bytes.subarray(0, 256).toString('hex'),
@@ -163,9 +249,21 @@ export class HardwareDebugger {
   async install(
     onProgress?: (progress: InstallationProgress) => void,
     onLine?: (line: string) => void,
-    network: { fetcher?: typeof fetch; signal?: AbortSignal } = {},
+    network: { fetcher?: typeof fetch; signal?: AbortSignal; config?: ProjectConfig } = {},
   ) {
     if (this.active) throw new Error('error.debuggerBusy');
+    this.configure(network.config);
+    if (this.profile.architecture === 'xtensa') {
+      await installEsp32DebugTools({
+        root: this.root,
+        dataRoot: this.dataRoot,
+        onProgress,
+        onLine,
+        fetcher: network.fetcher,
+        signal: network.signal,
+      });
+      return;
+    }
     await new GnuArmToolchain({
       root: path.join(this.root, 'armgcc'),
       runner: runCommand,
@@ -194,14 +292,27 @@ export class HardwareDebugger {
         return;
       }
       if (record[2] === 'error') pending.reject(new Error(str(data.msg) || 'error.debuggerCommand'));
-      else pending.resolve(data);
+      else {
+        if (record[2] === 'running') this.snapshot.connection = 'running';
+        pending.resolve(data);
+      }
     }
-    if (line.startsWith('*running')) this.snapshot.connection = 'running';
-    if (line.startsWith('*stopped')) {
+    const event = /^\d*\*(running|stopped)(?:,(.*))?$/.exec(line);
+    if (event?.[1] === 'running') this.snapshot.connection = 'running';
+    if (event?.[1] === 'stopped') {
       this.snapshot.connection = 'stopped';
-      void this.refresh().catch((e) => {
-        this.snapshot.message = String(e);
-      });
+      this.stopRevision++;
+      let data: Record<string, MiValue> = {};
+      try {
+        data = parseMiValues(event[2] ?? '');
+      } catch {}
+      for (const waiter of this.stopWaiters) waiter.resolve(data);
+      this.stopWaiters.clear();
+      const session = this.session;
+      if (!this.editing)
+        void this.refresh().catch((e) => {
+          if (session === this.session) this.snapshot.message = String(e);
+        });
     }
   }
   private command(command: string): Promise<Record<string, MiValue>> {
@@ -213,22 +324,39 @@ export class HardwareDebugger {
         reject(new Error('error.debuggerTimeout'));
       }, 12000);
       this.pending.set(id, { resolve, reject, timer });
-      this.gdb!.stdin.write(`${id}${command}\n`);
+      try {
+        this.gdb!.stdin.write(`${id}${command}\n`);
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
   async connect(config: ProjectConfig) {
-    if (this.active) throw new Error('error.debuggerBusy');
-    if (config.boardId !== 'STM32F103C8T6') throw new Error('error.debuggerPlatform');
-    const serial = config.programmer?.serialNumber;
-    if (!serial || !/^[a-fA-F0-9]{1,64}$/.test(serial)) throw new Error('error.selectDebugProbe');
-    const tools = await this.tools(config);
-    if (!tools.gdb || !tools.server) throw new Error('error.debuggerToolsMissing');
+    if (this.active || this.editing) throw new Error('error.debuggerBusy');
+    if (!getDebuggerProfile(config.boardId)) throw new Error('error.debuggerPlatform');
+    this.configure(config);
+    const profile = this.profile;
+    if (profile.transport === 'swd') {
+      const serial = config.programmer?.serialNumber;
+      if (!serial || !/^[a-fA-F0-9]{1,64}$/.test(serial)) throw new Error('error.selectDebugProbe');
+    }
     this.snapshot.connection = 'connecting';
+    this.snapshot.sessionId = randomUUID();
+    const session = ++this.session;
     this.snapshot.message = '';
     this.snapshot.registers = [];
     this.snapshot.stack = [];
     this.snapshot.breakpoints = [];
     try {
+      const tools = await this.tools(config);
+      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+      if (!tools.gdb || !tools.server) throw new Error('error.debuggerToolsMissing');
+      const command = (text: string) => {
+        if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+        return this.command(text);
+      };
       const reservation = net.createServer();
       await new Promise<void>((r, j) => {
         reservation.once('error', j);
@@ -236,27 +364,24 @@ export class HardwareDebugger {
       });
       const port = (reservation.address() as net.AddressInfo).port;
       await new Promise<void>((r) => reservation.close(() => r()));
-      this.server = spawn(
-        tools.server,
-        [
-          '-m',
-          '--no-reset',
-          '--serial',
-          serial,
-          '-p',
-          String(port),
-          '-F',
-          String(config.programmer?.frequencyKhz ?? 1800) + 'k',
-        ],
-        { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      this.server.stdout?.on('data', (b) => this.log(String(b)));
-      this.server.stderr?.on('data', (b) => this.log(String(b)));
+      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+      this.server = spawn(tools.server, debuggerServerArguments(profile, config, port, tools.scripts), {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      this.server.stdout?.on('data', (b) => {
+        if (session === this.session) this.log(String(b));
+      });
+      this.server.stderr?.on('data', (b) => {
+        if (session === this.session) this.log(String(b));
+      });
       this.server.once('error', (e) => {
+        if (this.session !== session) return;
         this.snapshot.message = e.message;
         void this.disconnect('error');
       });
       this.server.once('exit', () => {
+        if (this.session !== session) return;
         if (this.active && this.snapshot.connection !== 'disconnected') {
           this.snapshot.message = 'error.debuggerServerExited';
           void this.disconnect('error');
@@ -265,6 +390,10 @@ export class HardwareDebugger {
       await new Promise<void>((resolve, reject) => {
         let tries = 0;
         const attempt = () => {
+          if (session !== this.session) {
+            reject(new Error('error.debuggerSessionChanged'));
+            return;
+          }
           const socket = net.createConnection({ host: '127.0.0.1', port });
           socket.once('connect', () => {
             socket.destroy();
@@ -278,73 +407,106 @@ export class HardwareDebugger {
         };
         attempt();
       });
+      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
       this.gdb = spawn(tools.gdb, ['--interpreter=mi2', '--nx', '--quiet'], {
         windowsHide: true,
         stdio: 'pipe',
       });
       let buffer = '';
       this.gdb.stdout.on('data', (b) => {
+        if (this.session !== session) return;
         buffer += String(b);
         if (buffer.length > 2_000_000) buffer = buffer.slice(-1_000_000);
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? '';
         for (const line of lines) this.consume(line);
       });
-      this.gdb.stderr.on('data', (b) => this.log(String(b)));
+      this.gdb.stderr.on('data', (b) => {
+        if (session === this.session) this.log(String(b));
+      });
+      this.gdb.stdin.on('error', (error) => {
+        if (session !== this.session) return;
+        this.snapshot.message = error.message;
+        void this.disconnect('error');
+      });
       this.gdb.once('error', (e) => {
+        if (this.session !== session) return;
         this.snapshot.message = e.message;
         void this.disconnect('error');
       });
       this.gdb.once('exit', () => {
+        if (this.session !== session) return;
         if (this.snapshot.connection !== 'disconnected') void this.disconnect('error');
       });
-      await this.command('-gdb-set pagination off');
-      await this.command('-gdb-set mi-async on');
-      await this.command('-gdb-set auto-load safe-path /nonexistent');
+      await command('-gdb-set pagination off');
+      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+      await command('-gdb-set mi-async on');
+      await command('-gdb-set auto-load safe-path /nonexistent');
+      if (profile.architecture === 'xtensa') {
+        await command('-gdb-set remote hardware-breakpoint-limit 2');
+        await command('-gdb-set remote hardware-watchpoint-limit 2');
+      }
       if (this.symbols)
-        await this.command('-file-exec-and-symbols ' + JSON.stringify(this.symbols.replaceAll('\\', '/')));
-      await this.command('-target-select extended-remote 127.0.0.1:' + port);
+        await command('-file-exec-and-symbols ' + JSON.stringify(this.symbols.replaceAll('\\', '/')));
+      await command('-target-select extended-remote 127.0.0.1:' + port);
+      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
       this.snapshot.connection = 'stopped';
       await this.refresh();
     } catch (e) {
-      this.snapshot.message = e instanceof Error ? e.message : String(e);
-      await this.disconnect('error');
+      if (session === this.session) {
+        this.snapshot.message = e instanceof Error ? e.message : String(e);
+        await this.disconnect('error');
+      }
       throw e;
     }
   }
-  private async refresh() {
-    if (this.refreshing || !this.gdb || this.snapshot.connection !== 'stopped') return;
-    this.refreshing = true;
-    try {
+  private refresh(): Promise<void> {
+    if (this.refreshTask) return this.refreshTask;
+    if (!this.gdb || this.snapshot.connection !== 'stopped') return Promise.resolve();
+    const session = this.session,
+      revision = this.stopRevision;
+    const assertCurrent = () => {
+      if (
+        session !== this.session ||
+        revision !== this.stopRevision ||
+        !this.gdb ||
+        this.snapshot.connection !== 'stopped'
+      )
+        throw new Error('error.debuggerSessionChanged');
+    };
+    const task = (async () => {
       const names = list((await this.command('-data-list-register-names'))['register-names']).map(str);
+      assertCurrent();
       const values = list((await this.command('-data-list-register-values x'))['register-values']);
-      this.snapshot.registers = values
+      assertCurrent();
+      const registers = values
         .map((v) => {
           const o = object(v);
           return { name: names[Number(str(o.number))] ?? str(o.number), value: str(o.value) };
         })
         .filter((v) => v.name);
-      this.snapshot.programCounter = this.snapshot.registers.find(
-        (item) => item.name === 'pc' || item.name === 'r15',
-      )?.value;
-      this.snapshot.updatedAt = new Date().toISOString();
+      const programCounter = registers.find((item) => item.name === 'pc' || item.name === 'r15')?.value;
+      let instructions: NonNullable<DebuggerState['instructions']> = [];
       try {
-        const code = await this.command('-data-disassemble -s "$pc" -e "$pc + 64" -- 0');
-        this.snapshot.instructions = list(code.asm_insns).map((value) => {
+        const code = await this.command('-data-disassemble -s "$pc" -e "$pc + 64" -- 2');
+        assertCurrent();
+        instructions = list(code.asm_insns).map((value) => {
           const item = object(value);
           return {
             address: str(item.address),
             function: str(item['func-name']),
             offset: str(item.offset),
             instruction: str(item.inst),
+            opcodes: str(item.opcodes),
           };
         });
       } catch (error) {
-        this.snapshot.instructions = [];
+        assertCurrent();
         this.log('Disassembly: ' + String(error));
       }
       const frames = list((await this.command('-stack-list-frames 0 24')).stack);
-      this.snapshot.stack = frames.map((v) => {
+      assertCurrent();
+      const stack = frames.map((v) => {
         const o = object(object(v).frame ?? v);
         return {
           level: str(o.level),
@@ -354,9 +516,21 @@ export class HardwareDebugger {
           address: str(o.addr),
         };
       });
-    } finally {
-      this.refreshing = false;
-    }
+      Object.assign(this.snapshot, {
+        registers,
+        programCounter,
+        instructions,
+        stack,
+        updatedAt: new Date().toISOString(),
+      });
+    })();
+    this.refreshTask = task;
+    void task
+      .finally(() => {
+        if (this.refreshTask === task) this.refreshTask = undefined;
+      })
+      .catch(() => {});
+    return task;
   }
   async action(action: DebuggerAction) {
     if (action === 'disconnect') {
@@ -364,6 +538,13 @@ export class HardwareDebugger {
       return;
     }
     if (!this.gdb) throw new Error('error.debuggerDisconnected');
+    if (this.editing) {
+      if (action === 'pause' && this.permitPauseRequest) {
+        this.keepPaused = true;
+        return;
+      }
+      throw new Error('error.debuggerBusy');
+    }
     if (action !== 'pause' && this.snapshot.connection !== 'stopped')
       throw new Error('error.debuggerNotStopped');
     const commands = {
@@ -373,22 +554,199 @@ export class HardwareDebugger {
       next: '-exec-next-instruction',
       finish: '-exec-finish',
     };
-    await this.command(commands[action]);
+    await this.exclusive(async () => {
+      if (!this.gdb) throw new Error('error.debuggerDisconnected');
+      if (action !== 'pause' && this.snapshot.connection !== 'stopped')
+        throw new Error('error.debuggerNotStopped');
+      const revision = this.stopRevision;
+      await this.command(commands[action]);
+      // Some remote stubs send ^done rather than ^running for execution commands.
+      if (action !== 'pause' && revision === this.stopRevision) this.snapshot.connection = 'running';
+    });
+    if (this.snapshot.connection === 'stopped') await this.refresh();
   }
   async breakpoint(location: string, removeId?: string) {
+    return this.exclusive(async () => {
+      await this.breakpointRaw(location, removeId);
+    });
+  }
+  private async breakpointRaw(location: string, removeId?: string): Promise<string | undefined> {
     if (this.snapshot.connection !== 'stopped') throw new Error('error.debuggerNotStopped');
+    const session = this.session;
     if (removeId) {
       if (!/^\d+$/.test(removeId)) throw new Error('error.invalidArguments');
       await this.command('-break-delete ' + removeId);
+      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
       this.snapshot.breakpoints = this.snapshot.breakpoints.filter((b) => b.id !== removeId);
       return;
     }
     if (!location || location.length > 1024 || /[\r\n\0]/.test(location) || location.startsWith('-'))
       throw new Error('error.invalidArguments');
-    const data = object((await this.command('-break-insert ' + JSON.stringify(location))).bkpt);
-    this.snapshot.breakpoints.push({ id: str(data.number), location });
+    const data = object(
+      (
+        await this.command(
+          `-break-insert ${this.profile.architecture === 'xtensa' ? '-h ' : ''}` + JSON.stringify(location),
+        )
+      ).bkpt,
+    );
+    if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+    const id = str(data.number);
+    if (!/^\d+$/.test(id)) throw new Error('error.debuggerCommand');
+    this.snapshot.breakpoints.push({ id, location });
+    return id;
+  }
+  private async exclusive<T>(run: () => Promise<T>, permitPauseRequest = false): Promise<T> {
+    if (this.editing) throw new Error('error.debuggerBusy');
+    this.editing = true;
+    this.keepPaused = false;
+    this.permitPauseRequest = permitPauseRequest;
+    const session = this.session;
+    try {
+      await this.refreshTask;
+      if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+      return await run();
+    } finally {
+      this.editing = false;
+      this.permitPauseRequest = false;
+    }
+  }
+  async breakpoints(locations: string[]): Promise<DebuggerBreakpointResult[]> {
+    const parsed = breakpointLocationsSchema.safeParse(locations);
+    if (!parsed.success) throw new Error('error.invalidArguments');
+    return this.exclusive(async () => {
+      if (this.snapshot.connection !== 'stopped') throw new Error('error.debuggerNotStopped');
+      const session = this.session;
+      const results: DebuggerBreakpointResult[] = [];
+      for (const input of parsed.data) {
+        const location = input.trim();
+        try {
+          if (session !== this.session) throw new Error('error.debuggerSessionChanged');
+          const existing = this.snapshot.breakpoints.find((b) => b.location === location);
+          if (existing) results.push({ location, id: existing.id, status: 'existing' });
+          else results.push({ location, id: await this.breakpointRaw(location), status: 'added' });
+        } catch (error) {
+          results.push({
+            location,
+            status: 'failed',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return results;
+    });
+  }
+  async assemble(address: number, source: string): Promise<string> {
+    if (!this.profile.canAssemble) throw new Error('error.debuggerArchitectureUnsupported');
+    const parsed = debuggerAssembleSchema.safeParse({ address, source });
+    if (!parsed.success) throw new Error('error.invalidArguments');
+    const gdb = (await this.tools()).gdb;
+    if (!gdb) throw new Error('error.debuggerToolsMissing');
+    return assembleThumbInstruction(await assemblerToolsFromGdb(gdb), address, source);
+  }
+  private interruptStop() {
+    let timer: ReturnType<typeof setTimeout>;
+    let waiter: { resolve: (data: Record<string, MiValue>) => void; reject: (error: Error) => void };
+    const promise = new Promise<Record<string, MiValue>>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.stopWaiters.delete(waiter);
+      };
+      waiter = {
+        resolve: (data) => {
+          cleanup();
+          resolve(data);
+        },
+        reject: (error) => {
+          cleanup();
+          reject(error);
+        },
+      };
+      this.stopWaiters.add(waiter);
+      timer = setTimeout(() => waiter.reject(new Error('error.debuggerTimeout')), 12000);
+    });
+    // The interrupt command can fail before the asynchronous stop arrives.
+    void promise.catch(() => {});
+    return { promise, cancel: (error: Error) => waiter.reject(error) };
+  }
+  async patch(request: DebuggerPatchRequest): Promise<DebuggerPatchResult> {
+    if (!this.profile.canPatchInstructions) throw new Error('error.debuggerArchitectureUnsupported');
+    const parsed = debuggerPatchSchema.safeParse(request);
+    if (!parsed.success) throw new Error('error.invalidArguments');
+    if (parsed.data.sessionId !== this.snapshot.sessionId) throw new Error('error.debuggerSessionChanged');
+    const hex = (value: string) => {
+      if (!/^[\da-fA-F\s]+$/.test(value)) throw new Error('error.debuggerPatchBytes');
+      const normalized = value.replace(/\s/g, '').toLowerCase();
+      if (!/^(?:[\da-f]{4}|[\da-f]{8})$/.test(normalized)) throw new Error('error.debuggerPatchBytes');
+      // Cortex-M Thumb: the first halfword determines the width of this instruction.
+      const halfword = Number.parseInt(normalized.slice(2, 4) + normalized.slice(0, 2), 16);
+      const width = halfword >>> 11 >= 0b11101 ? 8 : 4;
+      if (normalized.length !== width) throw new Error('error.debuggerPatchBytes');
+      return normalized;
+    };
+    const expected = hex(parsed.data.expected),
+      bytes = hex(parsed.data.bytes);
+    const address = parsed.data.address;
+    if (bytes.length !== expected.length || address % 2) throw new Error('error.debuggerPatchBytes');
+    if (address < 0x20000000 || address + bytes.length / 2 > 0x20005000)
+      throw new Error('error.debuggerPatchRamOnly');
+    return this.exclusive(async () => {
+      if (!this.gdb) throw new Error('error.debuggerDisconnected');
+      if (parsed.data.sessionId !== this.snapshot.sessionId) throw new Error('error.debuggerSessionChanged');
+      const instruction = this.snapshot.instructions?.find((item) => Number(item.address) === address);
+      if (!instruction || instruction.opcodes?.replace(/\s/g, '').toLowerCase() !== expected)
+        throw new Error('error.debuggerPatchInstruction');
+      const session = this.session;
+      const running = this.snapshot.connection === 'running';
+      let ownedStop = false;
+      if (running) {
+        if (!parsed.data.pauseAndResume) throw new Error('error.debuggerPatchPauseRequired');
+        const stop = this.interruptStop();
+        try {
+          await this.command('-exec-interrupt --all');
+          const event = await stop.promise;
+          ownedStop =
+            str(event['signal-name']) === 'SIGINT' &&
+            (!str(event.reason) || str(event.reason) === 'signal-received');
+          if (!ownedStop) throw new Error('error.debuggerPatchInterrupted');
+        } catch (error) {
+          stop.cancel(error instanceof Error ? error : new Error(String(error)));
+          throw error;
+        }
+      }
+      const revision = this.stopRevision;
+      const check = () => {
+        if (session !== this.session || !this.gdb) throw new Error('error.debuggerSessionChanged');
+        if (revision !== this.stopRevision || this.snapshot.connection !== 'stopped')
+          throw new Error('error.debuggerPatchInterrupted');
+      };
+      check();
+      const before = await this.readMemory(address, expected.length / 2);
+      check();
+      if (before.toLowerCase() !== expected) throw new Error('error.debuggerPatchChanged');
+      await this.command(`-data-write-memory-bytes 0x${address.toString(16)} ${bytes}`);
+      check();
+      const after = await this.readMemory(address, bytes.length / 2);
+      check();
+      if (after.toLowerCase() !== bytes) throw new Error('error.debuggerPatchVerify');
+      await this.refresh();
+      check();
+      let resumed = false;
+      if (running && ownedStop && !this.keepPaused) {
+        // Once resume is sent, a second pause must not be acknowledged without
+        // sending an interrupt. Let that caller retry after this operation finishes.
+        this.permitPauseRequest = false;
+        await this.command('-exec-continue');
+        if (revision === this.stopRevision) this.snapshot.connection = 'running';
+        resumed = this.snapshot.connection === 'running';
+      }
+      return { address, before, after, resumed };
+    }, true);
   }
   async memory(address: number, length: number) {
+    if (this.editing) throw new Error('error.debuggerBusy');
+    return this.readMemory(address, length);
+  }
+  private async readMemory(address: number, length: number) {
     if (this.snapshot.connection !== 'stopped') throw new Error('error.debuggerNotStopped');
     if (
       !Number.isSafeInteger(address) ||
@@ -401,19 +759,38 @@ export class HardwareDebugger {
     )
       throw new Error('error.invalidArguments');
     const data = await this.command(`-data-read-memory-bytes 0x${address.toString(16)} ${length}`);
-    return list(data.memory)
-      .map((v) => str(object(v).contents))
-      .join('');
+    const blocks = list(data.memory)
+      .map(object)
+      .sort((a, b) => Number(str(a.begin)) - Number(str(b.begin)));
+    let cursor = address,
+      contents = '';
+    for (const block of blocks) {
+      const bytes = str(block.contents);
+      if (Number(str(block.begin)) !== cursor || !/^(?:[\da-fA-F]{2})+$/.test(bytes))
+        throw new Error('error.debuggerMemoryIncomplete');
+      cursor += bytes.length / 2;
+      if (Number(str(block.end)) !== cursor) throw new Error('error.debuggerMemoryIncomplete');
+      contents += bytes;
+    }
+    if (cursor !== address + length) throw new Error('error.debuggerMemoryIncomplete');
+    return contents;
   }
   async disconnect(state: 'disconnected' | 'error' = 'disconnected') {
     const gdb = this.gdb,
       server = this.server;
     this.gdb = null;
     this.server = null;
+    this.session++;
+    this.refreshTask = undefined;
+    this.keepPaused = true;
+    for (const waiter of this.stopWaiters) waiter.reject(new Error('error.debuggerDisconnected'));
+    this.stopWaiters.clear();
     this.snapshot.connection = state;
+    delete this.snapshot.sessionId;
     this.snapshot.registers = [];
     this.snapshot.instructions = [];
     this.snapshot.stack = [];
+    this.snapshot.breakpoints = [];
     delete this.snapshot.programCounter;
     delete this.snapshot.updatedAt;
     for (const pending of this.pending.values()) {
