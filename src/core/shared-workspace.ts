@@ -4,7 +4,8 @@ import type { CollaborationService } from './collaboration';
 /** Identical source protection for Electron and the browser-only Node host. */
 export function protectSharedWorkspace(core: CoreService, collaboration: CollaborationService) {
   const save = core.saveFile.bind(core); // Caller must give this raw callback to CollaborationService first.
-  core.saveFile = (file, content) => collaboration.writeFile(core.currentProjectRoot(), file, content);
+  core.saveFile = (file, content, expectedProjectRoot) =>
+    collaboration.writeFile(expectedProjectRoot ?? core.currentProjectRoot(), file, content);
   const build = core.build.bind(core);
   core.build = async () => {
     await collaboration.flush();

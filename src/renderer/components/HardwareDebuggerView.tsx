@@ -1002,19 +1002,7 @@ export function HardwareDebuggerView() {
         >
           {dialog === 'connection' && (
             <>
-              {selectedRuntime && <p className="debug-dialog-target">{selectedRuntime.name}</p>}
               {connectionForm}
-              {uart && (
-                <div className="debug-uart-guide">
-                  <details>
-                    <summary>{t('debugger.uart.firmwareGuide')}</summary>
-                    <p>{t('debugger.uart.prerequisite')}</p>
-                    <p>{t('debugger.uart.runtimeGuide')}</p>
-                    <p>{t('debugger.uart.panicGuide')}</p>
-                    <p>{t('debugger.uart.arduinoGuide')}</p>
-                  </details>
-                </div>
-              )}
               {nativeDebugger && currentTools && !toolsReady && (
                 <button onClick={() => openDialog('tools')}>
                   {t(profile?.tools.missingKey ?? 'debugger.toolsMissing')} · {t('debugger.toolSettings')}

@@ -54,4 +54,5 @@ test('USB runtime fields expose the physical selector and declared controls with
   assert.match(html, /Verify &lt;firmware&gt;/);
   assert.match(html, /type="checkbox" checked=""/);
   assert.doesNotMatch(html, /COM\d|<firmware>/);
+  assert.doesNotMatch(html, /runtime-support|runtime-modules|TestChip/);
 });

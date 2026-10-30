@@ -148,3 +148,35 @@ test('a presence request finishing after disconnect cannot resurrect its closed 
   await pending;
   await f.expectPeers([]);
 });
+
+test('a browser initiating global close without a local tab still owns a revocable transaction lease', async (t) => {
+  const f = await fixture(t),
+    alice = 'a'.repeat(32),
+    observer = 'c'.repeat(32);
+  await f.stream(alice);
+  const socket = await f.stream(observer);
+  await f.presence('alice', 1, alice);
+  const session = (await f.rpc('collaborationState', [])).session;
+  const pending = await f.rpc(
+    'collaborationTabClose',
+    [
+      {
+        projectRoot: '/transport-fixture',
+        session,
+        peerId: 'observer',
+        actorToken: 'c'.repeat(64),
+        requestId: 'observer-close',
+        target: { kind: 'file', id: 'main.c' },
+      },
+    ],
+    observer,
+  );
+  assert.equal(pending.tabCloses[0].status, 'preparing');
+  socket.abort();
+  for (let index = 0; index < 80; index++) {
+    const current = await f.rpc('collaborationState', []);
+    if (current.tabCloses[0].status === 'aborted') return;
+    await pause(25);
+  }
+  assert.fail('closing the initiating page must abort the unsaved-file transaction');
+});

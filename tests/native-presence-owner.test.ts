@@ -79,6 +79,25 @@ test('a desktop layout-only lease survives state reads and clear removes only it
   );
 });
 
+test('a native close-only owner releases its pending transaction when its window is destroyed', async (t) => {
+  const f = fixture();
+  t.after(() => f.service.dispose());
+  const owner = new NativePresenceOwner(f.service);
+  await f.service.presence(f.browser(1), false);
+  const session = (await f.service.state()).session;
+  const pending = await owner.tabClose({
+    projectRoot: '/native-fixture',
+    session,
+    peerId: 'close-only',
+    actorToken: 'c'.repeat(64),
+    requestId: 'close-only-request',
+    target: { kind: 'file', id: 'main.c' },
+  });
+  assert.equal(pending.tabCloses![0].status, 'preparing');
+  await owner.clear();
+  assert.equal((await f.service.state()).tabCloses![0].status, 'aborted');
+});
+
 test('clear while a native presence response is pending cannot resurrect the closed renderer', async (t) => {
   const f = fixture();
   t.after(() => f.service.dispose());

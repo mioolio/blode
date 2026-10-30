@@ -1,0 +1,99 @@
+.runtime-selector {
+  flex-shrink: 0;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.runtime-selector > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 35px;
+  padding: 6px 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+  list-style: none;
+  cursor: pointer;
+}
+.runtime-selector > summary::-webkit-details-marker {
+  display: none;
+}
+.runtime-selector > summary:hover {
+  background: var(--hover);
+}
+.runtime-selector > summary > strong {
+  margin-left: auto;
+  min-width: 0;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 500;
+}
+.runtime-selector .runtime-disclosure {
+  flex-shrink: 0;
+  transition: transform 140ms ease;
+}
+.runtime-selector:not([open]) .runtime-disclosure {
+  transform: rotate(-90deg);
+}
+.runtime-selector-body {
+  display: grid;
+  gap: 10px;
+  padding: 3px 10px 12px;
+}
+.device-dock-body {
+  max-height: min(52vh, 480px);
+  overflow: auto;
+  padding-top: 3px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.device-dock-body::-webkit-scrollbar {
+  display: none;
+}
+.device-dock-body:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: -2px;
+}
+.device-dock .device-config {
+  padding: 0 10px 12px;
+  border: 0;
+}
+.device-dock .device-config > label:first-child {
+  margin-top: 0;
+}
+.runtime-selector > summary > .text-button {
+  padding: 2px;
+  flex-shrink: 0;
+}
+.runtime-selector-body > .modern-select {
+  width: 100%;
+  min-width: 0;
+}
+.runtime-selector-body label {
+  font-size: 11px;
+}
+.runtime-selector-body .runtime-device-fields:empty {
+  display: none;
+}
+.runtime-selector .runtime-load-errors {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.runtime-load-errors p {
+  overflow-wrap: anywhere;
+  margin-block: 7px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .runtime-selector .runtime-disclosure {
+    transition: none;
+  }
+}
+.device-dock {
+  flex-shrink: 0;
+  min-width: 0;
+  margin-top: auto;
+}

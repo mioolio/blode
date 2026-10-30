@@ -174,6 +174,8 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
     'Install a catalog tool version side by side with progress; confirm=true is required.',
   'tools.selectVersion': 'Return installed tool paths to apply with config.set; does not edit the project.',
   'host.browse': 'Browse directories on the target machine, not the browser client.',
+  'vscode.open':
+    'Generate workspace settings and open VS Code on the host; requires confirm=true and the expected project root.',
   'project.package.preview': 'Inspect portable ZIP files, external dependencies and unresolved paths.',
   'project.package.export':
     'Save shared drafts and produce a portable ZIP. External dependencies require confirmExternal=true; unresolved paths require allowIncomplete=true.',

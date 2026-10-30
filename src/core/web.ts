@@ -85,7 +85,7 @@ const hostMethods = new Set([
   'firmwareFlash',
 ]);
 const isHostMethod = (method: string) =>
-  /^(?:components|git|toolVersion|host|projectPackage|terminal|language|runtimePlugin)/.test(method) ||
+  /^(?:components|git|toolVersion|host|projectPackage|terminal|language|runtimePlugin|vscode)/.test(method) ||
   hostMethods.has(method);
 
 function lanEndpoint(port: number): string {
@@ -120,7 +120,18 @@ async function invoke(api: CoreApi, method: string, args: unknown[]): Promise<un
     case 'scanDevices':
       return api.scanDevices();
     case 'saveFile':
-      return api.saveFile(String(args[0]), String(args[1]));
+      if (
+        args.length < 2 ||
+        args.length > 3 ||
+        typeof args[0] !== 'string' ||
+        !args[0] ||
+        args[0].length > 1024 ||
+        typeof args[1] !== 'string' ||
+        args[1].length > 1_048_576 ||
+        (args[2] !== undefined && (typeof args[2] !== 'string' || !args[2] || args[2].length > 4096))
+      )
+        throw new Error('rpc.invalidParams');
+      return api.saveFile(args[0], args[1], args[2] as string | undefined);
     case 'createFile':
       return api.createFile(String(args[0]));
     case 'createDirectory':
@@ -130,7 +141,16 @@ async function invoke(api: CoreApi, method: string, args: unknown[]): Promise<un
     case 'deleteEntry':
       return api.deleteEntry(String(args[0]));
     case 'saveConfig':
-      return api.saveConfig(args[0] as Awaited<ReturnType<CoreApi['getState']>>['config']);
+      if (
+        args.length < 1 ||
+        args.length > 2 ||
+        (args[1] !== undefined && (typeof args[1] !== 'string' || !args[1] || args[1].length > 4096))
+      )
+        throw new Error('rpc.invalidParams');
+      return api.saveConfig(
+        args[0] as Awaited<ReturnType<CoreApi['getState']>>['config'],
+        args[1] as string | undefined,
+      );
     case 'setBuildEntry':
       if (args.length !== 1 || typeof args[0] !== 'string' || !args[0] || args[0].length > 1024)
         throw new Error('rpc.invalidParams');
@@ -524,7 +544,13 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
           throw new Error('rpc.invalidRequest');
         const id = clientId(request.headers['x-blode-client']);
         if (request.headers['x-blode-client'] && !id) throw new Error('rpc.invalidParams');
-        const page = id && body.method === 'collaborationPresence' ? pageTransport(id) : undefined;
+        const ownsLease = [
+          'collaborationPresence',
+          'collaborationTabClose',
+          'collaborationTabCloseVote',
+          'collaborationSurfaceUpdate',
+        ].includes(body.method);
+        const page = id && ownsLease ? pageTransport(id) : undefined;
         if (page?.closed && !page.streams.size) throw new Error('rpc.unauthorized');
         let result: unknown;
         if (body.method === 'runtimePluginOpenView') {
@@ -573,22 +599,24 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
         ) {
           if (!options.assistance) throw new Error('rpc.methodNotFound');
           result = await options.assistance.invoke(body.method, body.args);
-          if (page && body.method === 'collaborationPresence') {
+          if (page && ownsLease) {
             const input = body.args[0] as any,
               snapshot = result as any;
             if (
-              typeof input?.identity?.peerId === 'string' &&
+              typeof (input?.identity?.peerId ?? input?.peerId) === 'string' &&
               typeof input.actorToken === 'string' &&
               typeof snapshot?.session === 'string'
             ) {
               const peer: BoundPeer = {
-                peerId: input.identity.peerId,
+                peerId: input.identity?.peerId ?? input.peerId,
                 actorToken: input.actorToken,
                 projectRoot: input.projectRoot,
                 session: snapshot.session,
                 ...(typeof input.sequence === 'number' ? { sequence: input.sequence } : {}),
               };
               const previous = page.peers.get(peer.peerId);
+              if (input.sequence === undefined && previous?.session === peer.session)
+                peer.sequence = previous.sequence;
               if (
                 !previous ||
                 previous.session !== peer.session ||

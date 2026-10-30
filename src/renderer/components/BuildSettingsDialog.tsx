@@ -115,7 +115,7 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
         },
       };
       const draft = { ...session.draft, config, build: { ...session.draft.build, settings } };
-      await window.blode.saveFile('be', writeProjectSettings(draft));
+      await window.blode.saveFile('be', writeProjectSettings(draft), session.root);
       studio.setDrafts((values) => {
         if (values.be !== session.content) return values;
         const next = { ...values };

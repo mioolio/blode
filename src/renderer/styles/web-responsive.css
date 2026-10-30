@@ -42,7 +42,7 @@
     grid-column: 1;
     grid-row: 1;
   }
-  .web-studio:not([data-mobile-panel='files']) .workspace > .project-panel,
+  .web-studio:not([data-mobile-panel='files']):not([data-mobile-panel='device']) .workspace > .project-panel,
   .web-studio:not([data-mobile-panel='editor']) .workspace > .center-panel,
   .web-studio:not([data-mobile-panel='device']) .workspace > .device-panel {
     display: none;
@@ -56,6 +56,12 @@
   .web-studio .device-panel {
     width: auto;
     max-width: none;
+  }
+  .web-studio[data-mobile-panel='device'] .project-panel > :not(.device-dock) {
+    display: none;
+  }
+  .web-studio[data-mobile-panel='device'] .device-dock {
+    margin-top: 0;
   }
   .web-studio .statusbar {
     overflow: hidden;

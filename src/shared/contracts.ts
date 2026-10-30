@@ -291,13 +291,13 @@ export interface CoreApi {
   listPorts(): Promise<PortInfo[]>;
   listDebugProbes(): Promise<DebugProbeInfo[]>;
   scanDevices(): Promise<DetectionScan>;
-  saveFile(path: string, content: string): Promise<void>;
+  saveFile(path: string, content: string, expectedProjectRoot?: string): Promise<void>;
   createFile(path: string): Promise<void>;
   createDirectory(path: string): Promise<void>;
   renameEntry(from: string, to: string): Promise<void>;
   deleteEntry(path: string): Promise<void>;
   setBuildEntry(path: string): Promise<void>;
-  saveConfig(config: ProjectConfig): Promise<void>;
+  saveConfig(config: ProjectConfig, expectedProjectRoot?: string): Promise<void>;
   build(): Promise<BuildResult>;
   flash(): Promise<void>;
   /** Optional config allows explicit board/probe selection before a workspace is open. */

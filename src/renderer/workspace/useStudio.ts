@@ -16,13 +16,15 @@ import { diagnosticLevel } from './diagnostics';
 import { usePanelVisibility } from './usePanelVisibility';
 import { flushCollaboration } from './collaborationFlush';
 import { mergeRecentLogs } from '../../shared/recent-logs';
-import { useFileTabClose } from './useFileTabClose';
+import { useFileTabClose, type SharedCloseSource } from './useFileTabClose';
 import { closeRecoveryKey, recoverCloseDrafts, workspaceCloseGate } from './workspaceCloseGate';
 import { refreshedConfig } from './unsavedChanges';
 import { openableFilePaths } from '../../shared/file-views';
+import type { WorkspaceConsoleTabId, WorkspaceSyncTarget } from '../../shared/workspace-surfaces';
+import { publishSharedSurface, requestSharedTabClose } from './sharedTabs';
 
 type View = 'code' | 'layout' | 'ai';
-type ConsoleTab = 'output' | 'serial' | 'problems' | 'warnings' | 'terminal' | `plugin:${string}`;
+type ConsoleTab = WorkspaceConsoleTabId;
 
 const toolTabViews: Record<ToolTab, View> = { layout: 'layout', ai: 'ai' };
 
@@ -75,6 +77,7 @@ export function useStudio() {
   const [state, setState] = useState<AppState | null>(null);
   const canonicalState = useRef(state);
   canonicalState.current = state;
+  const refreshSequence = useRef(0);
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [activePath, setActivePath] = useState(initial.kind === 'editor' ? (initial.file ?? '') : '');
@@ -123,6 +126,7 @@ export function useStudio() {
   const [widths, setWidths] = useState({ left: 224, right: 284, bottom: 207 });
   const [devicePanelVisible, setDevicePanelVisible] = usePanelVisibility('blode.devicePanel');
   const [consolePanelVisible, setConsolePanelVisible] = usePanelVisibility('blode.consolePanel');
+  const [runtimeExpanded, setRuntimeExpanded] = useState(false);
   const logEnd = useRef<HTMLDivElement>(null);
   const restoredFolder = useRef('');
   const dirty = Object.keys(drafts).length > 0;
@@ -162,7 +166,9 @@ export function useStudio() {
     [],
   );
   const refresh = useCallback(async (submittedConfig?: ProjectConfig) => {
+    const sequence = ++refreshSequence.current;
     const next = await window.blode.getState();
+    if (sequence !== refreshSequence.current) return canonicalState.current ?? next;
     if (!window.__blodeWeb && next.projectRoot) {
       try {
         if (localStorage.getItem(closeRecoveryKey(next.projectRoot))) {
@@ -173,6 +179,7 @@ export function useStudio() {
         /* Retain the recovery record if the host is still starting. */
       }
     }
+    if (sequence !== refreshSequence.current) return canonicalState.current ?? next;
     const previous = canonicalState.current;
     setState(next);
     if (next.recentLogs)
@@ -378,16 +385,12 @@ export function useStudio() {
     const timer = setTimeout(() => setToast(null), 6500);
     return () => clearTimeout(timer);
   }, [toast]);
-  useEffect(() => {
-    logEnd.current?.scrollIntoView({ block: 'end' });
-  }, [logs, tab, consolePanelVisible]);
-  // Refresh external AI changes only when local edits are safe to retain.
+  // Refresh host changes while retaining drafts; collaboration resolves disk conflicts separately.
   useEffect(() => {
     if (!window.blode) return;
     let timer: ReturnType<typeof setTimeout>;
     const unsubscribe = window.blode.onEvent((event) => {
       if (
-        busy ||
         ![
           'status.fileSaved',
           'status.configSaved',
@@ -407,13 +410,8 @@ export function useStudio() {
         return;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        void window.blode
-          .getState()
-          .then((next) => {
-            setState(next);
-            setSerialConnected(!!next.connections?.serial.open);
-            setConfig((current) => (configDirty && current ? retainDraftConfig(current, next) : next.config));
-            setStale(next.buildStale ?? false);
+        void refresh()
+          .then(() => {
             if (['status.fileSaved', 'status.configSaved', 'status.buildEntrySet'].includes(event.message))
               setStale(true);
           })
@@ -424,7 +422,7 @@ export function useStudio() {
       clearTimeout(timer);
       unsubscribe();
     };
-  }, [busy, configDirty, notify]);
+  }, [refresh, notify]);
 
   const perform = async (label: string, operation: () => Promise<void>): Promise<boolean> => {
     if (busy) return false;
@@ -448,33 +446,51 @@ export function useStudio() {
     }
   };
   const saveFiles = async () => {
+    const root = state?.projectRoot;
+    if (!root) throw new Error('error.noWorkspace');
+    const sameRoot = () => canonicalState.current?.projectRoot === root;
+    if (!sameRoot()) throw new Error('error.collaborationProjectChanged');
     const snapshot = { ...drafts, ...(await flushCollaboration()) };
+    if (!sameRoot()) throw new Error('error.collaborationProjectChanged');
     const saved = state?.files ?? [];
-    for (const [path, value] of Object.entries(snapshot))
+    for (const [path, value] of Object.entries(snapshot)) {
+      if (!sameRoot()) throw new Error('error.collaborationProjectChanged');
       if (value !== saved.find((file) => file.path === path)?.content)
-        await window.blode.saveFile(path, value);
+        await window.blode.saveFile(path, value, root);
+    }
+    if (!sameRoot()) throw new Error('error.collaborationProjectChanged');
     // Retain keystrokes entered while an asynchronous write was completing.
     setDrafts((current) =>
-      Object.fromEntries(Object.entries(current).filter(([path, value]) => snapshot[path] !== value)),
+      sameRoot()
+        ? Object.fromEntries(Object.entries(current).filter(([path, value]) => snapshot[path] !== value))
+        : current,
     );
   };
   const save = () =>
     perform('action.save', async () => {
+      const root = state?.projectRoot;
+      if (!root) throw new Error('error.noWorkspace');
       if (activePath && state?.workspaceOpen) pinFile(activePath);
       await saveFiles();
       if (config && configDirty) {
-        await window.blode.saveConfig(config);
+        await window.blode.saveConfig(config, root);
         setStale(true);
       }
-      await refresh(config && configDirty ? config : undefined);
+      const refreshed = await refresh(config && configDirty ? config : undefined);
+      if ((refreshed?.projectRoot ?? canonicalState.current?.projectRoot) !== root)
+        throw new Error('error.collaborationProjectChanged');
       notify(t('toast.saved'));
     });
   const saveConfig = () =>
     perform('action.apply', async () => {
       if (config) {
-        await window.blode.saveConfig(config);
+        const root = state?.projectRoot;
+        if (!root) throw new Error('error.noWorkspace');
+        await window.blode.saveConfig(config, root);
         setStale(true);
-        await refresh(config);
+        const refreshed = await refresh(config);
+        if ((refreshed?.projectRoot ?? canonicalState.current?.projectRoot) !== root)
+          throw new Error('error.collaborationProjectChanged');
         notify(t('toast.configSaved'));
       }
     });
@@ -536,7 +552,7 @@ export function useStudio() {
       )
         throw new Error('error.detectBoardFirst');
       await saveFiles();
-      if (config && configDirty) await window.blode.saveConfig(config);
+      if (config && configDirty) await window.blode.saveConfig(config, state?.projectRoot);
       const result = await window.blode.build();
       await refresh();
       setStale(!result.success);
@@ -569,7 +585,7 @@ export function useStudio() {
         // only when there is a workspace; the core still updates its in-memory
         // config so board/device recognition is available on the welcome page.
         if (state?.workspaceOpen) {
-          await window.blode.saveConfig(config);
+          await window.blode.saveConfig(config, state?.projectRoot);
           setState((current) => (current ? { ...current, config } : current));
           if (configDirty) setStale(true);
         }
@@ -639,7 +655,7 @@ export function useStudio() {
       // Enumerate using the transport, tool directory and SWD speed shown in
       // the inspector, including a connection choice that is not yet applied.
       if (state?.workspaceOpen && config && configDirty) {
-        await window.blode.saveConfig(config);
+        await window.blode.saveConfig(config, state?.projectRoot);
         setStale(true);
       }
       const pending = state?.workspaceOpen ? undefined : config;
@@ -656,7 +672,7 @@ export function useStudio() {
   const refreshAutoDevices = () =>
     perform('action.refresh', async () => {
       if (state?.workspaceOpen && config && configDirty) {
-        await window.blode.saveConfig(config);
+        await window.blode.saveConfig(config, state?.projectRoot);
         setStale(true);
       }
       const pending = state?.workspaceOpen ? undefined : config;
@@ -738,7 +754,7 @@ export function useStudio() {
     perform('project.close', async () => {
       if (saveChanges) {
         await saveFiles();
-        if (config && configDirty) await window.blode.saveConfig(config);
+        if (config && configDirty) await window.blode.saveConfig(config, state?.projectRoot);
       }
       await window.blode.closeProject();
       setCloseProjectPending(false);
@@ -748,7 +764,8 @@ export function useStudio() {
   const install = () =>
     perform('action.install', async () => {
       setTab('output');
-      if (state?.workspaceOpen && config && configDirty) await window.blode.saveConfig(config);
+      if (state?.workspaceOpen && config && configDirty)
+        await window.blode.saveConfig(config, state?.projectRoot);
       await window.blode.installToolchain();
       await refresh();
       notify(t('toast.installed'));
@@ -827,17 +844,23 @@ export function useStudio() {
         setPreviewPath('');
       }
       const index = openFilesRef.current.indexOf(id);
-      const next = openFilesRef.current.filter((path) => path !== id);
-      openFilesRef.current = next;
-      setOpenFiles(next);
-      if (index >= 0 && activePathRef.current === id) {
-        const nextActive = next[index] ?? next[index - 1] ?? next[0] ?? '';
+      openFilesRef.current = openFilesRef.current.filter((path) => path !== id);
+      // Compose concurrent close commits against React's latest list, never a delayed effect's ref.
+      setOpenFiles((current) => {
+        const next = current.filter((path) => path !== id);
+        openFilesRef.current = next;
+        return next;
+      });
+      setActivePath((current) => {
+        if (current !== id) return current;
+        const remaining = openFilesRef.current.filter((path) => path !== id);
+        const nextActive = remaining[index] ?? remaining[index - 1] ?? remaining[0] ?? '';
         activePathRef.current = nextActive;
-        setActivePath(nextActive);
-      }
+        return nextActive;
+      });
     },
   });
-  const closeTab = (kind: 'file' | 'tool', id: string): Promise<boolean> => {
+  const closeLocalTab = (kind: 'file' | 'tool', id: string): Promise<boolean> => {
     if (kind === 'file') return fileTabClose.requestFileClose(id);
     const tool = id as ToolTab;
     setOpenTools((current) => current.filter((item) => item !== tool));
@@ -847,6 +870,21 @@ export function useStudio() {
     if (view === toolTabViews[tool]) setView('code');
     return Promise.resolve(true);
   };
+  const applySharedSurface = (target: WorkspaceSyncTarget, open: boolean) => {
+    if (target.kind === 'panel') {
+      if (target.id === 'console') setConsolePanelVisible(open);
+      if (target.id === 'device') setDevicePanelVisible(open);
+      if (target.id === 'runtime') setRuntimeExpanded(open);
+    } else if (target.kind === 'console' && open) {
+      setTab(target.id as ConsoleTab);
+      setConsolePanelVisible(true);
+    } else if (target.kind === 'tool') {
+      // Remote tool opens are suggestions owned by the publishing peer, not local tab claims.
+      if (!open) void closeLocalTab('tool', target.id);
+    }
+  };
+  const closeTab = (kind: 'file' | 'tool', id: string): Promise<boolean> =>
+    requestSharedTabClose({ kind, id }, () => closeLocalTab(kind, id));
   const editorCommand = (command: 'undo' | 'redo' | 'find' | 'format' | 'gotoLine' | 'selectAll') => {
     setView('code');
     requestAnimationFrame(() =>
@@ -922,7 +960,17 @@ export function useStudio() {
     },
     drafts,
     setDrafts: (value: React.SetStateAction<Record<string, string>>) => {
-      if (!workspaceCloseGate.isFrozen()) setDrafts(value);
+      if (!workspaceCloseGate.isFrozen())
+        setDrafts((current) => {
+          const next = typeof value === 'function' ? value(current) : value;
+          if (!fileTabClose.frozenPaths.size) return next;
+          const retained = { ...next };
+          for (const path of fileTabClose.frozenPaths) {
+            if (current[path] === undefined) delete retained[path];
+            else retained[path] = current[path];
+          }
+          return retained;
+        });
     },
     setSharedDrafts: (value: React.SetStateAction<Record<string, string>>) => {
       setDrafts((current) =>
@@ -949,6 +997,25 @@ export function useStudio() {
     removeRecentProject,
     openFile,
     closeTab,
+    frozenFilePaths: fileTabClose.frozenPaths,
+    prepareSharedTabClose: (target: WorkspaceSyncTarget, requestId: string, source?: SharedCloseSource) =>
+      target.kind === 'file'
+        ? fileTabClose.prepareShared(target.id, requestId, source)
+        : Promise.resolve(true),
+    preparedSharedTabContent: (path: string, requestId: string) =>
+      fileTabClose.preparedShared(path, requestId)?.content,
+    preparedSharedTabDecision: (path: string, requestId: string) =>
+      fileTabClose.preparedShared(path, requestId)?.decision,
+    commitSharedTabClose: async (target: WorkspaceSyncTarget, requestId: string) => {
+      if (target.kind === 'file') return fileTabClose.commitShared(target.id, requestId);
+      if (target.kind === 'tool') return closeLocalTab('tool', target.id);
+      applySharedSurface(target.kind === 'console' ? { kind: 'panel', id: 'console' } : target, false);
+      return true;
+    },
+    abortSharedTabClose: (target: WorkspaceSyncTarget, requestId: string) => {
+      if (target.kind === 'file') fileTabClose.abortShared(target.id, requestId);
+    },
+    applySharedSurface,
     closeFilePrompt: fileTabClose.closeFilePrompt,
     chooseFileClose: fileTabClose.chooseFileClose,
     view,
@@ -967,6 +1034,8 @@ export function useStudio() {
     setTab: (next: ConsoleTab) => {
       setConsolePanelVisible(true);
       setTab(next);
+      publishSharedSurface({ kind: 'console', id: next }, true);
+      publishSharedSurface({ kind: 'panel', id: 'console' }, true);
     },
     serialConnected,
     serialInput,
@@ -993,9 +1062,20 @@ export function useStudio() {
     setStale,
     widths,
     devicePanelVisible,
-    setDevicePanelVisible,
+    setDevicePanelVisible: (open: boolean) => {
+      setDevicePanelVisible(open);
+      publishSharedSurface({ kind: 'panel', id: 'device' }, open);
+    },
     consolePanelVisible,
-    setConsolePanelVisible,
+    setConsolePanelVisible: (open: boolean) => {
+      setConsolePanelVisible(open);
+      publishSharedSurface({ kind: 'panel', id: 'console' }, open);
+    },
+    runtimeExpanded,
+    setRuntimeExpanded: (open: boolean) => {
+      setRuntimeExpanded(open);
+      publishSharedSurface({ kind: 'panel', id: 'runtime' }, open);
+    },
     logEnd,
     dirty,
     configDirty,

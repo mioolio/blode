@@ -19,11 +19,12 @@ import { resizeAppRegion, resizeFixedLayout } from '../workspace/layout';
 import { WelcomeHome } from './WelcomeHome';
 import { useCollaboration } from '../workspace/useCollaboration';
 import { CollaborationAvatars, CollaborationStatus } from './CollaborationStatus';
-import { reconcileDismissedTabs, visibleFilePaths, type FileClosedEvent } from '../workspace/remoteTabs';
+import { visibleFilePaths, type FileClosedEvent } from '../workspace/remoteTabs';
 import './preferences.css';
 import { EditorLoading } from '../editor/EditorLoading';
 import type { SourceLocation } from '../../shared/language';
 import { openableFilePaths, workspaceFileView } from '../../shared/file-views';
+import { EditorActions } from './EditorActions';
 
 const CodeEditor = lazy(() =>
   import('../editor/CodeEditor').then((module) => ({ default: module.CodeEditor })),
@@ -99,11 +100,9 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     isWeb,
   } = studio;
   const segments = activePath.replaceAll('\\', '/').split('/').filter(Boolean);
-  const [dismissedRemoteTabs, setDismissedRemoteTabs] = useState<ReadonlySet<string>>(new Set());
-  const [dismissedRemoteTools, setDismissedRemoteTools] = useState<ReadonlySet<string>>(new Set());
-  const toolTabs = visibleFilePaths(openTools, collaboration.remoteTools, dismissedRemoteTools);
+  const toolTabs = visibleFilePaths(openTools, collaboration.remoteTools, new Set());
   const availableFiles = useMemo(() => new Set(openableFilePaths(state)), [state?.files, state?.inventory]);
-  const fileTabs = visibleFilePaths(openFiles, collaboration.remotePaths, dismissedRemoteTabs)
+  const fileTabs = visibleFilePaths(openFiles, collaboration.remotePaths, new Set())
     .filter((path) => availableFiles.has(path))
     .map((path) => ({ path }));
   const layoutAvailable = supportsLayout(board);
@@ -122,41 +121,42 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     );
   }, [state?.projectRoot, openFiles]);
   useEffect(() => {
-    setDismissedRemoteTabs(new Set());
-    setDismissedRemoteTools(new Set());
     setSecondaryPath('');
   }, [state?.projectRoot]);
-  useEffect(() => {
-    setDismissedRemoteTabs((current) =>
-      reconcileDismissedTabs(current, openFiles, collaboration.remotePaths),
-    );
-  }, [openFiles, collaboration.remotePaths.join('\0')]);
-  useEffect(() => {
-    setDismissedRemoteTools((current) =>
-      reconcileDismissedTabs(current, openTools, collaboration.remoteTools),
-    );
-  }, [openTools, collaboration.remoteTools.join('\0')]);
   useEffect(() => {
     const closed = (event: Event) => {
       const detail = (event as CustomEvent<FileClosedEvent>).detail;
       if (!detail || detail.root !== state?.projectRoot) return;
-      setDismissedRemoteTabs((current) => new Set([...current, detail.path]));
       setSecondaryPath((current) => (current === detail.path ? '' : current));
     };
     window.addEventListener('blode:file-closed', closed);
     return () => window.removeEventListener('blode:file-closed', closed);
   }, [state?.projectRoot]);
-  useEffect(() => {
-    const closed = (event: Event) => {
-      const detail = (event as CustomEvent<{ root: string; id: string }>).detail;
-      if (detail?.root === state?.projectRoot)
-        setDismissedRemoteTools((current) => new Set([...current, detail.id]));
-    };
-    window.addEventListener('blode:tool-closed', closed);
-    return () => window.removeEventListener('blode:tool-closed', closed);
-  }, [state?.projectRoot]);
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const [openingVSCode, setOpeningVSCode] = useState(false);
+  const openVSCode = async () => {
+    if (!state?.workspaceOpen || openingVSCode || busy || studio.frozenFilePaths.size) return;
+    const projectRoot = state.projectRoot;
+    setOpeningVSCode(true);
+    try {
+      if (!(await studio.save())) return;
+      await window.blode.vscodeOpen({
+        expectedProjectRoot: projectRoot,
+        ...(activePath ? { path: activePath, ...cursor } : {}),
+        confirm: true,
+      });
+      studio.notify(t('toast.vscodeOpened'));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+          : String(error);
+      studio.notify(t(message), true);
+    } finally {
+      setOpeningVSCode(false);
+    }
+  };
   const [navigationTarget, setNavigationTarget] = useState<SourceLocation>();
   const navigationHistory = useRef<SourceLocation[]>([]);
   useEffect(() => {
@@ -313,6 +313,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     return (
       <Suspense fallback={<EditorLoading value={drafts[path] ?? file.content} />}>
         <CodeEditor
+          readOnly={studio.frozenFilePaths.has(path)}
           projectRoot={state?.projectRoot ?? ''}
           path={path}
           language={file.language}
@@ -324,6 +325,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
           primary={primary}
           navigation={primary && navigationTarget?.path === path ? navigationTarget : undefined}
           onChange={(value) => {
+            if (studio.frozenFilePaths.has(path)) return;
             if (value !== file.content) pinFile(path);
             setDrafts((current) => {
               const next = { ...current };
@@ -441,6 +443,11 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                   <Columns2 size={14} strokeWidth={1.9} aria-hidden="true" />
                 </button>
               )}
+              <EditorActions
+                disabled={!state?.workspaceOpen || !!busy || studio.frozenFilePaths.size > 0}
+                opening={openingVSCode}
+                onOpenVSCode={openVSCode}
+              />
             </div>
 
             {view === 'code' ? (

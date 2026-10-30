@@ -2,6 +2,7 @@ import type {
   CollaborationLeaveRequest,
   CollaborationPresenceInput,
   CollaborationSnapshot,
+  WorkspaceTabCloseRequest,
 } from '../shared/collaboration';
 import type { CollaborationService } from './collaboration';
 
@@ -15,7 +16,7 @@ export class NativePresenceOwner {
   private rendererEpoch = 0;
   constructor(
     private readonly service: Pick<CollaborationService, 'presence' | 'leave'> &
-      Partial<Pick<CollaborationService, 'setAttention'>>,
+      Partial<Pick<CollaborationService, 'setAttention' | 'tabClose'>>,
   ) {}
   async setAttention(active: boolean): Promise<number> {
     if (this.attentive !== active) {
@@ -93,6 +94,20 @@ export class NativePresenceOwner {
       (request.sequence === undefined || (request.sequence ?? 0) >= (previous.sequence ?? 0))
     )
       this.peers.delete(request.peerId);
+  }
+  async tabClose(input: WorkspaceTabCloseRequest): Promise<CollaborationSnapshot> {
+    if (!this.service.tabClose) throw new Error('rpc.methodNotFound');
+    const generation = this.generation;
+    const snapshot = await this.service.tabClose(input, true);
+    const lease: CollaborationLeaveRequest = {
+      peerId: input.peerId,
+      actorToken: input.actorToken,
+      projectRoot: input.projectRoot,
+      session: snapshot.session,
+    };
+    if (generation !== this.generation) await this.service.leave(lease, true);
+    else if (!this.peers.has(input.peerId)) this.peers.set(input.peerId, lease);
+    return snapshot;
   }
   async clear() {
     this.generation++;

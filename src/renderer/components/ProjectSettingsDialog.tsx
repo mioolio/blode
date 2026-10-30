@@ -51,6 +51,7 @@ export function ProjectSettingsDialog({ studio }: { studio: Studio }) {
   const save = () =>
     void studio.perform('action.save', async () => {
       const snapshot = current.current;
+      const expectedProjectRoot = base.current.root;
       const content =
         snapshot.drafts.be ?? snapshot.state?.files.find((file) => file.path === 'be')?.content ?? '';
       if (snapshot.state?.projectRoot !== base.current.root || content !== base.current.content)
@@ -58,7 +59,7 @@ export function ProjectSettingsDialog({ studio }: { studio: Studio }) {
       const flushed = await flushCollaboration();
       if (flushed.be !== undefined && flushed.be !== base.current.content)
         throw new Error('project.settingsChanged');
-      await window.blode.saveFile('be', writeProjectSettings(draft));
+      await window.blode.saveFile('be', writeProjectSettings(draft), expectedProjectRoot);
       studio.setDrafts((values) => {
         if (values.be !== base.current.content) return values;
         const next = { ...values };

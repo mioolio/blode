@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import * as z from 'zod';
 import type { UiCommand, UiCommandReply, UiRequest, UiState } from '../shared/workbench';
+import { workspaceConsoleTabs } from '../shared/workspace-surfaces';
 
 export const uiCommandSchema = z
   .object({
@@ -34,7 +35,15 @@ export const uiCommandSchema = z
       .optional(),
     path: z.string().min(1).max(1024).optional(),
     view: z.enum(['code', 'layout', 'ai']).optional(),
-    tab: z.enum(['output', 'serial', 'problems', 'warnings', 'terminal']).optional(),
+    tab: z
+      .union([
+        z.enum(workspaceConsoleTabs),
+        z.templateLiteral([
+          'plugin:',
+          z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}(?:[/:][A-Za-z][A-Za-z0-9_-]{0,79})?$/),
+        ]),
+      ])
+      .optional(),
     visible: z.boolean().optional(),
     language: z.enum(['zh-CN', 'en']).optional(),
     command: z.enum(['undo', 'redo', 'find', 'format', 'gotoLine', 'selectAll']).optional(),

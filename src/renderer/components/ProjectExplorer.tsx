@@ -17,6 +17,7 @@ import { ContextMenu } from './ContextMenu';
 import type { MenuTarget } from '../../../extensions/menus/types';
 import { useGitStatus } from '../workspace/useGitStatus';
 import './git-panel.css';
+import { DeviceInspector } from './DeviceInspector';
 
 /** Workspace inventory is independent of which files the code editor can open. */
 export function ProjectExplorer({ studio }: { studio: Studio }) {
@@ -154,7 +155,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
           updated.delete(`${rootPath}:${relative}`);
           return updated;
         });
-      } else if (next.files.some((file) => file.path === relative)) openFile(relative);
+      } else if (next?.files.some((file) => file.path === relative)) openFile(relative);
     }).finally(() => {
       submitting.current = false;
     });
@@ -484,6 +485,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
       ) : (
         <p className="subtle-note tree-empty">{t('welcome.noWorkspace')}</p>
       )}
+      {studio.devicePanelVisible && <DeviceInspector studio={studio} />}
       {menu && state?.workspaceOpen && (
         <ContextMenu
           x={menu.x}

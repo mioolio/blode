@@ -4,15 +4,6 @@ import { useI18n } from '../i18n';
 import { ModernSelect } from './ModernSelect';
 import './runtime-device-fields.css';
 
-const moduleNames: Record<string, string> = {
-  compile: 'action.build',
-  flash: 'action.flash',
-  probe: 'action.probe',
-  serial: 'console.serial',
-  layout: 'workspace.layout',
-  partitions: 'runtime.partitions',
-};
-
 export function RuntimeDeviceFields({
   plugin,
   config,
@@ -30,16 +21,8 @@ export function RuntimeDeviceFields({
       ...config,
       runtime: { ...config.runtime, values: { ...config.runtime?.values, [id]: value } },
     });
-  const optional = plugin.capabilities.filter(
-    (value) =>
-      ['serial', 'layout', 'partitions'].includes(value) && !plugin.ui.hiddenCapabilities?.includes(value),
-  );
   return (
     <div className="runtime-device-fields">
-      <div className="runtime-support">
-        <span>{plugin.transport.toUpperCase()}</span>
-        <span>{plugin.support.chips.join(' · ')}</span>
-      </div>
       {['usb', 'physical', 'custom'].includes(plugin.transport) && (
         <label>
           {t('runtime.deviceId')}
@@ -104,26 +87,6 @@ export function RuntimeDeviceFields({
           </label>
         );
       })}
-      {!!optional.length && (
-        <fieldset disabled={disabled} className="runtime-modules">
-          <legend>{t('runtime.modules')}</legend>
-          {optional.map((capability) => (
-            <label className="runtime-boolean" key={capability}>
-              <input
-                type="checkbox"
-                checked={!config.runtime?.disabledCapabilities?.includes(capability)}
-                onChange={(event) => {
-                  const values = new Set(config.runtime?.disabledCapabilities ?? []);
-                  if (event.target.checked) values.delete(capability);
-                  else values.add(capability);
-                  onChange({ ...config, runtime: { ...config.runtime, disabledCapabilities: [...values] } });
-                }}
-              />
-              {t(moduleNames[capability] ?? capability)}
-            </label>
-          ))}
-        </fieldset>
-      )}
     </div>
   );
 }

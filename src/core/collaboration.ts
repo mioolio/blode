@@ -13,7 +13,12 @@ import {
   type CollaborationSnapshot,
   type CollaborationUndoRequest,
   type CollaborationLeaveRequest,
+  type WorkspaceTabCloseRequest,
+  type WorkspaceTabCloseVote,
+  type WorkspaceSurfaceUpdate,
+  type WorkspaceSurfaceBootstrap,
 } from '../shared/collaboration';
+import { SharedTabAuthority } from './shared-tab-authority';
 import { collaborationSchemas } from './collaboration-schemas';
 import { inverseChanges, planUndo, recordUndo, type UndoGroup } from '../shared/selective-undo';
 import { openableFilePaths } from '../shared/file-views';
@@ -118,6 +123,7 @@ export class CollaborationService {
   private actors = new Map<string, string>();
   private presenceOrder = new Map<string, { sequence: number; departed: boolean }>();
   private presenceRevision = 0;
+  private tabs = new SharedTabAuthority();
   private documentRevisions = new Map<string, number>();
   private shutdownPrepared = false;
   private queue: Promise<unknown> = Promise.resolve();
@@ -145,6 +151,7 @@ export class CollaborationService {
       projectRoot: this.projectRoot,
       session: this.session,
       presenceRevision: this.presenceRevision,
+      ...this.tabs.snapshot(),
       peers: [...this.peers.values()].map((peer) => structuredClone(peer)),
       documents: [...this.documents.values()].map(({ value }) => ({
         path: value.path,
@@ -154,7 +161,7 @@ export class CollaborationService {
     };
   }
   private expirePeers() {
-    let changed = false;
+    let changed = this.tabs.expire(this.now());
     for (const [id, peer] of this.peers) {
       const path = this.viewableFiles.has(peer.path) ? peer.path : '';
       const openPaths = (peer.openPaths ?? (path ? [path] : [])).filter((entry) =>
@@ -168,6 +175,7 @@ export class CollaborationService {
         Date.parse(peer.seenAt) < this.now() - (peer.attention === 'inactive' ? INACTIVE_TTL : PEER_TTL)
       ) {
         this.peers.delete(id);
+        this.tabs.departed(id);
         changed = true;
       } else if (path !== peer.path || openPaths.length !== peer.openPaths?.length || clearRange) {
         this.peers.set(id, {
@@ -203,6 +211,7 @@ export class CollaborationService {
       this.actors.clear();
       this.presenceOrder.clear();
       this.documentRevisions.clear();
+      this.tabs.reset();
       this.files = files;
       this.viewableFiles = viewable;
       this.publish({ type: 'workspace', snapshot: this.snapshot() });
@@ -365,6 +374,99 @@ export class CollaborationService {
       return this.snapshot();
     });
   }
+  tabClose(input: WorkspaceTabCloseRequest, trustedLocal = true) {
+    return this.exclusive(async () => {
+      this.requireWritable();
+      const request = collaborationSchemas.tabClose.parse(input);
+      await this.sync();
+      this.requireProject(request.projectRoot, request.session);
+      this.actor(request.peerId, request.actorToken, trustedLocal);
+      const target =
+        request.target.kind === 'file'
+          ? { kind: 'file' as const, id: normalizeCollaborationPath(request.target.id) }
+          : request.target;
+      this.tabs.request(request.requestId, target, request.peerId, [...this.peers.values()], this.now());
+      this.presenceRevision++;
+      const snapshot = this.snapshot();
+      this.publish({ type: 'presence', snapshot });
+      return snapshot;
+    });
+  }
+  tabCloseVote(input: WorkspaceTabCloseVote, trustedLocal = true) {
+    return this.exclusive(async () => {
+      this.requireWritable();
+      const request = collaborationSchemas.tabCloseVote.parse(input);
+      await this.sync(true);
+      this.requireProject(request.projectRoot, request.session);
+      this.actor(request.peerId, request.actorToken, trustedLocal);
+      const pending = this.tabs.transaction(request.requestId);
+      const wasPreparing = pending?.status === 'preparing';
+      const doc = pending?.target.kind === 'file' ? this.documents.get(pending.target.id) : undefined;
+      const tx = this.tabs.vote(
+        request.requestId,
+        request.peerId,
+        doc?.externalContent !== undefined ? 'cancel' : request.decision,
+        this.now(),
+        request.documentRevision,
+        doc?.value.revision,
+      );
+      if (wasPreparing && doc?.externalContent !== undefined && tx.status === 'aborted')
+        tx.reason = 'changed';
+      // Every owner confirmed the same shared version. Reopening starts at the saved disk text.
+      // Do not broadcast a replacement document while clients still hold their close snapshots.
+      if (wasPreparing && tx.status === 'committed' && doc) {
+        this.documentRevisions.set(doc.value.path, doc.value.revision + 1);
+        this.documents.delete(doc.value.path);
+      }
+      if (wasPreparing && tx.status === 'committed')
+        for (const [id, peer] of this.peers) {
+          if (tx.target.kind === 'file') {
+            const path = peer.path === tx.target.id ? '' : peer.path;
+            this.peers.set(id, {
+              ...peer,
+              path,
+              openPaths: peer.openPaths?.filter((path) => path !== tx.target.id),
+              ...(path ? {} : { startLine: 1, endLine: 1, cursor: undefined, editing: false }),
+            });
+          } else if (tx.target.kind === 'tool')
+            this.peers.set(id, {
+              ...peer,
+              openTools: peer.openTools?.filter((tool) => tool !== tx.target.id),
+              activeTool: peer.activeTool === tx.target.id ? undefined : peer.activeTool,
+            });
+        }
+      this.presenceRevision++;
+      const snapshot = this.snapshot();
+      this.publish({ type: 'presence', snapshot });
+      return snapshot;
+    });
+  }
+  surfaceUpdate(input: WorkspaceSurfaceUpdate, trustedLocal = true) {
+    return this.exclusive(async () => {
+      const request = collaborationSchemas.surfaceUpdate.parse(input);
+      await this.sync();
+      this.requireProject(request.projectRoot, request.session);
+      this.actor(request.peerId, request.actorToken, trustedLocal);
+      this.tabs.update(request.target, request.open);
+      this.presenceRevision++;
+      const snapshot = this.snapshot();
+      this.publish({ type: 'presence', snapshot });
+      return snapshot;
+    });
+  }
+  surfaceBootstrap(input: WorkspaceSurfaceBootstrap, trustedLocal = true) {
+    return this.exclusive(async () => {
+      const request = collaborationSchemas.surfaceBootstrap.parse(input);
+      await this.sync();
+      this.requireProject(request.projectRoot, request.session);
+      this.actor(request.peerId, request.actorToken, trustedLocal);
+      for (const surface of request.surfaces) this.tabs.update(surface.target, surface.open, true);
+      this.presenceRevision++;
+      const snapshot = this.snapshot();
+      this.publish({ type: 'presence', snapshot });
+      return snapshot;
+    });
+  }
   open(projectRoot: string, path: string) {
     return this.exclusive(async () => {
       await this.sync();
@@ -411,8 +513,9 @@ export class CollaborationService {
       const selectedPath =
         inactive || parsed.activeTool ? '' : parsed.path ? normalizeCollaborationPath(parsed.path) : '';
       // Desktop code stays private; resource previews carry no code coordinates.
-      const path = parsed.clientKind === 'desktop' && this.files.has(selectedPath) ? '' : selectedPath;
+      let path = parsed.clientKind === 'desktop' && this.files.has(selectedPath) ? '' : selectedPath;
       if (path && !this.viewableFiles.has(path)) throw new Error('rpc.fileNotFound');
+      if (path && !this.tabs.accepts({ kind: 'file', id: path }, parsed.tabRevision)) path = '';
       const text = !!path && this.files.has(path);
       const openPaths = [
         ...new Set([
@@ -421,7 +524,11 @@ export class CollaborationService {
         ]),
       ]
         .map(normalizeCollaborationPath)
-        .filter((entry) => this.viewableFiles.has(entry))
+        .filter(
+          (entry) =>
+            this.viewableFiles.has(entry) &&
+            this.tabs.accepts({ kind: 'file', id: entry }, parsed.tabRevision),
+        )
         .slice(0, 256);
       const openTools = [
         ...new Set([
@@ -429,8 +536,12 @@ export class CollaborationService {
           ...(!inactive && parsed.activeTool ? [parsed.activeTool] : []),
         ]),
       ];
-      if (!path && !openPaths.length && !openTools.length) {
+      const allowedTools = openTools.filter((id) =>
+        this.tabs.accepts({ kind: 'tool', id }, parsed.tabRevision),
+      );
+      if (!path && !openPaths.length && !allowedTools.length) {
         if (this.peers.delete(parsed.identity.peerId)) {
+          this.tabs.departed(parsed.identity.peerId);
           this.presenceRevision++;
           this.publish({ type: 'presence', snapshot: this.snapshot() });
         }
@@ -454,11 +565,16 @@ export class CollaborationService {
         editing: text && parsed.editing,
         seenAt: new Date(this.now()).toISOString(),
         openPaths,
-        ...(parsed.openTools || parsed.activeTool || (inactive && existing?.openTools) ? { openTools } : {}),
-        ...(!inactive && parsed.activeTool ? { activeTool: parsed.activeTool } : {}),
+        ...(parsed.openTools || parsed.activeTool || (inactive && existing?.openTools)
+          ? { openTools: allowedTools }
+          : {}),
+        ...(!inactive && parsed.activeTool && allowedTools.includes(parsed.activeTool)
+          ? { activeTool: parsed.activeTool }
+          : {}),
         ...(parsed.clientKind ? { clientKind: parsed.clientKind } : {}),
         ...(parsed.attention ? { attention: parsed.attention } : {}),
       });
+      this.tabs.joined(this.peers.get(parsed.identity.peerId)!);
       this.presenceRevision++;
       const snapshot = this.snapshot();
       this.publish({ type: 'presence', snapshot });
@@ -501,6 +617,7 @@ export class CollaborationService {
       this.requireProject(request.projectRoot, request.session);
       this.actor(request.peerId, request.actorToken, trustedLocal);
       const doc = this.document(request.path);
+      if (this.tabs.locked(request.peerId, doc.value.path)) throw new Error('error.tabCloseChanged');
       const key = `${request.peerId}:${request.requestId}`;
       const signature = createHash('sha256').update(JSON.stringify(request)).digest('hex');
       const cached = this.requests.get(key);
@@ -578,6 +695,7 @@ export class CollaborationService {
       this.requireProject(request.projectRoot, request.session);
       this.actor(request.peerId, request.actorToken, trustedLocal);
       const doc = this.document(request.path);
+      if (this.tabs.locked(request.peerId, doc.value.path)) throw new Error('error.tabCloseChanged');
       const key = `${request.peerId}:${request.requestId}`;
       const signature = createHash('sha256').update(JSON.stringify(request)).digest('hex');
       const cached = this.requests.get(key);
@@ -655,7 +773,9 @@ export class CollaborationService {
         return;
       const sequence = request.sequence ?? (previous ? previous.sequence + 1 : undefined);
       if (sequence !== undefined) this.presenceOrder.set(peerId, { sequence, departed: true });
-      if (this.peers.delete(peerId)) {
+      const removed = this.peers.delete(peerId);
+      const aborted = this.tabs.departed(peerId);
+      if (removed || aborted) {
         this.presenceRevision++;
         this.publish({ type: 'presence', snapshot: this.snapshot() });
       }

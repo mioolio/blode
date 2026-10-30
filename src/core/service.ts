@@ -788,8 +788,10 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       drivers.invalidate();
       scheduleDeviceRefresh();
     },
-    async saveFile(relative, content) {
+    async saveFile(relative, content, expectedProjectRoot) {
       return withLock(async () => {
+        if (expectedProjectRoot !== undefined && expectedProjectRoot !== projectRoot)
+          throw new Error('error.collaborationProjectChanged');
         let descriptor: ReturnType<typeof parseProjectDescriptor> | undefined;
         if (relative.toLowerCase() === PROJECT_MARKER) {
           try {
@@ -831,8 +833,10 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         emit('status.workspaceChanged', 'success', 'status');
       });
     },
-    async saveConfig(value) {
+    async saveConfig(value, expectedProjectRoot) {
       return withLock(async () => {
+        if (expectedProjectRoot !== undefined && expectedProjectRoot !== projectRoot)
+          throw new Error('error.collaborationProjectChanged');
         const parsed = parseConfig(value);
         getBoardAdapter(parsed.boardId).validateConfig(parsed);
         await persistConfig(requireWorkspace(), parsed);

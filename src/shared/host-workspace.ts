@@ -13,5 +13,7 @@ export interface HostListing {
 }
 export interface HostWorkspaceApi {
   hostBrowse(path?: string): Promise<HostListing>;
+  vscodeOpen(request: VSCodeOpenRequest): Promise<VSCodeOpenResult>;
   hostOpenProject(path: string): Promise<boolean>;
 }
+import type { VSCodeOpenRequest, VSCodeOpenResult } from './vscode';

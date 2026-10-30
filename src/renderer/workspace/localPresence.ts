@@ -32,13 +32,12 @@ export function localTabPresence(
   closingFiles: ReadonlySet<string>,
   closingTools: ReadonlySet<string>,
 ): LocalTabPresence | null {
-  if (owner.showHome) return null;
   const allowed = new Set(openableFilePaths(owner));
   const openPaths = [...new Set(owner.openFiles)].filter(
     (path) => allowed.has(path) && !closingFiles.has(path),
   );
   const activeTool: CollaborationToolTab | undefined =
-    (owner.view === 'layout' || owner.view === 'ai') && !closingTools.has(owner.view)
+    !owner.showHome && (owner.view === 'layout' || owner.view === 'ai') && !closingTools.has(owner.view)
       ? owner.view
       : undefined;
   const openTools = [
@@ -47,7 +46,7 @@ export function localTabPresence(
   if (!openPaths.length && !openTools.length) return null;
   const asset = workspaceFileView(owner, owner.activePath) === 'asset';
   let selected: Viewport | undefined;
-  if (owner.view === 'code') {
+  if (!owner.showHome && owner.view === 'code') {
     if (asset) {
       if (openPaths.includes(owner.activePath))
         selected = { path: owner.activePath, startLine: 1, endLine: 1 };

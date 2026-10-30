@@ -7,13 +7,14 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
 }
 .console-header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -79,10 +80,13 @@
   background: var(--chip-bg);
 }
 .log-scroll {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
   min-height: 0;
   overflow: auto;
-  padding: 9px 12px;
+  padding: 0;
   font:
     11.5px/1.75 'Cascadia Code',
     Consolas,
@@ -92,6 +96,10 @@
 .log-scroll:focus-visible {
   outline: 2px solid var(--focus-outline);
   outline-offset: -2px;
+}
+.log-content {
+  padding: 8px 10px;
+  min-width: 0;
 }
 .log-line {
   display: flex;
@@ -110,6 +118,8 @@
   flex-shrink: 0;
 }
 .log-line pre {
+  flex: 1;
+  min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   margin: 0;
@@ -142,57 +152,44 @@
 }
 .serial-toolbar {
   display: flex;
-  gap: 8px;
   align-items: center;
-  padding: 6px 10px;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--border);
   color: var(--text-faint);
-  flex-wrap: wrap;
 }
-.serial-toolbar > :is(input, select, button) {
-  height: 28px;
-  min-height: 28px;
-}
-.serial-toolbar > svg,
-.serial-toolbar > .status-dot {
-  flex-shrink: 0;
-}
-.serial-toolbar > select:first-of-type {
-  flex: 1 1 180px;
-  min-width: 130px;
-  max-width: 320px;
-  text-overflow: ellipsis;
-}
-.serial-options > summary {
-  padding: 4px 0;
-  cursor: pointer;
-}
-.serial-options .serial-toolbar {
-  align-items: flex-end;
-  border-bottom: 0;
-  padding-top: 10px;
-  gap: 12px;
-}
-.serial-options label {
-  margin: 0;
-  min-width: 108px;
-  font-size: 11px;
-}
-.serial-options label > select {
-  height: 28px;
-  width: 100%;
-}
-.serial-toolbar select {
-  width: 108px;
-  font-size: 11px;
-  padding: 3px 6px;
-  border-radius: var(--radius-sm);
-}
-.serial-toggle {
-  display: inline-flex;
+.serial-port {
+  display: flex;
   align-items: center;
   gap: 5px;
-  height: 24px;
+  flex: 1 1 140px;
+  min-width: 72px;
+  max-width: 460px;
+}
+.serial-port > svg {
+  flex-shrink: 0;
+}
+.serial-toolbar .modern-select-trigger {
+  height: 28px;
+  min-height: 28px;
+  padding: 4px 7px;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+.serial-toolbar .serial-baud {
+  flex: 0 0 88px;
+  width: 88px;
+  height: 28px;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.serial-toggle {
+  flex-shrink: 0;
+  gap: 5px;
+  height: 28px;
   padding: 0 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -203,26 +200,62 @@
   color: var(--text);
   background: var(--surface-3);
 }
+.serial-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 14px;
+}
+.serial-settings-grid label {
+  margin: 0;
+  min-width: 0;
+  font-size: 11px;
+}
 .serial-input {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 6px;
-  min-height: 34px;
+  min-width: 0;
+  min-height: 36px;
   border-top: 1px solid var(--border);
-  padding: 0 8px 0 12px;
+  padding: 4px 8px;
   color: var(--text-faint);
 }
-.serial-input input {
+.serial-send-options {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+.serial-send-options > .modern-select {
+  width: 72px;
+}
+.serial-send-options > .modern-select:last-child {
+  width: 64px;
+}
+.serial-send-options .modern-select-trigger {
+  min-height: 26px;
+  height: 26px;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 10.5px;
+  border-radius: var(--radius-sm);
+}
+.serial-input > input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
   border: 0;
   background: transparent;
   font-size: 12px;
-  padding: 0;
+  padding: 0 3px;
 }
 .serial-input input:focus {
   box-shadow: none;
 }
-.serial-input button {
-  padding: 3px 9px;
+.serial-input > button {
+  flex-shrink: 0;
+  height: 26px;
+  padding: 3px 8px;
   font-size: 11px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);

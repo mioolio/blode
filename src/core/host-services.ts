@@ -13,6 +13,7 @@ import { HostTerminal } from './terminal';
 import { ComponentLibraries } from './components';
 import type { ComponentLibrariesState } from '../shared/components';
 import { browseHost } from './host-files';
+import { openVSCode, type VSCodeOptions } from './vscode';
 import { runCommand } from './process';
 import { configSchema, parseProjectBuild } from './config';
 import { toolVersionSchemas } from './tool-version-schemas';
@@ -31,6 +32,7 @@ interface Options {
   emit: (event: LogEvent) => void;
   fetcher?: typeof fetch;
   toolchainEnv?: NodeJS.ProcessEnv;
+  vscode?: Pick<VSCodeOptions, 'findExecutable' | 'launch'>;
   reloadProject?: () => Promise<void>;
   savePackage?: (file: { path: string; name: string }) => Promise<boolean>;
   runtimeDebugger?: () => RuntimeDebugger | undefined;
@@ -289,6 +291,18 @@ export function createHostServices(options: Options) {
       },
     },
     hostBrowse: { args: z.tuple([nativePath.optional()]), run: (directory) => browseHost(directory) },
+    vscodeOpen: {
+      args: z.tuple([hostParameterSchemas['vscode.open']]),
+      run: (request) =>
+        openVSCode(
+          {
+            projectRoot: () => core.currentProjectRoot(),
+            config: () => core.currentConfig(),
+            ...options.vscode,
+          },
+          request,
+        ),
+    },
     hostOpenProject: {
       args: z.tuple([nativePath]),
       run: async (root) => {
@@ -443,6 +457,7 @@ export function createHostServices(options: Options) {
     'tools.installVersion': ['toolVersionInstall', (p) => [p]],
     'tools.selectVersion': ['toolVersionSelect', (p) => [p]],
     'host.browse': ['hostBrowse', (p) => (p.path ? [p.path] : [])],
+    'vscode.open': ['vscodeOpen', (p) => [p]],
     'project.package.preview': ['projectPackagePreview', () => []],
     'project.package.export': ['projectPackageExport', (p) => [p]],
     'terminal.state': ['terminalState', (p) => [{ sessionId: p.sessionId, after: p.after }]],

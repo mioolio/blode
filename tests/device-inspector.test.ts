@@ -69,6 +69,7 @@ function studioFor(config: ProjectConfig): Studio {
     stale: false,
     dirty: false,
     configDirty: false,
+    runtimeExpanded: false,
     hasBuildEntry: false,
     validatesFirmware: validatesExistingFirmware(
       state.boards.find((item) => item.id === config.boardId),
@@ -134,6 +135,23 @@ test('the serial ESP inspector keeps upload baud and its existing COM selection'
   assert.match(html, /device\.port/);
   assert.match(html, /device\.speed/);
   assert.doesNotMatch(html, /device\.debugProbe/);
+  assert.doesNotMatch(html, /project-usage|memory-section/);
+  assert.match(html, /class="device-dock"/);
+});
+
+test('runtime footer stays collapsible while standalone flashing keeps its runtime selector', () => {
+  const studio = studioFor(getBoardAdapter('Esp32_S3_CAM').createConfig());
+  const footer = renderToStaticMarkup(createElement(DeviceInspector, { studio }));
+  assert.match(footer, /<details class="runtime-selector"><summary>/);
+  assert.match(footer, /runtime\.selector/);
+  assert.match(footer, /Esp32_S3_CAM/);
+  assert.doesNotMatch(footer, /runtime-support|runtime-modules/);
+  studio.state!.workspaceOpen = false;
+  studio.runtimeExpanded = true;
+  const home = renderToStaticMarkup(createElement(DeviceInspector, { studio }));
+  assert.match(home, /class="runtime-selector" open=""/);
+  assert.match(home, /device\.port/);
+  assert.match(home, /action\.probe/);
 });
 
 test('the first loading snapshot keeps saved connectors visible without reporting missing tools', () => {

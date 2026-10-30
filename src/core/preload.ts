@@ -64,12 +64,18 @@ const bridge: DesktopApi = {
   listPorts: () => call('listPorts'),
   listDebugProbes: () => call('listDebugProbes'),
   scanDevices: () => call('scanDevices'),
-  saveFile: (path, content) => call('saveFile', path, content),
+  saveFile: (path, content, expectedProjectRoot) =>
+    expectedProjectRoot === undefined
+      ? call('saveFile', path, content)
+      : call('saveFile', path, content, expectedProjectRoot),
   createFile: (path) => call('createFile', path),
   createDirectory: (path) => call('createDirectory', path),
   renameEntry: (from, to) => call('renameEntry', from, to),
   deleteEntry: (path) => call('deleteEntry', path),
-  saveConfig: (config) => call('saveConfig', config),
+  saveConfig: (config, expectedProjectRoot) =>
+    expectedProjectRoot === undefined
+      ? call('saveConfig', config)
+      : call('saveConfig', config, expectedProjectRoot),
   setBuildEntry: (path) => call('setBuildEntry', path),
   build: () => call('build'),
   flash: () => call('flash'),

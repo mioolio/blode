@@ -198,7 +198,7 @@ test('native tab collection never broadcasts its editor viewport', () => {
   assert.deepEqual(state.openTools, ['layout']);
 });
 
-test('closed tools stay closed during the preceding React render and home clears presence', () => {
+test('closed tools stay closed during the preceding React render and home retains only tab ownership', () => {
   assert.equal(
     localTabPresence(
       owner({ view: 'layout', openFiles: [], openTools: ['layout'] }),
@@ -208,10 +208,16 @@ test('closed tools stay closed during the preceding React render and home clears
     ),
     null,
   );
-  assert.equal(
-    localTabPresence(owner({ showHome: true, openTools: ['layout', 'ai'] }), undefined, empty, empty),
-    null,
-  );
+  const home = localTabPresence(
+    owner({ showHome: true, view: 'layout', openTools: ['layout', 'ai'] }),
+    undefined,
+    empty,
+    empty,
+  )!;
+  assert.equal(home.path, '');
+  assert.equal(home.activeTool, undefined);
+  assert.deepEqual(home.openTools, ['layout', 'ai']);
+  assert.deepEqual(home.openPaths, ['main.c']);
   assert.equal(localTabPresence(owner({ openFiles: [], activePath: '' }), undefined, empty, empty), null);
   const remoteOnly = owner();
   Object.assign(remoteOnly, { remoteTools: ['layout', 'ai'] });

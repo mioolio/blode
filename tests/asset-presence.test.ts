@@ -208,5 +208,8 @@ test('closing a resource does not fall through to a stale split editor viewport'
     localTabPresence(localOwner(true), undefined, new Set(['assets/music.mp3', 'main.c']), empty),
     null,
   );
-  assert.equal(localTabPresence({ ...localOwner(true), showHome: true }, undefined, empty, empty), null);
+  const home = localTabPresence({ ...localOwner(true), showHome: true }, undefined, empty, empty)!;
+  assert.equal(home.path, '');
+  assert.equal(home.cursor, undefined);
+  assert.deepEqual(home.openPaths, ['assets/music.mp3', 'main.c']);
 });

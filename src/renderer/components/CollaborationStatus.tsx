@@ -20,11 +20,11 @@ export function CollaborationAvatars({
   const visible = users.slice(0, 3);
   return (
     <span className="collaboration-avatars">
-      {visible.map((peer) => (
+      {visible.map((peer, index) => (
         <span
           key={peer.peerId}
           className={`collaboration-avatar${peer.editing ? ' editing' : ''}`}
-          style={{ color: peer.color }}
+          style={{ color: peer.color, zIndex: visible.length - index }}
           title={`${peer.name}${peer.clientKind === 'desktop' ? ` · ${t('collaboration.desktopPeer')}` : ''} · ${t(peer.editing ? 'collaboration.editing' : peer.viewing ? 'collaboration.viewing' : 'collaboration.opened')}${peer.viewing && !tool ? ` · ${peer.startLine}–${peer.endLine}` : ''}`}
           aria-label={`${peer.name}: ${t(peer.editing ? 'collaboration.editing' : peer.viewing ? 'collaboration.viewing' : 'collaboration.opened')}`}
         >

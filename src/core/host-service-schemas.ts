@@ -78,6 +78,16 @@ export const hostParameterSchemas = {
   'tools.installVersion': toolVersionSchemas.install,
   'tools.selectVersion': toolVersionSchemas.select,
   'host.browse': z.object({ path: z.string().min(1).max(4096).optional() }).strict(),
+  'vscode.open': z
+    .object({
+      expectedProjectRoot: z.string().min(1).max(4096),
+      path: z.string().min(1).max(1024).optional(),
+      line: z.number().int().min(1).max(10_000_000).optional(),
+      column: z.number().int().min(1).max(10_000_000).optional(),
+      confirm: z.literal(true),
+    })
+    .strict()
+    .refine((value) => value.path || (value.line === undefined && value.column === undefined)),
   'project.package.preview': empty,
   'project.package.export': z
     .object({ confirmExternal: z.literal(true).optional(), allowIncomplete: z.literal(true).optional() })

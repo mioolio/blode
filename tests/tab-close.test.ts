@@ -187,6 +187,24 @@ test('a remote-only clean tab can be released without a local pinned-tab members
   assert.equal(await view.queue.request('missing.c'), false);
 });
 
+test('aborting a shared decision cancels only its file and ignores a late save completion', async () => {
+  const view = fixture(),
+    write = deferred();
+  const first = view.queue.request('one.c');
+  const second = view.queue.request('two.c');
+  view.setPrepare(() => write.promise);
+  const saving = view.queue.choose('save');
+  view.queue.cancel('one.c');
+  assert.equal(await first, false);
+  assert.equal(view.prompt?.path, 'two.c');
+  write.resolve();
+  await saving;
+  assert.deepEqual(view.closed, []);
+  assert.equal(view.prompt?.path, 'two.c');
+  await view.queue.choose('cancel');
+  assert.equal(await second, false);
+});
+
 test('file-close registrations are root-aware and cleanup removes their effects', async () => {
   const calls: string[] = [];
   const remove = registerFileCloseHandler(async (root, path, decision) => {

@@ -291,18 +291,6 @@ export function Settings({
         >
           <div className="settings-card-head">
             <h3>{t('settings.toolchain')}</h3>
-            <ContextHelp title={t('settings.installHelp')}>
-              <p>
-                {t(
-                  isAutomatic
-                    ? 'settings.autoToolchainNote'
-                    : usesStlink
-                      ? 'settings.stlinkNote'
-                      : 'settings.note',
-                )}
-              </p>
-              <p>{t('settings.armCompilerNote')}</p>
-            </ContextHelp>
           </div>
           {(active === 'toolchain' || visited.has('toolchain')) && (
             <ToolVersionSettings

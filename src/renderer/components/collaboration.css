@@ -8,22 +8,22 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
   border-radius: 50%;
   background: color-mix(in srgb, var(--surface-1) 88%, currentColor);
   border: 2px solid var(--surface-1);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent);
   position: relative;
-  transition: margin 180ms ease;
 }
 .collaboration-avatar + .collaboration-avatar {
-  margin-left: -7px;
-}
-.collaboration-avatars:hover .collaboration-avatar + .collaboration-avatar {
-  margin-left: -3px;
+  margin-left: -9px;
 }
 .collaboration-overflow {
+  min-width: 19px;
+  padding-inline: 2px;
+  z-index: 0;
   font-size: 8px;
   font-weight: 600;
   color: var(--text-dim);

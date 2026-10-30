@@ -4,23 +4,27 @@
 
 ## 目录责任
 
-| 位置                                  | 责任                                                              |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| `src/shared/contracts.ts`             | 跨进程数据、CoreApi、构建与检测结果类型                           |
-| `extensions/types.ts`                 | 纯配置 BoardAdapter：设备事实、默认值与校验                       |
-| `extensions/runtime.ts`               | RuntimeHost、PlatformRuntime 与工厂 SDK                           |
-| `extensions/boards/<platform>/`       | 平台 adapter/runtime/toolchain/programmer/layout/driver，按需拆分 |
-| `extensions/registry.ts`              | 板卡配置和元数据的可信静态注册                                    |
-| `extensions/runtime-registry.ts`      | 具体平台 runtime 工厂的可信静态注册                               |
-| `extensions/plugins.ts`               | API v2 原生插件的 SDK 和模块契约                                  |
-| `src/core/runtime-plugins.ts`         | 动态插件声明、包授权、编译及设备／调试路由                        |
-| `src/shared/runtime-views.ts`         | 声明式视图注册，供窗口与底部面板使用                              |
-| `src/core/desktop-lifecycle.ts`       | 退出保存事务、托盘偏好与窗口关闭策略                              |
-| `src/renderer/workspace/attention.ts` | 浏览器／桌面共用注意力来源注册                                    |
-| `extensions/drivers/`                 | 驱动类型与注册，厂商事实来自平台目录                              |
-| `src/core/`                           | 通用锁、工程路径、配置、进程宿主、哈希、缓存、串口                |
-| `src/renderer/`                       | 编辑器、设备能力显示、菜单、首选项、国际化                        |
-| `src/automation/`                     | 认证传输、schema 路由、客户端与 MCP                               |
+| 位置                                   | 责任                                                              |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `src/shared/contracts.ts`              | 跨进程数据、CoreApi、构建与检测结果类型                           |
+| `extensions/types.ts`                  | 纯配置 BoardAdapter：设备事实、默认值与校验                       |
+| `extensions/runtime.ts`                | RuntimeHost、PlatformRuntime 与工厂 SDK                           |
+| `extensions/boards/<platform>/`        | 平台 adapter/runtime/toolchain/programmer/layout/driver，按需拆分 |
+| `extensions/registry.ts`               | 板卡配置和元数据的可信静态注册                                    |
+| `extensions/runtime-registry.ts`       | 具体平台 runtime 工厂的可信静态注册                               |
+| `extensions/plugins.ts`                | API v2 原生插件的 SDK 和模块契约                                  |
+| `src/core/runtime-plugins.ts`          | 动态插件声明、包授权、编译及设备／调试路由                        |
+| `src/shared/runtime-views.ts`          | 声明式视图注册，供窗口与底部面板使用                              |
+| `src/shared/workspace-surfaces.ts`     | 文件、工具、底部页与面板的统一同步标识和校验                      |
+| `src/core/shared-tab-authority.ts`     | 跨端关闭事务、成员确认、版本记录和状态回放                        |
+| `src/renderer/workspace/sharedTabs.ts` | 界面同步入口、关闭协调和断线状态发送队列                          |
+| `src/core/vscode.ts`                   | 生成工程工作区配置、查找及启动宿主 VS Code                        |
+| `src/core/desktop-lifecycle.ts`        | 退出保存事务、托盘偏好与窗口关闭策略                              |
+| `src/renderer/workspace/attention.ts`  | 浏览器／桌面共用注意力来源注册                                    |
+| `extensions/drivers/`                  | 驱动类型与注册，厂商事实来自平台目录                              |
+| `src/core/`                            | 通用锁、工程路径、配置、进程宿主、哈希、缓存、串口                |
+| `src/renderer/`                        | 编辑器、设备能力显示、菜单、首选项、国际化                        |
+| `src/automation/`                      | 认证传输、schema 路由、客户端与 MCP                               |
 
 平台 runtime 不导入 core 或另一个平台实现；类型来自 shared，宿主契约来自 `extensions/runtime.ts`。平台内部使用相对导入，复制完整目录即可保留内部依赖。纯 adapter 定义配置，有状态的工具与设备操作由 runtime 组织。
 
@@ -86,6 +90,10 @@ STM32 源码构建仍需要匹配芯片的启动文件、链接脚本、架构�
 renderer 不导入 Node 或直接启动编译器，preload 只公开能力白名单。桌面通过原生对话框选择工程和保存文件，Web 通过目标机器文件选择器与下载响应完成对应操作；Windows 驱动安装在宿主上处理提权。首选项按常规、工具链和驱动定位，语言与驱动操作无需工程。
 
 终端进程由 `HostTerminal` 统一持有，前端 xterm 按需加载并通过会话／序号游标读取原始 ANSI 增量。Windows 使用 ConPTY，其他宿主使用系统 PTY；界面销毁不结束 Shell，显式关闭终端或退出宿主才释放进程。协作、原生窗口注意力与退出控制的边界见[交互更新](internal/workbench-interaction.md)。
+
+主工作台的共享界面状态走 `workspace-surfaces` 注册表。组件通过统一入口发布打开、关闭和显隐意图；服务维护版本与关闭记录，接收端执行准备、提交或取消。共享文件关闭需各持有者确认同一版本；源码和配置保存携带起始工程根目录，在宿主锁内再次校验。具体交互和新增功能页接入方法见[多人协作](COLLABORATION.md)。
+
+VS Code 连接使用标准工作区文件，不修改项目原有 `.vscode`。外部编辑器保存由工程文件监听接入同一缓存失效、草稿冲突和界面刷新流程；实现与验证范围见[VS Code 连接](vscode.md)。
 
 ST-Link 的 INF、USB ID 和归档描述位于 STM32 平台 driver.ts，通用执行器完成 PnP 查询、解压与显式提权安装。驱动可用不等于命令行工具已安装，调试器也不等于 COM 串口。
 

@@ -39,6 +39,22 @@ export function createAssistanceRoutes(
       run: (input) => ai.aiPredictionRead(input),
     },
     collaborationState: { args: z.tuple([]), run: () => collaboration.state() },
+    collaborationSurfaceBootstrap: {
+      args: z.tuple([collaborationSchemas.surfaceBootstrap]),
+      run: (input) => collaboration.surfaceBootstrap(input, trustedLocal),
+    },
+    collaborationTabClose: {
+      args: z.tuple([collaborationSchemas.tabClose]),
+      run: (input) => collaboration.tabClose(input, trustedLocal),
+    },
+    collaborationTabCloseVote: {
+      args: z.tuple([collaborationSchemas.tabCloseVote]),
+      run: (input) => collaboration.tabCloseVote(input, trustedLocal),
+    },
+    collaborationSurfaceUpdate: {
+      args: z.tuple([collaborationSchemas.surfaceUpdate]),
+      run: (input) => collaboration.surfaceUpdate(input, trustedLocal),
+    },
     collaborationOpen: {
       args: z.tuple([z.string(), z.string()]),
       run: (root, path) => collaboration.open(root, path),

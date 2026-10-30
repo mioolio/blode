@@ -1,5 +1,10 @@
 import * as z from 'zod';
 import { COLLABORATION_COLORS } from '../shared/collaboration';
+import {
+  registeredWorkspaceSurface,
+  workspaceTools,
+  type WorkspaceSyncTarget,
+} from '../shared/workspace-surfaces';
 
 const root = z.string().min(1).max(4096);
 const path = z.string().min(1).max(1024);
@@ -15,12 +20,71 @@ const actorToken = z
   .regex(/^[a-f0-9]{64}$/)
   .optional();
 export const collaborationSchemas = {
+  surfaceBootstrap: z
+    .object({
+      projectRoot: root,
+      session: id,
+      peerId: id,
+      actorToken,
+      surfaces: z
+        .array(
+          z
+            .object({
+              target: z
+                .object({ kind: z.enum(['console', 'panel']), id: path })
+                .strict()
+                .refine((value) => registeredWorkspaceSurface(value as WorkspaceSyncTarget)),
+              open: z.boolean(),
+            })
+            .strict(),
+        )
+        .max(32),
+    })
+    .strict(),
+  tabClose: z
+    .object({
+      projectRoot: root,
+      session: id,
+      peerId: id,
+      actorToken,
+      requestId: id,
+      target: z
+        .object({ kind: z.enum(['file', 'tool', 'console', 'panel']), id: path })
+        .strict()
+        .refine((value) => registeredWorkspaceSurface(value as WorkspaceSyncTarget)),
+    })
+    .strict(),
+  tabCloseVote: z
+    .object({
+      projectRoot: root,
+      session: id,
+      peerId: id,
+      actorToken,
+      requestId: id,
+      decision: z.enum(['ready', 'cancel']),
+      documentRevision: revision.optional(),
+    })
+    .strict(),
+  surfaceUpdate: z
+    .object({
+      projectRoot: root,
+      session: id,
+      peerId: id,
+      actorToken,
+      target: z
+        .object({ kind: z.enum(['tool', 'console', 'panel']), id: path })
+        .strict()
+        .refine((value) => registeredWorkspaceSurface(value as WorkspaceSyncTarget)),
+      open: z.boolean(),
+    })
+    .strict(),
   state: z.object({}).strict(),
   open: z.object({ projectRoot: root, path }).strict(),
   presence: z
     .object({
       projectRoot: root,
       session: id.optional(),
+      tabRevision: revision.optional(),
       sequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
       actorToken,
       identity: z
@@ -40,11 +104,8 @@ export const collaborationSchemas = {
         .optional(),
       editing: z.boolean(),
       openPaths: z.array(path).max(256).optional(),
-      openTools: z
-        .array(z.enum(['layout', 'ai']))
-        .max(2)
-        .optional(),
-      activeTool: z.enum(['layout', 'ai']).optional(),
+      openTools: z.array(z.enum(workspaceTools)).max(2).optional(),
+      activeTool: z.enum(workspaceTools).optional(),
       clientKind: z.enum(['desktop', 'web']).optional(),
       attention: z.enum(['active', 'inactive']).optional(),
       attentionEpoch: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),

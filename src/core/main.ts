@@ -638,6 +638,7 @@ async function bootstrap(): Promise<void> {
   if (closing) return;
   assistance.routes.collaborationPresence.run = (input) => nativePresence!.presence(input);
   assistance.routes.collaborationLeave.run = (input) => nativePresence!.leave(input);
+  assistance.routes.collaborationTabClose.run = (input) => nativePresence!.tabClose(input);
   const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
   const protection = protectSharedWorkspace(core, collaboration);
   hostServices = createHostServices({
@@ -992,14 +993,21 @@ async function bootstrap(): Promise<void> {
     listDebugProbes: { args: noArgs, run: () => core!.listDebugProbes() },
     scanDevices: { args: noArgs, run: () => core!.scanDevices() },
     saveFile: {
-      args: z.tuple([z.string().min(1).max(1024), z.string().max(1_048_576)]),
-      run: (file, content) => core!.saveFile(file, content),
+      args: z.tuple([
+        z.string().min(1).max(1024),
+        z.string().max(1_048_576),
+        z.string().min(1).max(4096).optional(),
+      ]),
+      run: (file, content, expectedProjectRoot) => core!.saveFile(file, content, expectedProjectRoot),
     },
     createFile: {
       args: z.tuple([z.string().min(1).max(1024)]),
       run: (relative) => core!.createFile(relative),
     },
-    saveConfig: { args: z.tuple([z.unknown()]), run: (config) => core!.saveConfig(config) },
+    saveConfig: {
+      args: z.tuple([z.unknown(), z.string().min(1).max(4096).optional()]),
+      run: (config, expectedProjectRoot) => core!.saveConfig(config, expectedProjectRoot),
+    },
     setBuildEntry: {
       args: z.tuple([z.string().min(1).max(1024)]),
       run: (relative) => core!.setBuildEntry(relative),

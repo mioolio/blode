@@ -498,7 +498,6 @@ export function GitPanel({ studio }: { studio: Studio }) {
                       {t('git.push')}
                     </button>
                   </div>
-                  <p className="subtle-note">{t('git.remoteNote')}</p>
                   <label>
                     {t('git.remoteName')}
                     <input
@@ -544,7 +543,6 @@ export function GitPanel({ studio }: { studio: Studio }) {
               )}
               {tab === 'identity' && (
                 <div className="git-form">
-                  <p className="subtle-note">{t('git.identityNote')}</p>
                   <label>
                     {t('git.userName')}
                     <input value={name} disabled={busy} onChange={(event) => setName(event.target.value)} />

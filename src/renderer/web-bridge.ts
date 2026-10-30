@@ -182,12 +182,20 @@ if (!scope.blode) {
     listPorts: () => call('listPorts', []) as ReturnType<DesktopApi['listPorts']>,
     listDebugProbes: () => call('listDebugProbes', []) as ReturnType<DesktopApi['listDebugProbes']>,
     scanDevices: () => call('scanDevices', []) as ReturnType<DesktopApi['scanDevices']>,
-    saveFile: (path, content) => call('saveFile', [path, content]) as Promise<void>,
+    saveFile: (path, content, expectedProjectRoot) =>
+      call(
+        'saveFile',
+        expectedProjectRoot === undefined ? [path, content] : [path, content, expectedProjectRoot],
+      ) as Promise<void>,
     createFile: (path) => call('createFile', [path]) as Promise<void>,
     createDirectory: (path) => call('createDirectory', [path]) as Promise<void>,
     renameEntry: (from, to) => call('renameEntry', [from, to]) as Promise<void>,
     deleteEntry: (path) => call('deleteEntry', [path]) as Promise<void>,
-    saveConfig: (config) => call('saveConfig', [config]) as Promise<void>,
+    saveConfig: (config, expectedProjectRoot) =>
+      call(
+        'saveConfig',
+        expectedProjectRoot === undefined ? [config] : [config, expectedProjectRoot],
+      ) as Promise<void>,
     setBuildEntry: (path) => call('setBuildEntry', [path]) as Promise<void>,
     build: () => call('build', []) as ReturnType<DesktopApi['build']>,
     flash: () => call('flash', []) as Promise<void>,

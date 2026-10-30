@@ -3,21 +3,6 @@
   gap: 13px;
   padding-block: 4px;
 }
-.runtime-support {
-  display: flex;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 6px 9px;
-  font-size: 10px;
-  color: var(--text-dim);
-}
-.runtime-support > span:first-child {
-  color: var(--accent);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-}
 .runtime-device-fields .runtime-boolean {
   display: flex;
   flex-direction: row;
@@ -30,18 +15,4 @@
   height: 14px;
   min-height: 0;
   margin: 0;
-}
-.runtime-modules {
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 10px;
-  margin: 0;
-}
-.runtime-modules legend {
-  font-size: 10px;
-  color: var(--text-dim);
-  padding-inline: 4px;
 }

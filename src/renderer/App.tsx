@@ -59,11 +59,8 @@ function WorkspaceApp() {
     if (!studio.devicePanelVisible && mobilePanel === 'device') setMobilePanel('editor');
   }, [studio.devicePanelVisible, mobilePanel]);
   const showResources = !!studio.state?.workspaceOpen;
-  const columns = [
-    ...(showResources ? [`${widths.left}px`, '5px'] : []),
-    'minmax(300px, 1fr)',
-    ...(studio.devicePanelVisible ? ['5px', `${widths.right}px`] : []),
-  ];
+  const showLeftPanel = showResources || studio.devicePanelVisible;
+  const columns = [...(showLeftPanel ? [`${widths.left}px`, '5px'] : []), 'minmax(300px, 1fr)'];
   return (
     <div className={`studio${studio.isWeb ? ' web-studio' : ''}`} data-mobile-panel={mobilePanel}>
       <StudioHeader studio={studio} />
@@ -88,6 +85,7 @@ function WorkspaceApp() {
             className={mobilePanel === 'device' ? 'active' : ''}
             onClick={() => {
               studio.setDevicePanelVisible(true);
+              studio.setRuntimeExpanded(true);
               setMobilePanel('device');
             }}
           >
@@ -104,8 +102,16 @@ function WorkspaceApp() {
             setMobilePanel('editor');
         }}
       >
-        {showResources && <ProjectExplorer studio={studio} />}
-        {showResources && <div className="splitter" onPointerDown={(event) => resize('left', event)} />}
+        {showResources ? (
+          <ProjectExplorer studio={studio} />
+        ) : (
+          studio.devicePanelVisible && (
+            <aside className="project-panel standalone-device-panel">
+              <DeviceInspector studio={studio} />
+            </aside>
+          )
+        )}
+        {showLeftPanel && <div className="splitter" onPointerDown={(event) => resize('left', event)} />}
         <section
           className={`center-panel${studio.consolePanelVisible ? ' with-console' : ''}`}
           style={{
@@ -120,10 +126,6 @@ function WorkspaceApp() {
           )}
           <ConsolePanel studio={studio} />
         </section>
-        {studio.devicePanelVisible && (
-          <div className="splitter" onPointerDown={(event) => resize('right', event)} />
-        )}
-        {studio.devicePanelVisible && <DeviceInspector studio={studio} />}
       </main>
       <StudioStatusBar studio={studio} />
       <StudioDialogs studio={studio} />

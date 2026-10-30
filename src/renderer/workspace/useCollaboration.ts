@@ -16,6 +16,8 @@ import { observePageAttention, type AttentionSnapshot } from './attention';
 import { CollaborationResume, retainLocalDocuments } from './collaborationResume';
 import type { Studio } from './useStudio';
 import { workspaceFileView } from '../../shared/file-views';
+import { workspaceSurfaces } from '../../shared/workspace-surfaces';
+import { SharedSurfaceOutbox, SharedWorkspaceClient, registerSharedWorkspaceHandler } from './sharedTabs';
 
 export interface EditorPresence {
   path: string;
@@ -93,6 +95,7 @@ export function useCollaboration(studio: Studio) {
   const presenceSequence = useRef(0);
   const receivedPresenceRevision = useRef(-1);
   const paused = useRef(false);
+  const pageDeparted = useRef(false);
   const recovering = useRef(false);
   const attention = useRef<ReturnType<typeof observePageAttention> | undefined>(undefined);
   const resumeCoordinator = useRef(new CollaborationResume());
@@ -100,6 +103,8 @@ export function useCollaboration(studio: Studio) {
   const transportAvailable = useRef(true);
   const closingPaths = useRef(new Set<string>());
   const closingTools = useRef(new Set<string>());
+  const preparedContexts = useRef(new Map<string, { root: string; session: string }>());
+  const preparedCloses = useRef(new Map<string, { path: string; revision: number; ready?: boolean }>());
   const presenceActive = useRef(false);
   const previousOpenFiles = useRef<string[]>(studio.openFiles);
   const previousOpenTools = useRef<readonly string[]>(studio.openTools);
@@ -108,8 +113,128 @@ export function useCollaboration(studio: Studio) {
   const editingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const waitingViewport = useRef(false);
   const editedAt = useRef(0);
+  const surfaceOutbox = useRef(new SharedSurfaceOutbox());
+  const surfaceSending = useRef<Promise<void> | undefined>(undefined);
+  const bootstrappedSurfaces = useRef('');
   const root = studio.state?.projectRoot ?? '';
-  const enabled = !!root && studio.syncDrafts && typeof window.blode.collaborationState === 'function';
+  const connected = !!root && typeof window.blode.collaborationState === 'function';
+  const enabled = connected && studio.syncDrafts;
+  const sharedWorkspace = useRef<SharedWorkspaceClient | null>(null);
+  if (!sharedWorkspace.current)
+    sharedWorkspace.current = new SharedWorkspaceClient({
+      context: () =>
+        latest.current.state?.projectRoot && session.current
+          ? {
+              projectRoot: latest.current.state.projectRoot,
+              session: session.current,
+              peerId: self.peerId,
+              actorToken,
+            }
+          : undefined,
+      request: (context, target, requestId) =>
+        window.blode.collaborationTabClose({ ...context, target, requestId }),
+      owns: (target) =>
+        target.kind === 'file'
+          ? latest.current.openFiles.includes(target.id) || Object.hasOwn(latest.current.drafts, target.id)
+          : target.kind === 'tool'
+            ? latest.current.openTools.some((id) => id === target.id)
+            : true,
+      vote: async (context, requestId, decision, target) => {
+        let documentRevision = preparedCloses.current.get(requestId)?.revision;
+        if (
+          decision === 'ready' &&
+          target.kind === 'file' &&
+          latest.current.preparedSharedTabDecision(target.id, requestId) === 'save'
+        ) {
+          const current = await window.blode.collaborationOpen(context.projectRoot, target.id);
+          if (current.content !== latest.current.preparedSharedTabContent(target.id, requestId))
+            decision = 'cancel';
+          documentRevision = current.revision;
+        }
+        if (decision === 'ready') {
+          const prepared = preparedCloses.current.get(requestId);
+          if (prepared) prepared.ready = true;
+        }
+        return window.blode.collaborationTabCloseVote({ ...context, requestId, decision, documentRevision });
+      },
+      prepare: async (target, requestId) => {
+        const expected = { root: latest.current.state?.projectRoot ?? '', session: session.current };
+        if (!expected.root || !expected.session) return false;
+        preparedContexts.current.set(requestId, expected);
+        if (target.kind === 'file' && workspaceFileView(latest.current.state, target.id) === 'text') {
+          const root = latest.current.state!.projectRoot;
+          const current = await window.blode.collaborationOpen(root, target.id);
+          if (latest.current.state?.projectRoot !== expected.root || session.current !== expected.session)
+            return false;
+          preparedCloses.current.set(requestId, { path: target.id, revision: current.revision });
+          if (latest.current.syncDrafts) {
+            const record = records.current.get(target.id);
+            if (record) actions.current.adopt(current);
+            else {
+              const local = latest.current.drafts[target.id];
+              const baseline =
+                latest.current.state!.files.find((file) => file.path === target.id)?.content ??
+                current.content;
+              records.current.set(target.id, {
+                baseline,
+                local: local ?? current.content,
+                ...(local === undefined ? { document: current } : {}),
+              });
+              if (local !== undefined) actions.current.adopt(current);
+            }
+          }
+          return latest.current.prepareSharedTabClose(target, requestId, {
+            content: current.content,
+            dirty: current.dirty,
+          });
+        }
+        return latest.current.prepareSharedTabClose(target, requestId);
+      },
+      commit: async (target, requestId) => {
+        const expected = preparedContexts.current.get(requestId);
+        if (
+          !expected ||
+          latest.current.state?.projectRoot !== expected.root ||
+          session.current !== expected.session
+        )
+          return false;
+        const result = await latest.current.commitSharedTabClose(target, requestId);
+        if (result !== false) {
+          if (target.kind === 'file') {
+            closingPaths.current.add(target.id);
+            records.current.delete(target.id);
+          }
+          if (target.kind === 'tool') closingTools.current.add(target.id);
+        }
+        preparedCloses.current.delete(requestId);
+        preparedContexts.current.delete(requestId);
+        return result;
+      },
+      abort: (target, requestId) => {
+        preparedCloses.current.delete(requestId);
+        preparedContexts.current.delete(requestId);
+        latest.current.abortSharedTabClose(target, requestId);
+        if (target.kind === 'file' && records.current.has(target.id)) {
+          const projectRoot = latest.current.state?.projectRoot;
+          if (projectRoot)
+            void window.blode
+              .collaborationOpen(projectRoot, target.id)
+              .then((document) => actions.current.adopt(document))
+              .catch(() => {});
+        }
+      },
+      surface: (target, open) => latest.current.applySharedSurface(target, open),
+      failure: (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setConnectionError(message);
+        if (message === 'error.tabCloseChanged')
+          latest.current.notify(latest.current.t(message), false, true);
+      },
+      changed: () => {
+        clearTimeout(presenceTimer.current);
+        presenceTimer.current = setTimeout(() => actions.current.sendPresence(), 0);
+      },
+    });
   const isTextDocument = (path: string) => workspaceFileView(latest.current.state, path) === 'text';
   const updateConflicts = () =>
     setConflicts(
@@ -145,6 +270,12 @@ export function useCollaboration(studio: Studio) {
     if (document.projectRoot !== root || (session.current && document.session !== session.current)) return;
     const record = records.current.get(document.path);
     if (!record || closingPaths.current.has(document.path)) return;
+    if (
+      [...preparedCloses.current.values()].some(
+        (prepared) => prepared.path === document.path && prepared.ready,
+      )
+    )
+      return;
     if (
       !record.document &&
       record.local !== record.baseline &&
@@ -266,14 +397,7 @@ export function useCollaboration(studio: Studio) {
     return record.sending;
   };
   const receiveSnapshot = (value: CollaborationSnapshot) => {
-    if (
-      value.projectRoot !== root ||
-      retiredSessions.current.has(value.session) ||
-      (value.session === session.current &&
-        value.presenceRevision !== undefined &&
-        value.presenceRevision < receivedPresenceRevision.current)
-    )
-      return false;
+    if (value.projectRoot !== root || retiredSessions.current.has(value.session)) return false;
     if (session.current && session.current !== value.session) {
       retiredSessions.current.add(session.current);
       if (retiredSessions.current.size > 32)
@@ -283,20 +407,28 @@ export function useCollaboration(studio: Studio) {
       receivedPresenceRevision.current = -1;
       setConflicts([]);
     }
-    if (value.presenceRevision !== undefined) receivedPresenceRevision.current = value.presenceRevision;
+    const stalePeers =
+      value.session === session.current &&
+      value.presenceRevision !== undefined &&
+      value.presenceRevision < receivedPresenceRevision.current;
+    if (value.presenceRevision !== undefined)
+      receivedPresenceRevision.current = Math.max(receivedPresenceRevision.current, value.presenceRevision);
     session.current = value.session;
-    setPeers(
-      transportAvailable.current
-        ? value.peers
-        : value.peers.map((peer) => ({
-            ...peer,
-            attention: 'inactive',
-            path: '',
-            cursor: undefined,
-            editing: false,
-            activeTool: undefined,
-          })),
-    );
+    sharedWorkspace.current!.accept(value);
+    if (!stalePeers)
+      setPeers(
+        transportAvailable.current
+          ? value.peers
+          : value.peers.map((peer) => ({
+              ...peer,
+              attention: 'inactive',
+              path: '',
+              cursor: undefined,
+              editing: false,
+              activeTool: undefined,
+            })),
+      );
+    actions.current.publishSurfaces();
     return true;
   };
   const leavePresence = () => {
@@ -316,7 +448,7 @@ export function useCollaboration(studio: Studio) {
   };
   const sendPresence = () => {
     const owner = latest.current;
-    if (!enabled || recovering.current || owner.state?.projectRoot !== root) return;
+    if (!connected || pageDeparted.current || recovering.current || owner.state?.projectRoot !== root) return;
     let selected = localTabPresence(
       { ...owner, files: owner.state?.files ?? [], inventory: owner.state?.inventory },
       currentView.current,
@@ -327,7 +459,7 @@ export function useCollaboration(studio: Studio) {
       if (presenceActive.current) leavePresence();
       return;
     }
-    if (paused.current || attention.current?.snapshot().active === false) {
+    if (owner.showHome || paused.current || attention.current?.snapshot().active === false) {
       sendInactive(true);
       return;
     }
@@ -339,7 +471,7 @@ export function useCollaboration(studio: Studio) {
     const revision = generation.current,
       sequence = ++presenceSequence.current;
     void (
-      selected.path && isTextDocument(selected.path)
+      enabled && selected.path && isTextDocument(selected.path)
         ? actions.current.ensureOpen(selected.path)
         : Promise.resolve()
     )
@@ -350,6 +482,7 @@ export function useCollaboration(studio: Studio) {
           projectRoot: root,
           session: session.current || undefined,
           sequence,
+          tabRevision: sharedWorkspace.current!.tabRevision,
           identity: self,
           actorToken,
           ...selected,
@@ -377,7 +510,7 @@ export function useCollaboration(studio: Studio) {
   const sendInactive = (includeTabs = false) => {
     clearTimeout(presenceTimer.current);
     const owner = latest.current;
-    if (!enabled || owner.state?.projectRoot !== root) return;
+    if (!connected || pageDeparted.current || owner.state?.projectRoot !== root) return;
     const selected = includeTabs
       ? localTabPresence(
           { ...owner, files: owner.state?.files ?? [], inventory: owner.state?.inventory },
@@ -398,6 +531,7 @@ export function useCollaboration(studio: Studio) {
         projectRoot: root,
         session: session.current || undefined,
         sequence,
+        tabRevision: sharedWorkspace.current!.tabRevision,
         identity: self,
         actorToken,
         path: '',
@@ -458,6 +592,67 @@ export function useCollaboration(studio: Studio) {
           setConnectionError(error instanceof Error ? error.message : String(error));
       });
   };
+  const publishSurfaces = () => {
+    if (!connected || !transportAvailable.current || surfaceSending.current) return;
+    const revision = generation.current;
+    const operation = (async () => {
+      if (!session.current) actions.current.receiveSnapshot(await window.blode.collaborationState());
+      if (revision !== generation.current || latest.current.state?.projectRoot !== root || !session.current)
+        return;
+      const key = `${root}\0${session.current}`;
+      if (bootstrappedSurfaces.current !== key) {
+        const owner = latest.current;
+        const panels: Record<string, boolean> = {
+          console: owner.consolePanelVisible,
+          device: owner.devicePanelVisible,
+          runtime: owner.runtimeExpanded,
+        };
+        const snapshot = await window.blode.collaborationSurfaceBootstrap({
+          projectRoot: root,
+          session: session.current,
+          peerId: self.peerId,
+          actorToken,
+          surfaces: [
+            { target: { kind: 'console', id: owner.tab }, open: true },
+            ...workspaceSurfaces
+              .filter((surface) => surface.kind === 'panel')
+              .map((target) => ({ target, open: panels[target.id] ?? false })),
+          ],
+        });
+        if (revision !== generation.current) return;
+        bootstrappedSurfaces.current = key;
+        actions.current.receiveSnapshot(snapshot);
+      }
+      await surfaceOutbox.current.flush(async (target, open) => {
+        if (revision !== generation.current || latest.current.state?.projectRoot !== root)
+          throw new Error('error.collaborationProjectChanged');
+        if (!session.current) actions.current.receiveSnapshot(await window.blode.collaborationState());
+        if (revision !== generation.current || latest.current.state?.projectRoot !== root || !session.current)
+          throw new Error('error.collaborationProjectChanged');
+        const value = await window.blode.collaborationSurfaceUpdate({
+          projectRoot: root,
+          session: session.current,
+          peerId: self.peerId,
+          actorToken,
+          target,
+          open,
+        });
+        if (revision === generation.current) actions.current.receiveSnapshot(value);
+      });
+    })();
+    surfaceSending.current = operation;
+    void operation.then(
+      () => {
+        if (surfaceSending.current !== operation) return;
+        surfaceSending.current = undefined;
+        if (surfaceOutbox.current.hasPending) actions.current.publishSurfaces();
+      },
+      (error) => {
+        if (surfaceSending.current === operation) surfaceSending.current = undefined;
+        if (revision === generation.current) setConnectionError(String(error));
+      },
+    );
+  };
   const actions = useRef({
     adopt,
     ensureOpen,
@@ -466,6 +661,7 @@ export function useCollaboration(studio: Studio) {
     sendInactive,
     receiveSnapshot,
     leavePresence,
+    publishSurfaces,
   });
   actions.current = {
     adopt,
@@ -475,6 +671,7 @@ export function useCollaboration(studio: Studio) {
     sendInactive,
     receiveSnapshot,
     leavePresence,
+    publishSurfaces,
   };
 
   useEffect(() => {
@@ -486,6 +683,7 @@ export function useCollaboration(studio: Studio) {
     receivedPresenceRevision.current = -1;
     retiredSessions.current.clear();
     transportAvailable.current = true;
+    pageDeparted.current = false;
     editedAt.current = 0;
     paused.current = true;
     recovering.current = false;
@@ -493,7 +691,7 @@ export function useCollaboration(studio: Studio) {
     setPeers([]);
     setConflicts([]);
     setConnectionError('');
-    if (!enabled) return;
+    if (!connected) return;
     let disposed = false;
     const observer = observePageAttention(
       window,
@@ -511,7 +709,7 @@ export function useCollaboration(studio: Studio) {
     const unsubscribe = window.blode.onCollaboration((event: CollaborationEvent) => {
       if (disposed) return;
       if (event.type === 'workspace' || event.type === 'presence') snapshot(event.snapshot);
-      if (event.type === 'document') actions.current.adopt(event.document, event.requestId);
+      if (enabled && event.type === 'document') actions.current.adopt(event.document, event.requestId);
       if (
         event.type === 'conflict' &&
         event.reason === 'diskChanged' &&
@@ -524,6 +722,7 @@ export function useCollaboration(studio: Studio) {
     });
     const heartbeat = setInterval(() => {
       actions.current.sendPresence();
+      if (!enabled) return;
       for (const [path, record] of records.current)
         if (
           isTextDocument(path) &&
@@ -537,6 +736,7 @@ export function useCollaboration(studio: Studio) {
             .catch((error) => setConnectionError(String(error)));
     }, 10_000);
     const unregister = registerCollaborationFlush(async () => {
+      if (!enabled) return {};
       const paths = [...new Set([...records.current.keys(), ...Object.keys(latest.current.drafts)])].filter(
         isTextDocument,
       );
@@ -548,6 +748,7 @@ export function useCollaboration(studio: Studio) {
       );
     });
     const leave = () => {
+      pageDeparted.current = true;
       resumeCoordinator.current.invalidate();
       paused.current = true;
       recovering.current = false;
@@ -555,6 +756,7 @@ export function useCollaboration(studio: Studio) {
     };
     const resume = () => {
       if (disposed || !observer.snapshot().active) return;
+      pageDeparted.current = false;
       paused.current = false;
       recovering.current = true;
       const expectedSession = session.current;
@@ -572,6 +774,7 @@ export function useCollaboration(studio: Studio) {
           return actions.current.receiveSnapshot(value);
         },
         documents: (value) => {
+          if (!enabled) return [];
           const versions = new Map(value.documents.map((item) => [item.path, item.revision]));
           return [
             ...new Set([
@@ -610,6 +813,7 @@ export function useCollaboration(studio: Studio) {
           setConnectionError('');
           actions.current.sendPresence();
           window.dispatchEvent(new Event('blode:attention-restored'));
+          if (!enabled) return;
           for (const [path, record] of records.current)
             if (
               owns(path) &&
@@ -687,7 +891,7 @@ export function useCollaboration(studio: Studio) {
       clearTimeout(presenceTimer.current);
       clearTimeout(editingTimer.current);
     };
-  }, [root, enabled, self.peerId, studio.isWeb]);
+  }, [root, connected, enabled, self.peerId, studio.isWeb]);
   useEffect(() => {
     if (!enabled) return;
     const paths = [...new Set([studio.activePath, ...Object.keys(studio.drafts)])].filter(isTextDocument);
@@ -695,7 +899,7 @@ export function useCollaboration(studio: Studio) {
       void actions.current.ensureOpen(path).catch((error) => setConnectionError(String(error)));
   }, [root, enabled, studio.activePath, studio.state?.files]);
   useEffect(() => {
-    if (!enabled) return;
+    if (!connected) return;
     // Previews replaced by later navigation are no longer held by this window.
     for (const path of studio.openFiles)
       if (!previousOpenFiles.current.includes(path)) closingPaths.current.delete(path);
@@ -717,7 +921,7 @@ export function useCollaboration(studio: Studio) {
     actions.current.sendPresence();
   }, [
     root,
-    enabled,
+    connected,
     studio.isWeb,
     studio.openFiles,
     studio.openTools,
@@ -726,45 +930,78 @@ export function useCollaboration(studio: Studio) {
     studio.view,
   ]);
   useEffect(() => {
-    if (!enabled) return;
-    const unregister = registerFileCloseHandler(async (requestRoot, path, decision) => {
-      if (requestRoot !== root) return false;
-      const record = records.current.get(path);
-      if (!isTextDocument(path)) {
-        if (decision === 'save') throw new Error('project.notEditable');
-        return true;
-      }
-      if (decision === 'save') {
-        await actions.current.flushOne(path);
-        const current = records.current.get(path),
-          document = current?.document;
-        if (!document) throw new Error('rpc.fileNotFound');
-        const saved = await window.blode.collaborationSave({
-          projectRoot: root,
-          session: document.session,
-          path,
-          revision: document.revision,
-        });
-        actions.current.adopt(saved);
-        return true;
-      }
-      if (record?.sending) await record.sending.catch(() => {});
-      return true;
+    const client = sharedWorkspace.current!;
+    client.reset();
+    surfaceOutbox.current.reset();
+    bootstrappedSurfaces.current = '';
+    surfaceSending.current = undefined;
+    if (!connected) return;
+    const unregister = registerSharedWorkspaceHandler({
+      close: async (target) => {
+        try {
+          if (!session.current) actions.current.receiveSnapshot(await window.blode.collaborationState());
+          if (latest.current.state?.projectRoot !== root) return false;
+          return await client.close(target);
+        } catch (error) {
+          setConnectionError(String(error));
+          return false;
+        }
+      },
+      publish: (target, open) => {
+        surfaceOutbox.current.publish(target, open);
+        actions.current.publishSurfaces();
+      },
     });
+    return () => {
+      unregister();
+      client.reset();
+      surfaceOutbox.current.reset();
+      bootstrappedSurfaces.current = '';
+      surfaceSending.current = undefined;
+    };
+  }, [root, connected]);
+  useEffect(() => {
+    if (!connected) return;
+    const unregister = enabled
+      ? registerFileCloseHandler(async (requestRoot, path, decision) => {
+          if (requestRoot !== root) return false;
+          const record = records.current.get(path);
+          if (!isTextDocument(path)) {
+            if (decision === 'save') throw new Error('project.notEditable');
+            return true;
+          }
+          if (decision === 'save') {
+            await actions.current.flushOne(path);
+            const current = records.current.get(path),
+              document = current?.document;
+            if (!document) throw new Error('rpc.fileNotFound');
+            const saved = await window.blode.collaborationSave({
+              projectRoot: root,
+              session: document.session,
+              path,
+              revision: document.revision,
+            });
+            actions.current.adopt(saved);
+            return true;
+          }
+          if (record?.sending) await record.sending.catch(() => {});
+          return true;
+        })
+      : () => {};
     const closed = (event: Event) => {
       const detail = (event as CustomEvent<{ root: string; path: string }>).detail;
       if (detail?.root !== root) return;
       closingPaths.current.add(detail.path);
       records.current.delete(detail.path);
       updateConflicts();
-      if (currentView.current?.path === detail.path) actions.current.leavePresence();
+      if (currentView.current?.path === detail.path) currentView.current = undefined;
       actions.current.sendPresence();
     };
     const opened = (event: Event) => {
       const detail = (event as CustomEvent<{ root: string; path: string }>).detail;
       if (detail?.root !== root) return;
       closingPaths.current.delete(detail.path);
-      if (!isTextDocument(detail.path)) {
+      if (!enabled || !isTextDocument(detail.path)) {
         actions.current.sendPresence();
         return;
       }
@@ -788,7 +1025,7 @@ export function useCollaboration(studio: Studio) {
       window.removeEventListener('blode:file-opened', opened);
       window.removeEventListener('blode:tool-closed', toolClosed);
     };
-  }, [root, enabled]);
+  }, [root, connected, enabled]);
 
   return {
     peers: peers.filter((peer) => peer.peerId !== self.peerId && peer.attention !== 'inactive'),

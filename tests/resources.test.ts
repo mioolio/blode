@@ -48,6 +48,27 @@ test('before first build resource panel displays actual configured budgets witho
   assert.doesNotMatch(html, /0\.0%/);
 });
 
+test('bottom resource views separate project files from firmware usage', () => {
+  const config = esp32S3Adapter.createConfig();
+  const render = (section: 'project' | 'memory') =>
+    renderToStaticMarkup(
+      createElement(I18nProvider, {
+        children: createElement(MemoryUsage, {
+          state: null,
+          config,
+          drafts: {},
+          stale: false,
+          section,
+        }),
+      }),
+    );
+  assert.match(render('project'), /project-usage/);
+  assert.doesNotMatch(render('project'), /memory-section|memory-meter/);
+  assert.match(render('memory'), /memory-section/);
+  assert.match(render('memory'), /memory-meter flash/);
+  assert.doesNotMatch(render('memory'), /project-usage|directory-usage/);
+});
+
 test('STM32 binary validation shows measured SRAM capacity without inventing linked RAM usage', () => {
   const config = stm32Adapter.createConfigForFlash!(128 * 1024);
   config.programmer!.serialNumber = '0123456789ABCDEF';

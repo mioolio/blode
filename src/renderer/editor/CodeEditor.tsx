@@ -187,6 +187,7 @@ export function CodeEditor({
   primary = false,
   onUndo,
   navigation,
+  readOnly = false,
 }: {
   projectRoot: string;
   path: string;
@@ -199,6 +200,7 @@ export function CodeEditor({
   primary?: boolean;
   onUndo?: (direction: 'undo' | 'redo') => Promise<void>;
   navigation?: SourceLocation;
+  readOnly?: boolean;
 }) {
   const { t } = useI18n();
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -598,6 +600,7 @@ export function CodeEditor({
         if (!applyingRemote.current && (!model || !remoteModels.has(model))) onChange(value ?? '');
       }}
       options={{
+        readOnly,
         gotoLocation: { multipleDefinitions: 'peek', multipleDeclarations: 'peek' },
         fontFamily: 'Cascadia Code, Consolas, monospace',
         fontSize: 13,

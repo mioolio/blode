@@ -20,8 +20,56 @@ export interface CollaborationIdentity {
   name: string;
   color?: string;
 }
-export type CollaborationToolTab = 'layout' | 'ai';
+export type CollaborationToolTab = import('./workspace-surfaces').WorkspaceToolId;
+export interface WorkspaceTabCloseRequest {
+  projectRoot: string;
+  session: string;
+  peerId: string;
+  actorToken?: string;
+  requestId: string;
+  target: import('./workspace-surfaces').WorkspaceSyncTarget;
+}
+export interface WorkspaceTabCloseVote {
+  projectRoot: string;
+  session: string;
+  peerId: string;
+  actorToken?: string;
+  requestId: string;
+  decision: 'ready' | 'cancel';
+  documentRevision?: number;
+}
+export interface WorkspaceTabCloseTransaction {
+  requestId: string;
+  target: import('./workspace-surfaces').WorkspaceSyncTarget;
+  status: 'preparing' | 'committed' | 'aborted';
+  revision: number;
+  participants: string[];
+  ready: string[];
+  expiresAt: string;
+  documentRevision?: number;
+  reason?: 'changed' | 'departed' | 'timeout';
+}
+export interface WorkspaceTabClosure {
+  target: import('./workspace-surfaces').WorkspaceSyncTarget;
+  revision: number;
+}
+export interface WorkspaceSurfaceUpdate {
+  projectRoot: string;
+  session: string;
+  peerId: string;
+  actorToken?: string;
+  target: import('./workspace-surfaces').WorkspaceSyncTarget;
+  open: boolean;
+}
+export interface WorkspaceSurfaceBootstrap {
+  projectRoot: string;
+  session: string;
+  peerId: string;
+  actorToken?: string;
+  surfaces: { target: import('./workspace-surfaces').WorkspaceSyncTarget; open: boolean }[];
+}
 export interface CollaborationPresenceInput {
+  tabRevision?: number;
   /** Per-page private credential; never included in presence snapshots. */
   actorToken?: string;
   projectRoot: string;
@@ -72,6 +120,14 @@ export interface CollaborationDocument {
   dirty: boolean;
 }
 export interface CollaborationSnapshot {
+  tabRevision?: number;
+  closedTabs?: WorkspaceTabClosure[];
+  tabCloses?: WorkspaceTabCloseTransaction[];
+  surfaces?: {
+    target: import('./workspace-surfaces').WorkspaceSyncTarget;
+    open: boolean;
+    revision: number;
+  }[];
   projectRoot: string;
   session: string;
   /** Orders presence snapshots even when HTTP responses arrive after newer SSE frames. */
@@ -137,6 +193,10 @@ export type CollaborationEvent =
       diskContent?: string;
     };
 export interface CollaborationApi {
+  collaborationSurfaceBootstrap(request: WorkspaceSurfaceBootstrap): Promise<CollaborationSnapshot>;
+  collaborationSurfaceUpdate(request: WorkspaceSurfaceUpdate): Promise<CollaborationSnapshot>;
+  collaborationTabClose(request: WorkspaceTabCloseRequest): Promise<CollaborationSnapshot>;
+  collaborationTabCloseVote(request: WorkspaceTabCloseVote): Promise<CollaborationSnapshot>;
   collaborationState(): Promise<CollaborationSnapshot>;
   collaborationOpen(projectRoot: string, path: string): Promise<CollaborationDocument>;
   collaborationPresence(input: CollaborationPresenceInput): Promise<CollaborationSnapshot>;

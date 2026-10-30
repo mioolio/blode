@@ -1,0 +1,15 @@
+.editor-more-toggle {
+  flex: 0 0 30px;
+}
+.context-menu.editor-actions-menu {
+  min-width: 184px;
+}
+.context-menu.editor-actions-menu button {
+  gap: 10px;
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+.context-menu.editor-actions-menu button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

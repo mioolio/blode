@@ -1,0 +1,66 @@
+.console-resource-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.console-resource-view .inspector-section {
+  border: 0;
+  padding: 12px 16px;
+}
+.console-resource-view .section-heading {
+  margin-bottom: 10px;
+}
+.console-resource-view .resource-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  margin: 0 0 12px;
+}
+.console-resource-view .resource-facts > div {
+  gap: 14px;
+  padding: 0;
+  margin: 0;
+}
+.console-resource-view .directory-usage {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px 24px;
+  max-width: 1200px;
+  border: 0;
+  padding: 0;
+}
+.console-resource-view .directory-usage-row {
+  padding: 0;
+}
+.console-resource-view .memory-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 32px;
+  max-width: 1200px;
+}
+.console-resource-view .memory-section > .section-heading,
+.console-resource-view .memory-section > .resource-facts,
+.console-resource-view .memory-section > .subtle-note {
+  grid-column: 1 / -1;
+}
+.console-resource-view .memory-section > .section-heading {
+  justify-content: flex-end;
+}
+.console-resource-view .memory-meter {
+  margin: 0;
+}
+.console-resource-view .memory-meter .meter-labels {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+@media (max-width: 640px) {
+  .console-resource-view .memory-section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .console-resource-view .resource-facts {
+    gap: 8px 20px;
+  }
+}

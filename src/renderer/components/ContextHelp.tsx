@@ -5,7 +5,15 @@ import { useI18n } from '../i18n';
 import './context-help.css';
 
 /** Optional help stays outside the main task layout and uses native modal focus handling. */
-export function ContextHelp({ title, children }: { title: string; children: ReactNode }) {
+export function ContextHelp({
+  title,
+  children,
+  icon,
+}: {
+  title: string;
+  children: ReactNode;
+  icon?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -32,7 +40,7 @@ export function ContextHelp({ title, children }: { title: string; children: Reac
         aria-expanded={open}
         onClick={() => setOpen(true)}
       >
-        <Info size={14} aria-hidden="true" />
+        {icon ?? <Info size={14} aria-hidden="true" />}
       </button>
       {open &&
         typeof document !== 'undefined' &&

@@ -23,7 +23,7 @@ export interface UiCommand {
   target?: string;
   path?: string;
   view?: 'code' | 'layout' | 'ai';
-  tab?: 'output' | 'serial' | 'problems' | 'warnings' | 'terminal';
+  tab?: import('./workspace-surfaces').WorkspaceConsoleTabId;
   visible?: boolean;
   language?: 'zh-CN' | 'en';
   command?: 'undo' | 'redo' | 'find' | 'format' | 'gotoLine' | 'selectAll';

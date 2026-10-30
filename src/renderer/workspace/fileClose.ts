@@ -147,4 +147,10 @@ export class FileCloseQueue {
     this.host.prompt(null);
     for (const item of pending) item?.resolve(false);
   }
+  cancel(path: string) {
+    const removed = this.pending.filter((item) => item.path === path);
+    this.pending = this.pending.filter((item) => item.path !== path);
+    for (const item of removed) item.resolve(false);
+    if (this.current?.path === path) this.finish(false);
+  }
 }
