@@ -1210,5 +1210,22 @@
   "error.debuggerUartStubTimeout": "GDB Stub 响应超时。",
   "error.debuggerUartClosed": "UART 调试连接已关闭。",
   "error.debuggerUartOverflow": "UART 调试缓冲区已满。",
-  "error.debuggerUartReadOnly": "崩溃现场为只读。"
+  "error.debuggerUartReadOnly": "崩溃现场为只读。",
+  "asset.preview": "资源预览",
+  "asset.loading": "正在载入…",
+  "asset.reload": "重新载入",
+  "asset.fit": "适应窗口",
+  "asset.actualSize": "原始大小",
+  "asset.zoomIn": "放大",
+  "asset.zoomOut": "缩小",
+  "asset.imageError": "无法显示此图片。",
+  "asset.mediaError": "无法播放此文件。",
+  "asset.offset": "偏移",
+  "asset.hex": "十六进制",
+  "asset.text": "文本",
+  "asset.empty": "空文件",
+  "asset.prefix": "显示前",
+  "error.assetProjectChanged": "工程已切换。",
+  "error.assetUnavailable": "文件不可用。",
+  "error.assetChanged": "文件已更新，请重新打开。"
 }

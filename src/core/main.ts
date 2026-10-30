@@ -58,9 +58,14 @@ import { createHostServices, type HostServices } from './host-services';
 import { protectSharedWorkspace } from './shared-workspace';
 import { RELEASE_VERSION } from '../shared/version';
 import { renderRuntimeView, RUNTIME_VIEW_CSP } from '../shared/runtime-view';
+import { workspaceAssetRequestSchema } from './workspace-assets';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'blode-runtime-ui', privileges: { standard: true, secure: true } },
+  {
+    scheme: 'blode-asset',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
 ]);
 
 app.setName('Blode Studio');
@@ -563,6 +568,16 @@ async function bootstrap(): Promise<void> {
     await core.shutdown();
     return;
   }
+  protocol.handle('blode-asset', async (request) => {
+    const url = new URL(request.url);
+    if (!core || closing || url.hostname !== 'workspace' || !['GET', 'HEAD'].includes(request.method))
+      return new Response(null, { status: 404 });
+    return core.workspaceAssetResponse(
+      url.pathname.slice(1),
+      request.headers.get('range'),
+      request.method === 'HEAD',
+    );
+  });
   protocol.handle('blode-runtime-ui', async (request) => {
     try {
       const url = new URL(request.url);
@@ -760,6 +775,7 @@ async function bootstrap(): Promise<void> {
     try {
       web = await startWebServer({
         api: core,
+        assets: (id, range, head) => core!.workspaceAssetResponse(id, range, head),
         assistance: webAssistance,
         hostServices,
         packageDownload: (id) => hostServices!.packages.download(id),
@@ -780,6 +796,13 @@ async function bootstrap(): Promise<void> {
   }
   const noArgs = z.tuple([]);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    workspaceAsset: {
+      args: z.tuple([workspaceAssetRequestSchema]),
+      run: async (request) => {
+        const preview = await core!.workspaceAsset(request);
+        return { ...preview, url: 'blode-asset://workspace/' + preview.url.split('/').at(-1) };
+      },
+    },
     ...assistance.routes,
     ...hostServices.routes,
     desktopLifecycleState: { args: noArgs, run: () => desktopLifecycle!.state() },

@@ -53,21 +53,22 @@ Blode Studio 将同一套核心方法映射为 Electron IPC、系统管道 JSON-
 
 MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 `project.readFile` 映射到 `blode_project_readFile`，所有参数及结果保持一致。
 
-| 管道方法            | params                                               | result / 作用                                                                    |
-| ------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `state.get`         | `{}`                                                 | `AppState`：工程根目录、完整配置、源文件、板卡、串口、工具链、最近构建、管道位置 |
-| `ports.list`        | `{}`                                                 | `PortInfo[]`：当前真实串口及硬件标识                                             |
-| `project.readFile`  | `{ "path": "src/main.ino" }`                         | `{path,language,content}`，限当前工程已索引源文件                                |
-| `file.write`        | `{ "path": "src/main.ino", "content": "..." }`       | 创建/覆盖工程允许的源文件，返回 `null`                                           |
-| `config.set`        | `{ "config": <完整 ProjectConfig> }`                 | 验证并保存完整配置，返回 `null`                                                  |
-| `build.run`         | `{}`                                                 | `BuildResult`：success、Flash/RAM 用量、产物路径、timestamp、工具输出            |
-| `flash.run`         | `{ "confirm": true }`                                | 将已构建固件烧录到当前配置端口，返回 `null`                                      |
-| `device.probe`      | `{ "port": "COM3", "config": {...} }`，均可省略      | 识别芯片与 Flash；config 可指定板卡/探针，未打开工程也可调用；可能重启设备       |
-| `toolchain.install` | `{ "confirm": true }`                                | 官方工具链安装结果 `ToolchainStatus`                                             |
-| `serial.open`       | `{ "port": "COM3", "baudRate": 115200 }`，两项可省略 | 打开串口，返回 `null`                                                            |
-| `serial.close`      | `{}`                                                 | 关闭监视器释放端口，返回 `null`                                                  |
-| `serial.write`      | `{ "data": "hello\n" }`                              | 向已打开串口发送文本，返回 `null`                                                |
-| `events.poll`       | `{ "after": 0 }`，after 可省略                       | `{cursor,dropped,events:[{sequence,event:{kind,level,message,time}}]}`           |
+| 管道方法            | params                                                                      | result / 作用                                                                    |
+| ------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `state.get`         | `{}`                                                                        | `AppState`：工程根目录、完整配置、源文件、板卡、串口、工具链、最近构建、管道位置 |
+| `ports.list`        | `{}`                                                                        | `PortInfo[]`：当前真实串口及硬件标识                                             |
+| `project.readFile`  | `{ "path": "src/main.ino" }`                                                | `{path,language,content}`，限当前工程已索引源文件                                |
+| `project.asset`     | `{ "expectedProjectRoot": "<当前工程根目录>", "path": "assets/photo.png" }` | 图片／音视频／二进制元信息与资源读取地址；通过 `ui.command` 的 `openFile` 显示   |
+| `file.write`        | `{ "path": "src/main.ino", "content": "..." }`                              | 创建/覆盖工程允许的源文件，返回 `null`                                           |
+| `config.set`        | `{ "config": <完整 ProjectConfig> }`                                        | 验证并保存完整配置，返回 `null`                                                  |
+| `build.run`         | `{}`                                                                        | `BuildResult`：success、Flash/RAM 用量、产物路径、timestamp、工具输出            |
+| `flash.run`         | `{ "confirm": true }`                                                       | 将已构建固件烧录到当前配置端口，返回 `null`                                      |
+| `device.probe`      | `{ "port": "COM3", "config": {...} }`，均可省略                             | 识别芯片与 Flash；config 可指定板卡/探针，未打开工程也可调用；可能重启设备       |
+| `toolchain.install` | `{ "confirm": true }`                                                       | 官方工具链安装结果 `ToolchainStatus`                                             |
+| `serial.open`       | `{ "port": "COM3", "baudRate": 115200 }`，两项可省略                        | 打开串口，返回 `null`                                                            |
+| `serial.close`      | `{}`                                                                        | 关闭监视器释放端口，返回 `null`                                                  |
+| `serial.write`      | `{ "data": "hello\n" }`                                                     | 向已打开串口发送文本，返回 `null`                                                |
+| `events.poll`       | `{ "after": 0 }`，after 可省略                                              | `{cursor,dropped,events:[{sequence,event:{kind,level,message,time}}]}`           |
 
 `config.set` 需要先读取 `state.get` 的 `config`，修改所需字段后提交完整对象；不接受任意字段或 JSON patch。`ProjectConfig` 的权威 TypeScript 类型位于 [contracts.ts](../src/shared/contracts.ts)，运行时配置校验位于 [config.ts](../src/core/config.ts)。单纯修改分区图并不会改写设备，编译成功后再调用 `flash.run` 才会烧录。
 

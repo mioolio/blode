@@ -46,6 +46,7 @@ import {
 import { loadBuildState, saveBuildState, hashArtifacts, artifactsMatch } from './build-state';
 import { runCommand } from './process';
 import { SerialConnection } from './serial';
+import { WorkspaceAssets } from './workspace-assets';
 import { Drivers } from './drivers';
 import { InstallationTracker } from './installation';
 import { SnapshotCache } from './snapshot-cache';
@@ -94,7 +95,8 @@ export interface CoreService extends CoreApi {
   currentProjectRoot(): string;
   currentConfig(): ProjectConfig;
   languageConfiguration(): Promise<import('../shared/module-languages').ModuleLanguageState | undefined>;
-  workspaceSnapshot(fresh?: boolean): Promise<Pick<AppState, 'projectRoot' | 'files'>>;
+  workspaceSnapshot(fresh?: boolean): Promise<Pick<AppState, 'projectRoot' | 'files' | 'inventory'>>;
+  workspaceAssetResponse(id: string, range?: string | null, head?: boolean): Promise<Response>;
   shutdown(): Promise<void>;
   setProjectRoot(root: string): Promise<void>;
   closeProject(): Promise<void>;
@@ -119,6 +121,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   });
   await runtimePlugins.discover();
   let projectRoot = '';
+  const assets = new WorkspaceAssets(() => projectRoot);
   let config = getBoardAdapter('auto').createConfig();
   let projectBuild: ProjectBuild = {};
   try {
@@ -653,10 +656,17 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     async workspaceSnapshot(fresh = false) {
       if (fresh) resourceCache.invalidate();
       const root = projectRoot;
-      const files = root ? (await workspaceResources()).files : [];
+      const resources = root
+        ? await workspaceResources()
+        : {
+            files: [],
+            inventory: { entries: [], totalBytes: 0, fileCount: 0, directoryCount: 0, truncated: false },
+          };
       if (root !== projectRoot) throw new Error('error.collaborationProjectChanged');
-      return { projectRoot: root, files };
+      return { projectRoot: root, ...resources };
     },
+    workspaceAsset: (request) => assets.preview(request),
+    workspaceAssetResponse: (id, range, head) => assets.response(id, range, head),
     async getState(): Promise<AppState> {
       const initializing = startupPending;
       if (initializing) initializeStartup();
@@ -1087,6 +1097,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         await closeSerial();
         stopWatching();
         projectRoot = resolved;
+        assets.reset();
         config = nextConfig;
         projectBuild = loaded.build;
         lastBuild = null;
@@ -1103,6 +1114,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       });
     },
     async shutdown() {
+      assets.reset();
       lifecycle.abort();
       clearTimeout(deviceRefreshTimer);
       stopWatching();
@@ -1114,6 +1126,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         await closeSerial();
         stopWatching();
         projectRoot = '';
+        assets.reset();
         projectBuild = {};
         lastBuild = null;
         builtFingerprint = '';

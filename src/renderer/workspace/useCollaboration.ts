@@ -15,6 +15,7 @@ import { localTabPresence } from './localPresence';
 import { observePageAttention, type AttentionSnapshot } from './attention';
 import { CollaborationResume, retainLocalDocuments } from './collaborationResume';
 import type { Studio } from './useStudio';
+import { workspaceFileView } from '../../shared/file-views';
 
 export interface EditorPresence {
   path: string;
@@ -109,12 +110,14 @@ export function useCollaboration(studio: Studio) {
   const editedAt = useRef(0);
   const root = studio.state?.projectRoot ?? '';
   const enabled = !!root && studio.syncDrafts && typeof window.blode.collaborationState === 'function';
+  const isTextDocument = (path: string) => workspaceFileView(latest.current.state, path) === 'text';
   const updateConflicts = () =>
     setConflicts(
       [...records.current.values()].flatMap((record) => (record.conflict ? [record.conflict] : [])),
     );
   const writeDraft = (path: string, content: string) => {
     const owner = latest.current;
+    if (!isTextDocument(path)) return;
     owner.setSharedDrafts((drafts) => {
       if (content === owner.state?.files.find((file) => file.path === path)?.content) {
         if (!Object.hasOwn(drafts, path)) return drafts;
@@ -192,7 +195,7 @@ export function useCollaboration(studio: Studio) {
     writeDraft(document.path, merged);
   };
   const ensureOpen = async (path: string): Promise<OpenDocument> => {
-    if (closingPaths.current.has(path)) throw new Error('rpc.fileNotFound');
+    if (closingPaths.current.has(path) || !isTextDocument(path)) throw new Error('rpc.fileNotFound');
     let record = records.current.get(path);
     if (!record) {
       const file = latest.current.state?.files.find((file) => file.path === path);
@@ -315,7 +318,7 @@ export function useCollaboration(studio: Studio) {
     const owner = latest.current;
     if (!enabled || recovering.current || owner.state?.projectRoot !== root) return;
     let selected = localTabPresence(
-      { ...owner, files: owner.state?.files ?? [] },
+      { ...owner, files: owner.state?.files ?? [], inventory: owner.state?.inventory },
       currentView.current,
       closingPaths.current,
       closingTools.current,
@@ -328,14 +331,18 @@ export function useCollaboration(studio: Studio) {
       sendInactive(true);
       return;
     }
-    if (waitingViewport.current && selected.path)
+    if (waitingViewport.current && selected.path && isTextDocument(selected.path))
       selected = { ...selected, path: '', startLine: 1, endLine: 1, cursor: undefined };
     if (selected.path) currentView.current = { ...selected, ownerPath: owner.activePath };
     else currentView.current = undefined;
     presenceActive.current = true;
     const revision = generation.current,
       sequence = ++presenceSequence.current;
-    void (selected.path ? actions.current.ensureOpen(selected.path) : Promise.resolve())
+    void (
+      selected.path && isTextDocument(selected.path)
+        ? actions.current.ensureOpen(selected.path)
+        : Promise.resolve()
+    )
       .then(() => {
         if (revision !== generation.current || sequence !== presenceSequence.current || paused.current)
           return;
@@ -348,7 +355,7 @@ export function useCollaboration(studio: Studio) {
           ...selected,
           attention: 'active',
           attentionEpoch: attention.current?.snapshot().nativeEpoch,
-          editing: !!selected.path && Date.now() - editedAt.current < 1800,
+          editing: !!selected.path && isTextDocument(selected.path) && Date.now() - editedAt.current < 1800,
         });
       })
       .then((snapshot) => {
@@ -373,7 +380,7 @@ export function useCollaboration(studio: Studio) {
     if (!enabled || owner.state?.projectRoot !== root) return;
     const selected = includeTabs
       ? localTabPresence(
-          { ...owner, files: owner.state?.files ?? [] },
+          { ...owner, files: owner.state?.files ?? [], inventory: owner.state?.inventory },
           currentView.current,
           closingPaths.current,
           closingTools.current,
@@ -417,7 +424,7 @@ export function useCollaboration(studio: Studio) {
       owner.showHome ||
       owner.view !== 'code' ||
       !owner.openFiles.includes(view.path) ||
-      !owner.state?.files.some((file) => file.path === view.path)
+      !isTextDocument(view.path)
     )
       return;
     if (enabled)
@@ -428,7 +435,7 @@ export function useCollaboration(studio: Studio) {
     presenceTimer.current = setTimeout(sendPresence, 180);
   };
   const reportEdit = (path: string, content: string) => {
-    if (!enabled) return;
+    if (!enabled || !isTextDocument(path)) return;
     editedAt.current = Date.now();
     clearTimeout(editingTimer.current);
     editingTimer.current = setTimeout(() => actions.current.sendPresence(), 1900);
@@ -519,6 +526,7 @@ export function useCollaboration(studio: Studio) {
       actions.current.sendPresence();
       for (const [path, record] of records.current)
         if (
+          isTextDocument(path) &&
           !record.sending &&
           !record.conflict &&
           (record.request || (record.document && record.local !== record.document.content))
@@ -529,9 +537,15 @@ export function useCollaboration(studio: Studio) {
             .catch((error) => setConnectionError(String(error)));
     }, 10_000);
     const unregister = registerCollaborationFlush(async () => {
-      const paths = [...new Set([...records.current.keys(), ...Object.keys(latest.current.drafts)])];
+      const paths = [...new Set([...records.current.keys(), ...Object.keys(latest.current.drafts)])].filter(
+        isTextDocument,
+      );
       for (const path of paths) await actions.current.flushOne(path);
-      return Object.fromEntries([...records.current.entries()].map(([path, record]) => [path, record.local]));
+      return Object.fromEntries(
+        [...records.current.entries()]
+          .filter(([path]) => isTextDocument(path))
+          .map(([path, record]) => [path, record.local]),
+      );
     });
     const leave = () => {
       resumeCoordinator.current.invalidate();
@@ -546,7 +560,7 @@ export function useCollaboration(studio: Studio) {
       const expectedSession = session.current;
       const owns = (path: string) =>
         !closingPaths.current.has(path) &&
-        !!latest.current.state?.files.some((file) => file.path === path) &&
+        isTextDocument(path) &&
         (latest.current.openFiles.includes(path) ||
           latest.current.activePath === path ||
           Object.hasOwn(latest.current.drafts, path));
@@ -589,7 +603,10 @@ export function useCollaboration(studio: Studio) {
         adoptDocument: (value) => actions.current.adopt(value),
         publish: () => {
           recovering.current = false;
-          waitingViewport.current = latest.current.isWeb && latest.current.view === 'code';
+          waitingViewport.current =
+            latest.current.isWeb &&
+            latest.current.view === 'code' &&
+            isTextDocument(latest.current.activePath);
           setConnectionError('');
           actions.current.sendPresence();
           window.dispatchEvent(new Event('blode:attention-restored'));
@@ -673,10 +690,10 @@ export function useCollaboration(studio: Studio) {
   }, [root, enabled, self.peerId, studio.isWeb]);
   useEffect(() => {
     if (!enabled) return;
-    const paths = [...new Set([studio.activePath, ...Object.keys(studio.drafts)])].filter(Boolean);
+    const paths = [...new Set([studio.activePath, ...Object.keys(studio.drafts)])].filter(isTextDocument);
     for (const path of paths)
       void actions.current.ensureOpen(path).catch((error) => setConnectionError(String(error)));
-  }, [root, enabled, studio.activePath]);
+  }, [root, enabled, studio.activePath, studio.state?.files]);
   useEffect(() => {
     if (!enabled) return;
     // Previews replaced by later navigation are no longer held by this window.
@@ -713,6 +730,10 @@ export function useCollaboration(studio: Studio) {
     const unregister = registerFileCloseHandler(async (requestRoot, path, decision) => {
       if (requestRoot !== root) return false;
       const record = records.current.get(path);
+      if (!isTextDocument(path)) {
+        if (decision === 'save') throw new Error('project.notEditable');
+        return true;
+      }
       if (decision === 'save') {
         await actions.current.flushOne(path);
         const current = records.current.get(path),
@@ -743,6 +764,10 @@ export function useCollaboration(studio: Studio) {
       const detail = (event as CustomEvent<{ root: string; path: string }>).detail;
       if (detail?.root !== root) return;
       closingPaths.current.delete(detail.path);
+      if (!isTextDocument(detail.path)) {
+        actions.current.sendPresence();
+        return;
+      }
       void actions.current
         .ensureOpen(detail.path)
         .then(() => actions.current.sendPresence())
@@ -789,7 +814,7 @@ export function useCollaboration(studio: Studio) {
       ),
     ],
     async undo(path: string, direction: 'undo' | 'redo') {
-      if (!enabled) return;
+      if (!enabled || !isTextDocument(path)) return;
       try {
         await actions.current.flushOne(path);
         const record = await actions.current.ensureOpen(path),

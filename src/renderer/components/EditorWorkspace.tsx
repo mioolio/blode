@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { Bot, ChevronRight, Columns2, FileCode, FolderOpen, LayoutGrid, Settings2, X } from 'lucide-react';
@@ -22,9 +23,13 @@ import { reconcileDismissedTabs, visibleFilePaths, type FileClosedEvent } from '
 import './preferences.css';
 import { EditorLoading } from '../editor/EditorLoading';
 import type { SourceLocation } from '../../shared/language';
+import { openableFilePaths, workspaceFileView } from '../../shared/file-views';
 
 const CodeEditor = lazy(() =>
   import('../editor/CodeEditor').then((module) => ({ default: module.CodeEditor })),
+);
+const AssetPreview = lazy(() =>
+  import('./AssetPreview').then((module) => ({ default: module.AssetPreview })),
 );
 const PartitionLayout = lazy(() =>
   import('./PartitionLayout').then((module) => ({ default: module.PartitionLayout })),
@@ -97,12 +102,10 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   const [dismissedRemoteTabs, setDismissedRemoteTabs] = useState<ReadonlySet<string>>(new Set());
   const [dismissedRemoteTools, setDismissedRemoteTools] = useState<ReadonlySet<string>>(new Set());
   const toolTabs = visibleFilePaths(openTools, collaboration.remoteTools, dismissedRemoteTools);
-  const fileTabs = visibleFilePaths(openFiles, collaboration.remotePaths, dismissedRemoteTabs).flatMap(
-    (path) => {
-      const file = state?.files.find((item) => item.path === path);
-      return file ? [file] : [];
-    },
-  );
+  const availableFiles = useMemo(() => new Set(openableFilePaths(state)), [state?.files, state?.inventory]);
+  const fileTabs = visibleFilePaths(openFiles, collaboration.remotePaths, dismissedRemoteTabs)
+    .filter((path) => availableFiles.has(path))
+    .map((path) => ({ path }));
   const layoutAvailable = supportsLayout(board);
   const partitionEditor = supportsPartitionEditing(board);
   const lastBuild = state?.lastBuild?.success ? state.lastBuild : null;
@@ -225,8 +228,8 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   }, [preferencesOpen]);
 
   useEffect(() => {
-    if (secondaryPath && !state?.files.some((file) => file.path === secondaryPath)) setSecondaryPath('');
-  }, [secondaryPath, state?.files]);
+    if (secondaryPath && !availableFiles.has(secondaryPath)) setSecondaryPath('');
+  }, [secondaryPath, availableFiles]);
 
   useEffect(() => {
     // Completion sees the same unsaved drafts as the editor, so a new #define is
@@ -286,6 +289,19 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   };
 
   const renderEditor = (path: string, primary = false) => {
+    if (state && workspaceFileView(state, path) === 'asset')
+      return (
+        <Suspense fallback={<div className="editor-empty">{t('editor.loading')}</div>}>
+          <AssetPreview
+            projectRoot={state.projectRoot}
+            path={path}
+            revision={state.inventory.entries
+              .filter((entry) => entry.path === path)
+              .map((entry) => `${entry.size}:${entry.modifiedAt ?? ''}`)
+              .join('')}
+          />
+        </Suspense>
+      );
     const file = state?.files.find((item) => item.path === path);
     if (!file)
       return (
@@ -486,16 +502,18 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                     renderEditor(activePath, true)
                   )}
                 </div>
-                <div className="editor-footer">
-                  <span className="footer-position">
-                    {t('status.line')} {cursor.line}, {t('status.column')} {cursor.column}
-                  </span>
-                  <span>
-                    {lines.length} {t('editor.lines')}
-                    <i />
-                    {t('status.encoding')}
-                  </span>
-                </div>
+                {workspaceFileView(state, activePath) === 'text' && (
+                  <div className="editor-footer">
+                    <span className="footer-position">
+                      {t('status.line')} {cursor.line}, {t('status.column')} {cursor.column}
+                    </span>
+                    <span>
+                      {lines.length} {t('editor.lines')}
+                      <i />
+                      {t('status.encoding')}
+                    </span>
+                  </div>
+                )}
               </>
             ) : config && state ? (
               <Suspense fallback={<div className="editor-empty">{t('editor.loading')}</div>}>

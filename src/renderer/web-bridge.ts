@@ -68,6 +68,12 @@ if (!scope.blode) {
     };
   };
   const bridge: DesktopApi = {
+    workspaceAsset: async (request) => {
+      const preview = (await call('workspaceAsset', [request])) as Awaited<
+        ReturnType<DesktopApi['workspaceAsset']>
+      >;
+      return { ...preview, url: new URL(preview.url, apiBase || window.location.origin).href };
+    },
     ...createWorkbenchBridge(call, subscribe),
     runtimePluginOpenView: async (id, viewId) => {
       const result = (await call('runtimePluginOpenView', [id, viewId])) as Awaited<

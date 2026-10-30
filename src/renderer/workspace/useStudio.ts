@@ -19,6 +19,7 @@ import { mergeRecentLogs } from '../../shared/recent-logs';
 import { useFileTabClose } from './useFileTabClose';
 import { closeRecoveryKey, recoverCloseDrafts, workspaceCloseGate } from './workspaceCloseGate';
 import { refreshedConfig } from './unsavedChanges';
+import { openableFilePaths } from '../../shared/file-views';
 
 type View = 'code' | 'layout' | 'ai';
 type ConsoleTab = 'output' | 'serial' | 'problems' | 'warnings' | 'terminal' | `plugin:${string}`;
@@ -190,7 +191,8 @@ export function useStudio() {
       return retained === current ? retainDraftConfig(retained, next) : retained;
     });
     setStale(next.buildStale ?? false);
-    const exists = (path: string) => next.files.some((file) => file.path === path);
+    const availablePaths = new Set(openableFilePaths(next));
+    const exists = (path: string) => availablePaths.has(path);
     if (restoredFolder.current !== next.projectRoot) {
       restoredFolder.current = next.projectRoot;
       let restoredDraftPaths: string[] = [];

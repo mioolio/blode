@@ -207,6 +207,7 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
     pipe = await startPipeServer({ api: core, dataRoot, onEvent: emit });
     web = await startWebServer({
       api: core,
+      assets: (id, range, head) => core.workspaceAssetResponse(id, range, head),
       assistance,
       hostServices: services,
       debugger: createWebDebugger(hardware, core),

@@ -66,6 +66,9 @@ function fakeApi(): {
     builds: () => buildCount,
     api: {
       getState: async () => state,
+      workspaceAsset: async () => {
+        throw new Error('No workspace assets in this fixture');
+      },
       listPorts: async () => state.ports,
       listDebugProbes: async () => state.debugProbes,
       scanDevices: async () => state.detection,
@@ -136,6 +139,31 @@ test('device.probe forwards an optional config before a workspace exists', async
   const config = { ...(await fake.api.getState()).config, boardId: 'STM32F103C8T6' };
   await dispatch(fake.api, new EventBuffer(), 'device.probe', { port: 'COM3', config });
   assert.deepEqual(fake.probes, [{ port: 'COM3', config }]);
+});
+
+test('project.asset forwards scoped read-only metadata requests and rejects broad or incomplete parameters', async () => {
+  const { api } = fakeApi();
+  const requests: unknown[] = [];
+  api.workspaceAsset = async (request) => {
+    requests.push(request);
+    return {
+      path: request.path,
+      kind: 'image',
+      mime: 'image/png',
+      size: 12,
+      modifiedAt: '2026-10-30T00:00:00Z',
+      url: '/workspace/assets/' + 'a'.repeat(64),
+    };
+  };
+  const request = { expectedProjectRoot: '/project', path: 'assets/logo.png' };
+  const preview = (await dispatch(api, new EventBuffer(), 'project.asset', request)) as Awaited<
+    ReturnType<CoreApi['workspaceAsset']>
+  >;
+  assert.equal(preview.mime, 'image/png');
+  assert.deepEqual(requests, [request]);
+  for (const invalid of [{ path: request.path }, { ...request, root: '/other' }, { ...request, path: 42 }])
+    await assert.rejects(dispatch(api, new EventBuffer(), 'project.asset', invalid), /rpc.invalidParams/);
+  assert.equal(requests.length, 1);
 });
 
 test('real named pipe validates auth, framing, route schemas, explicit flash confirmation and cleanup', async (t) => {
@@ -255,6 +283,10 @@ test('real named pipe validates auth, framing, route schemas, explicit flash con
       await mcpClient.connect(clientTransport);
       try {
         const tools = await mcpClient.listTools();
+        assert.equal(
+          tools.tools.find((tool) => tool.name === 'blode_project_asset')?.annotations?.readOnlyHint,
+          true,
+        );
         assert.equal(tools.tools.length, Object.keys(routeSchemas).length);
         assert.ok(tools.tools.find((tool) => tool.name === 'blode_flash_run')?.annotations?.destructiveHint);
         const entryTool = tools.tools.find((tool) => tool.name === 'blode_build_entry_set');

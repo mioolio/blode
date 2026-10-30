@@ -1,4 +1,5 @@
 import type { CollaborationToolTab } from '../../shared/collaboration';
+import { openableFilePaths, workspaceFileView, type WorkspaceFileList } from '../../shared/file-views';
 
 interface Viewport {
   /** Local-only tab context in which this editor reported its viewport. */
@@ -8,7 +9,7 @@ interface Viewport {
   endLine: number;
   cursor?: { line: number; column: number };
 }
-interface State {
+interface State extends WorkspaceFileList {
   isWeb: boolean;
   showHome: boolean;
   view: string;
@@ -32,7 +33,7 @@ export function localTabPresence(
   closingTools: ReadonlySet<string>,
 ): LocalTabPresence | null {
   if (owner.showHome) return null;
-  const allowed = new Set(owner.files.map((file) => file.path));
+  const allowed = new Set(openableFilePaths(owner));
   const openPaths = [...new Set(owner.openFiles)].filter(
     (path) => allowed.has(path) && !closingFiles.has(path),
   );
@@ -44,16 +45,23 @@ export function localTabPresence(
     ...new Set<CollaborationToolTab>([...owner.openTools, ...(activeTool ? [activeTool] : [])]),
   ].filter((tool) => !closingTools.has(tool));
   if (!openPaths.length && !openTools.length) return null;
-  const selected =
-    owner.isWeb && owner.view === 'code'
-      ? viewport &&
+  const asset = workspaceFileView(owner, owner.activePath) === 'asset';
+  let selected: Viewport | undefined;
+  if (owner.view === 'code') {
+    if (asset) {
+      if (openPaths.includes(owner.activePath))
+        selected = { path: owner.activePath, startLine: 1, endLine: 1 };
+    } else if (owner.isWeb) {
+      selected =
+        viewport &&
         (viewport.ownerPath ?? viewport.path) === owner.activePath &&
         openPaths.includes(viewport.path)
-        ? viewport
-        : openPaths.includes(owner.activePath)
-          ? { path: owner.activePath, startLine: 1, endLine: 1 }
-          : undefined
-      : undefined;
+          ? viewport
+          : openPaths.includes(owner.activePath)
+            ? { path: owner.activePath, startLine: 1, endLine: 1 }
+            : undefined;
+    }
+  }
   return {
     path: selected?.path ?? '',
     startLine: selected?.startLine ?? 1,

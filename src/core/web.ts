@@ -13,6 +13,7 @@ import type { UiRequest } from '../shared/workbench';
 import { RecentLogs } from './recent-logs';
 import { RUNTIME_VIEW_CSP, renderRuntimeView } from '../shared/runtime-view';
 import { isRuntimeViewKind, type RuntimeViewKind, type RuntimeViewContribution } from '../shared/plugins';
+import { Readable } from 'node:stream';
 
 const defaultPort = 47821;
 const mime: Record<string, string> = {
@@ -32,6 +33,7 @@ export interface WebServerOptions {
   /** Tests may request an ephemeral port without interfering with a running desktop service. */
   port?: number;
   api: CoreApi;
+  assets?: (id: string, range: string | null, head: boolean) => Promise<Response>;
   assistance?: { invoke(method: string, args: unknown[]): Promise<unknown> };
   hostServices?: { invoke(method: string, args: unknown[]): Promise<unknown> };
   packageDownload?: (
@@ -108,6 +110,9 @@ async function invoke(api: CoreApi, method: string, args: unknown[]): Promise<un
   switch (method) {
     case 'getState':
       return api.getState();
+    case 'workspaceAsset':
+      if (args.length !== 1) throw new Error('rpc.invalidParams');
+      return api.workspaceAsset(args[0] as Parameters<CoreApi['workspaceAsset']>[0]);
     case 'listPorts':
       return api.listPorts();
     case 'listDebugProbes':
@@ -243,10 +248,10 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     const origin = request.headers.origin;
     if (allowedOrigin(origin)) response.setHeader('Access-Control-Allow-Origin', origin!);
     response.setHeader('Vary', 'Origin');
-    response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    response.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,POST,OPTIONS');
     response.setHeader(
       'Access-Control-Allow-Headers',
-      'content-type,x-blode-token,x-blode-filename,x-blode-client',
+      'content-type,x-blode-token,x-blode-filename,x-blode-client,range',
     );
   };
 
@@ -290,6 +295,46 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     if (request.method === 'OPTIONS') {
       response.writeHead(validOrigin(request, url) ? 204 : 403);
       response.end();
+      return;
+    }
+    if (url.pathname.startsWith('/workspace/assets/')) {
+      if (!['GET', 'HEAD'].includes(request.method ?? '')) {
+        response.writeHead(405, { allow: 'GET, HEAD' });
+        response.end();
+        return;
+      }
+      // The opaque per-file capability is issued only by authenticated workspaceAsset RPC.
+      if (
+        !validOrigin(request, url) ||
+        request.headers['sec-fetch-site'] === 'cross-site' ||
+        !options.assets
+      ) {
+        response.writeHead(403);
+        response.end();
+        return;
+      }
+      try {
+        const asset = await options.assets(
+          url.pathname.slice('/workspace/assets/'.length),
+          request.headers.range ?? null,
+          request.method === 'HEAD',
+        );
+        asset.headers.forEach((value, key) => response.setHeader(key, value));
+        response.writeHead(asset.status);
+        if (!asset.body || request.method === 'HEAD') {
+          response.end();
+          return;
+        }
+        const stream = Readable.fromWeb(asset.body as import('node:stream/web').ReadableStream);
+        response.once('close', () => stream.destroy());
+        await pipeline(stream, response);
+      } catch {
+        if (response.headersSent) response.destroy();
+        else {
+          response.writeHead(404);
+          response.end();
+        }
+      }
       return;
     }
     if (url.pathname.startsWith('/runtime-ui/')) {

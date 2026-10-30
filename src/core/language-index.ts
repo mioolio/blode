@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { WorkspaceLanguageIndex } from '../shared/language-index';
 import type { LanguageIndexSnapshot } from '../shared/language';
-import type { CoreService } from './service';
+import type { AppState } from '../shared/contracts';
 import { safeWorkspacePath } from './workspace';
 
 /** Saved-source index; editor drafts are indexed independently in each window. */
@@ -11,7 +11,9 @@ export class LanguageIndexService {
   private root = '';
   private pending: Promise<LanguageIndexSnapshot> | undefined;
   private fingerprint = '';
-  constructor(private readonly core: Pick<CoreService, 'workspaceSnapshot'>) {}
+  constructor(
+    private readonly core: { workspaceSnapshot(): Promise<Pick<AppState, 'projectRoot' | 'files'>> },
+  ) {}
   async snapshot(): Promise<LanguageIndexSnapshot> {
     if (this.pending) return this.pending;
     const pending = this.load();

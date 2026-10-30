@@ -3,6 +3,7 @@ import type { CoreApi, LogEvent } from '../shared/contracts';
 import { configSchema } from '../core/config';
 import { RpcError } from './protocol';
 import { workbenchRouteSchemas } from './workbench-routes';
+import { workspaceAssetRequestSchema } from '../core/workspace-assets';
 
 const empty = z.object({}).strict();
 const port = z.string().min(1).max(256).optional();
@@ -16,6 +17,7 @@ export const routeSchemas = {
   'probes.list': empty,
   'devices.scan': empty,
   'project.readFile': z.object({ path: filePath }).strict(),
+  'project.asset': workspaceAssetRequestSchema,
   'file.write': z.object({ path: filePath, content: z.string().max(1_000_000) }).strict(),
   'config.set': z.object({ config: configSchema }).strict(),
   'build.entry.set': z.object({ path: filePath }).strict(),
@@ -108,6 +110,8 @@ export async function dispatch(
       if (!file) throw new RpcError(-32004, 'rpc.fileNotFound');
       return file;
     }
+    case 'project.asset':
+      return api.workspaceAsset(routeSchemas['project.asset'].parse(input));
     case 'file.write': {
       const params = routeSchemas['file.write'].parse(input);
       await api.saveFile(params.path, params.content);

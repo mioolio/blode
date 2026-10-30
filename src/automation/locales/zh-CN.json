@@ -2,6 +2,7 @@
   "state.get": "读取当前工程、文件、板卡、串口、工具链及最近构建结果。",
   "ports.list": "列出本机真实串口，返回硬件标识。",
   "project.readFile": "读取当前工程中的文件；path 为相对路径。",
+  "project.asset": "读取工程资源元信息、预览地址或二进制前缀；指定 expectedProjectRoot 和相对路径 path。",
   "file.write": "创建或覆盖当前工程内的源文件。先读取原内容并遵循用户指令。",
   "config.set": "保存完整工程配置；包括板卡、串口、工具链与 Flash 分区。自定义工具链路径必须来自用户信任的可执行文件。",
   "build.run": "编译已保存工程，返回实际固件、Flash 和 RAM 占用及工具输出。",

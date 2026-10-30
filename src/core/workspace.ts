@@ -3,6 +3,7 @@ import path from 'node:path';
 import { watch, type FSWatcher } from 'node:fs';
 import type { ProjectFile, ProjectConfig, ProjectInventory } from '../shared/contracts';
 import { parseConfig, parseProjectDescriptor, type ProjectBuild } from './config';
+import { assetKind } from '../shared/assets';
 
 const ignored = new Set(['.git', 'node_modules', '.blode', 'build', 'dist', '.cache']);
 /** Known binary formats stay out of the text editor; everything else opens as plain text. */
@@ -79,7 +80,8 @@ const languageMap: Record<string, string> = {
 
 /** Extensionless files and any non-binary format are editable as UTF-8 text. */
 export function isEditableTextFile(filePath: string): boolean {
-  return !binaryExtensions.has(path.extname(filePath).toLowerCase());
+  const extension = path.extname(filePath).toLowerCase();
+  return (extension === '.svg' || assetKind(filePath) === 'binary') && !binaryExtensions.has(extension);
 }
 
 function languageFor(filePath: string): string {
@@ -383,6 +385,7 @@ export async function scanProjectInventory(
             kind: 'file',
             size: stat.size,
             editable: editablePaths.has(relative),
+            modifiedAt: stat.mtime.toISOString(),
           });
           inventory.fileCount++;
           inventory.totalBytes += stat.size;

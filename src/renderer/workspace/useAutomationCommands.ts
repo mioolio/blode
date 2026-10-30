@@ -3,6 +3,7 @@ import type { Studio } from './useStudio';
 import type { UiRequest } from '../../shared/workbench';
 import { useI18n } from '../i18n';
 import { workspaceCloseGate } from './workspaceCloseGate';
+import { workspaceFileView } from '../../shared/file-views';
 
 /** One renderer acknowledges each explicitly targeted, named AI UI command. */
 export function useAutomationCommands(studio: Studio) {
@@ -24,7 +25,7 @@ export function useAutomationCommands(studio: Studio) {
         if (view.busy && !['console', 'consolePanel', 'devicePanel', 'runtimeView'].includes(request.action))
           throw new Error('error.busy');
         const path = () => {
-          if (!request.path || !view.state?.files.some((file) => file.path === request.path))
+          if (!request.path || !workspaceFileView(view.state, request.path))
             throw new Error('rpc.fileNotFound');
           return request.path;
         };

@@ -63,7 +63,6 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
   );
   const rootName = rootPath.replaceAll('\\', '/').split('/').filter(Boolean).at(-1) ?? '';
   const nodes = useMemo(() => buildFileTree(state?.inventory?.entries ?? []), [state?.inventory?.entries]);
-  const editableFiles = useMemo(() => new Set(state?.files.map((file) => file.path) ?? []), [state?.files]);
   const rootOpen = collapsedRoot !== rootPath;
   const buildEntry = (state?.build?.entry ?? state?.build?.sketch ?? '')
     .replaceAll('\\', '/')
@@ -91,10 +90,6 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
     });
   const selectFile = (node: FileTreeNode) => {
     setSelected({ path: node.path, kind: 'file' });
-    if (!node.editable || !editableFiles.has(node.path)) {
-      notify(t('project.notEditable'), true);
-      return;
-    }
     openFile(node.path);
   };
   const openContextMenu = (event: ReactMouseEvent, node: FileTreeNode | null) => {
@@ -352,6 +347,9 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
                   setSelected({ path: node.path, kind: 'directory' });
                   toggle(`${rootPath}:${node.path}`);
                 } else selectFile(node);
+              }}
+              onDoubleClick={() => {
+                if (!isDirectory) studio.pinFile(node.path);
               }}
               onContextMenu={(event) => openContextMenu(event, node)}
             >

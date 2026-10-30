@@ -60,6 +60,7 @@ const bridge: DesktopApi = {
   debuggerStorage: () => call('debuggerStorage'),
   exportProbeLog: (content) => call('exportProbeLog', content),
   getState: () => call('getState'),
+  workspaceAsset: (request) => call('workspaceAsset', request),
   listPorts: () => call('listPorts'),
   listDebugProbes: () => call('listDebugProbes'),
   scanDevices: () => call('scanDevices'),

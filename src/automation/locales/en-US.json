@@ -2,6 +2,7 @@
   "state.get": "Read the active project, source files, boards, ports, toolchain and latest build result.",
   "ports.list": "List actual serial ports and their hardware identifiers.",
   "project.readFile": "Read a source file in the active project. The path is relative to the project root.",
+  "project.asset": "Read workspace asset metadata, preview URL or binary prefix using expectedProjectRoot and a project-relative path.",
   "file.write": "Create or overwrite a source file in the active project. Read existing content first and follow the user's instructions.",
   "config.set": "Save the complete project configuration, including board, port, toolchain and Flash partitions. Custom toolchain paths must refer to executables trusted by the user.",
   "build.run": "Compile saved source files and return firmware artifacts, actual Flash/RAM usage and tool output.",

@@ -16,6 +16,8 @@ import {
 } from '../shared/collaboration';
 import { collaborationSchemas } from './collaboration-schemas';
 import { inverseChanges, planUndo, recordUndo, type UndoGroup } from '../shared/selective-undo';
+import { openableFilePaths } from '../shared/file-views';
+import type { WorkspaceFileList } from '../shared/file-views';
 
 const MAX_TEXT = 1_000_000;
 const MAX_DOCUMENTS = 128;
@@ -35,7 +37,7 @@ interface DocumentState {
   history: HistoryEntry[];
   undo: UndoGroup[];
 }
-export interface CollaborationWorkspace {
+export interface CollaborationWorkspace extends WorkspaceFileList {
   projectRoot: string;
   files: { path: string; content: string }[];
 }
@@ -108,6 +110,7 @@ export class CollaborationService {
   private projectRoot = '';
   private session = randomUUID();
   private files = new Map<string, string>();
+  private viewableFiles = new Set<string>();
   private documents = new Map<string, DocumentState>();
   private peers = new Map<string, CollaborationPeer>();
   private colors = new Map<string, string>();
@@ -153,20 +156,25 @@ export class CollaborationService {
   private expirePeers() {
     let changed = false;
     for (const [id, peer] of this.peers) {
-      const path = this.files.has(peer.path) ? peer.path : '';
-      const openPaths = (peer.openPaths ?? (path ? [path] : [])).filter((entry) => this.files.has(entry));
+      const path = this.viewableFiles.has(peer.path) ? peer.path : '';
+      const openPaths = (peer.openPaths ?? (path ? [path] : [])).filter((entry) =>
+        this.viewableFiles.has(entry),
+      );
+      const text = !!path && this.files.has(path);
+      const clearRange =
+        !text && (peer.startLine !== 1 || peer.endLine !== 1 || !!peer.cursor || peer.editing);
       if (
         (!path && !openPaths.length && !peer.openTools?.length) ||
         Date.parse(peer.seenAt) < this.now() - (peer.attention === 'inactive' ? INACTIVE_TTL : PEER_TTL)
       ) {
         this.peers.delete(id);
         changed = true;
-      } else if (path !== peer.path || openPaths.length !== peer.openPaths?.length) {
+      } else if (path !== peer.path || openPaths.length !== peer.openPaths?.length || clearRange) {
         this.peers.set(id, {
           ...peer,
           path,
           openPaths,
-          ...(path ? {} : { cursor: undefined, editing: false }),
+          ...(text ? {} : { startLine: 1, endLine: 1, cursor: undefined, editing: false }),
         });
         changed = true;
       }
@@ -183,6 +191,7 @@ export class CollaborationService {
     const files = new Map(
       workspace.files.map((file) => [normalizeCollaborationPath(file.path), file.content]),
     );
+    const viewable = new Set(openableFilePaths(workspace).map(normalizeCollaborationPath));
     if (workspace.projectRoot !== this.projectRoot) {
       this.projectRoot = workspace.projectRoot;
       this.session = randomUUID();
@@ -195,10 +204,12 @@ export class CollaborationService {
       this.presenceOrder.clear();
       this.documentRevisions.clear();
       this.files = files;
+      this.viewableFiles = viewable;
       this.publish({ type: 'workspace', snapshot: this.snapshot() });
       return;
     }
     this.files = files;
+    this.viewableFiles = viewable;
     for (const [path, doc] of this.documents) {
       const content = files.get(path);
       if (content === undefined) {
@@ -397,13 +408,12 @@ export class CollaborationService {
         this.presenceOrder.set(parsed.identity.peerId, { sequence: parsed.sequence, departed: false });
       const inactive = parsed.attention === 'inactive';
       const existing = this.peers.get(parsed.identity.peerId);
-      const path =
-        inactive || parsed.activeTool || parsed.clientKind === 'desktop'
-          ? ''
-          : parsed.path
-            ? normalizeCollaborationPath(parsed.path)
-            : '';
-      if (path && !this.files.has(path)) throw new Error('rpc.fileNotFound');
+      const selectedPath =
+        inactive || parsed.activeTool ? '' : parsed.path ? normalizeCollaborationPath(parsed.path) : '';
+      // Desktop code stays private; resource previews carry no code coordinates.
+      const path = parsed.clientKind === 'desktop' && this.files.has(selectedPath) ? '' : selectedPath;
+      if (path && !this.viewableFiles.has(path)) throw new Error('rpc.fileNotFound');
+      const text = !!path && this.files.has(path);
       const openPaths = [
         ...new Set([
           ...(path ? [path] : []),
@@ -411,7 +421,7 @@ export class CollaborationService {
         ]),
       ]
         .map(normalizeCollaborationPath)
-        .filter((entry) => this.files.has(entry))
+        .filter((entry) => this.viewableFiles.has(entry))
         .slice(0, 256);
       const openTools = [
         ...new Set([
@@ -438,10 +448,10 @@ export class CollaborationService {
         ...parsed.identity,
         color,
         path,
-        startLine: path ? parsed.startLine : 1,
-        endLine: path ? parsed.endLine : 1,
-        ...(path && parsed.cursor ? { cursor: parsed.cursor } : {}),
-        editing: !!path && parsed.editing,
+        startLine: text ? parsed.startLine : 1,
+        endLine: text ? parsed.endLine : 1,
+        ...(text && parsed.cursor ? { cursor: parsed.cursor } : {}),
+        editing: text && parsed.editing,
         seenAt: new Date(this.now()).toISOString(),
         openPaths,
         ...(parsed.openTools || parsed.activeTool || (inactive && existing?.openTools) ? { openTools } : {}),
@@ -693,6 +703,7 @@ export class CollaborationService {
       this.requireProject(projectRoot);
       const normalized = normalizeCollaborationPath(path);
       if (!this.files.has(normalized)) {
+        if (this.viewableFiles.has(normalized)) throw new Error('error.fileType');
         // A shared draft whose backing file disappeared must never be recreated silently.
         if (this.documents.has(normalized)) throw new Error('error.collaborationDiskChanged');
         if (content.length > MAX_TEXT) throw new Error('rpc.limitExceeded');

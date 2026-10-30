@@ -15,6 +15,7 @@ const readOnly = new Set<RouteName>([
   'probes.list',
   'devices.scan',
   'project.readFile',
+  'project.asset',
   'events.poll',
   'capabilities.get',
   'recent.list',

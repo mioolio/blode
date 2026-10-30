@@ -17,6 +17,7 @@ import type {
   RuntimeTransport,
 } from './plugins';
 import type { BuildSettings } from './build-settings';
+import type { WorkspaceAssetPreview, WorkspaceAssetRequest } from './assets';
 export interface Partition {
   id: string;
   name: string;
@@ -89,6 +90,7 @@ export interface WorkspaceEntry {
   kind: 'file' | 'directory';
   size: number;
   editable: boolean;
+  modifiedAt?: string;
 }
 export interface ProjectInventory {
   entries: WorkspaceEntry[];
@@ -285,6 +287,7 @@ export interface CoreApi {
   /** Optional native workbench capabilities exposed through the authenticated automation router. */
   automationInvoke?(method: string, params: Record<string, unknown>): Promise<unknown>;
   getState(): Promise<AppState>;
+  workspaceAsset(request: WorkspaceAssetRequest): Promise<WorkspaceAssetPreview>;
   listPorts(): Promise<PortInfo[]>;
   listDebugProbes(): Promise<DebugProbeInfo[]>;
   scanDevices(): Promise<DetectionScan>;

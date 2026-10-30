@@ -1210,5 +1210,22 @@
   "error.debuggerUartStubTimeout": "GDB Stub response timed out.",
   "error.debuggerUartClosed": "UART debug connection closed.",
   "error.debuggerUartOverflow": "UART debug buffer full.",
-  "error.debuggerUartReadOnly": "Panic inspection is read-only."
+  "error.debuggerUartReadOnly": "Panic inspection is read-only.",
+  "asset.preview": "Asset preview",
+  "asset.loading": "Loading…",
+  "asset.reload": "Reload",
+  "asset.fit": "Fit to window",
+  "asset.actualSize": "Actual size",
+  "asset.zoomIn": "Zoom in",
+  "asset.zoomOut": "Zoom out",
+  "asset.imageError": "Unable to display this image.",
+  "asset.mediaError": "Unable to play this file.",
+  "asset.offset": "Offset",
+  "asset.hex": "Hex",
+  "asset.text": "Text",
+  "asset.empty": "Empty file",
+  "asset.prefix": "Showing first",
+  "error.assetProjectChanged": "The project has changed.",
+  "error.assetUnavailable": "File unavailable.",
+  "error.assetChanged": "The file changed. Reopen it."
 }
