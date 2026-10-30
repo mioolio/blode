@@ -18,7 +18,14 @@ import { BuildSettingsLauncher } from './components/BuildSettingsLauncher';
 import { ComponentLibrariesLauncher } from './components/ComponentLibrariesLauncher';
 import { RuntimePluginTrustDialog } from './components/RuntimePluginTrustDialog';
 import { RuntimeContributions } from './components/RuntimeContributions';
+import { AiSidebar } from './components/AiSidebar';
 import { DesktopLifecycle } from './components/DesktopLifecycle';
+import { ExtensionHost } from './extensions/ExtensionHost';
+const GeneralExtensionViewPage = lazy(() =>
+  import('./extensions/GeneralExtensionView').then((module) => ({
+    default: module.GeneralExtensionViewPage,
+  })),
+);
 const RuntimeViewPage = lazy(() =>
   import('./components/RuntimeViewPage').then((module) => ({ default: module.RuntimeViewPage })),
 );
@@ -32,7 +39,11 @@ const HardwareDebuggerView = lazy(() =>
 export default function App() {
   return (
     <>
-      {window.location.hash.startsWith('#/runtime-view/') ? (
+      {window.location.hash.startsWith('#/extension-view/') ? (
+        <Suspense fallback={<div />}>
+          <GeneralExtensionViewPage />
+        </Suspense>
+      ) : window.location.hash.startsWith('#/runtime-view/') ? (
         <Suspense fallback={<div />}>
           <RuntimeViewPage />
         </Suspense>
@@ -52,18 +63,35 @@ function WorkspaceApp() {
   useAutomationCommands(studio);
   const { widths, resize } = studio;
   const [mobilePanel, setMobilePanel] = useState<'files' | 'editor' | 'device'>('editor');
+  const [aiVisible, setAiVisible] = useState(false);
   useEffect(() => {
     setMobilePanel('editor');
   }, [studio.activePath, studio.state?.projectRoot]);
+  const home = !studio.state?.workspaceOpen || studio.showHome;
+  const [homeDeviceVisible, setHomeDeviceVisible] = useState(false);
   useEffect(() => {
-    if (!studio.devicePanelVisible && mobilePanel === 'device') setMobilePanel('editor');
-  }, [studio.devicePanelVisible, mobilePanel]);
-  const showResources = !!studio.state?.workspaceOpen;
-  const showLeftPanel = showResources || studio.devicePanelVisible;
-  const columns = [...(showLeftPanel ? [`${widths.left}px`, '5px'] : []), 'minmax(300px, 1fr)'];
+    if (home) setHomeDeviceVisible(false);
+  }, [home]);
+  const shownStudio = home
+    ? {
+        ...studio,
+        devicePanelVisible: homeDeviceVisible,
+        setDevicePanelVisible: setHomeDeviceVisible,
+      }
+    : studio;
+  const showResources = !home;
+  const showLeftPanel = showResources || homeDeviceVisible;
+  useEffect(() => {
+    if (!shownStudio.devicePanelVisible && mobilePanel === 'device') setMobilePanel('editor');
+  }, [shownStudio.devicePanelVisible, mobilePanel]);
+  const columns = [
+    ...(showLeftPanel ? [`${widths.left}px`, '5px'] : []),
+    'minmax(300px, 1fr)',
+    ...(aiVisible ? ['340px'] : []),
+  ];
   return (
     <div className={`studio${studio.isWeb ? ' web-studio' : ''}`} data-mobile-panel={mobilePanel}>
-      <StudioHeader studio={studio} />
+      <StudioHeader studio={shownStudio} />
       {studio.isWeb && (
         <nav className="web-workspace-switcher" aria-label={studio.t('mobile.workspace')}>
           <button
@@ -84,7 +112,7 @@ function WorkspaceApp() {
           <button
             className={mobilePanel === 'device' ? 'active' : ''}
             onClick={() => {
-              studio.setDevicePanelVisible(true);
+              shownStudio.setDevicePanelVisible(true);
               studio.setRuntimeExpanded(true);
               setMobilePanel('device');
             }}
@@ -105,9 +133,9 @@ function WorkspaceApp() {
         {showResources ? (
           <ProjectExplorer studio={studio} />
         ) : (
-          studio.devicePanelVisible && (
+          homeDeviceVisible && (
             <aside className="project-panel standalone-device-panel">
-              <DeviceInspector studio={studio} />
+              <DeviceInspector studio={shownStudio} />
             </aside>
           )
         )}
@@ -126,6 +154,7 @@ function WorkspaceApp() {
           )}
           <ConsolePanel studio={studio} />
         </section>
+        <AiSidebar studio={studio} onVisibility={setAiVisible} />
       </main>
       <StudioStatusBar studio={studio} />
       <StudioDialogs studio={studio} />
@@ -138,6 +167,7 @@ function WorkspaceApp() {
       <RuntimePluginTrustDialog studio={studio} />
       <RuntimeContributions studio={studio} />
       <DesktopLifecycle studio={studio} />
+      <ExtensionHost />
     </div>
   );
 }

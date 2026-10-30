@@ -151,7 +151,28 @@ export class RuntimePlugins {
   private builtins: PlatformRuntime[] = [];
   private key?: Buffer;
   private closed = false;
+  private parent?: RuntimePlugins;
   constructor(private readonly options: Options) {}
+  /** Independent runtime instances sharing the already registered package declarations. */
+  fork(): RuntimePlugins {
+    const child = new RuntimePlugins(this.options);
+    child.parent = this;
+    child.key = this.key && Buffer.from(this.key);
+    child.errors = structuredClone(this.errors);
+    for (const [id, record] of this.packages) {
+      child.packages.set(id, {
+        ...record,
+        manifest: structuredClone(record.manifest),
+        fileHashes: new Map(record.fileHashes),
+        instance: undefined,
+        pending: undefined,
+        wrapper: undefined,
+        loadedFingerprint: undefined,
+        unregister: () => {},
+      });
+    }
+    return child;
+  }
   /** Language JSON is metadata: reading it never imports or executes a runtime. */
   async languages(id: string, standard = 'c17'): Promise<ModuleLanguageState | undefined> {
     const record = this.packages.get(id);
@@ -319,6 +340,8 @@ export class RuntimePlugins {
     return record.trust !== 'required';
   }
   private async trusted(record: PackageRecord) {
+    if (this.parent)
+      record.sessionFingerprint = this.parent.packages.get(record.manifest.id)?.sessionFingerprint;
     const allowed = await this.check(record, true);
     if (record.restartRequired) fail('error.runtimePluginRestartRequired');
     if (!allowed) fail('error.runtimePluginTrustRequired');

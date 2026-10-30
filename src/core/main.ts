@@ -46,6 +46,7 @@ import { currentRendererFrame, sendToRenderer } from './renderer-delivery';
 import { IPC_CANCELLED, withIpcCancellation } from '../shared/ipc-response';
 import { isRuntimeViewKind } from '../shared/plugins';
 import { createWebDebugger } from './web-debugger';
+import { resolveBuildDebugSymbols } from './build-debug-symbols';
 import { AiAssistance } from './ai-assistance';
 import { CollaborationService } from './collaboration';
 import { createAssistanceRoutes } from './assistance-routes';
@@ -55,6 +56,9 @@ import { RecentLogs } from './recent-logs';
 import { createWorkbenchAutomation } from './workbench-automation';
 import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from '../shared/contracts';
 import { createHostServices, type HostServices } from './host-services';
+import { packageWindowMethodAllowed } from './secondary-window-access';
+import { developmentRendererUrl } from '../shared/development-url';
+import { generalExtensionPanelKey } from '../shared/general-extensions';
 import { protectSharedWorkspace } from './shared-workspace';
 import { RELEASE_VERSION } from '../shared/version';
 import { renderRuntimeView, RUNTIME_VIEW_CSP } from '../shared/runtime-view';
@@ -62,6 +66,7 @@ import { workspaceAssetRequestSchema } from './workspace-assets';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'blode-runtime-ui', privileges: { standard: true, secure: true } },
+  { scheme: 'blode-extension-ui', privileges: { standard: true, secure: true } },
   {
     scheme: 'blode-asset',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
@@ -395,18 +400,7 @@ async function bootstrap(): Promise<void> {
       const frame = currentRendererFrame(event.sender);
       if (!frame) return IPC_CANCELLED;
       if (event.senderFrame !== frame) throw new Error('error.unauthorized');
-      if (
-        runtimeOwner &&
-        method !== 'windowAction' &&
-        method !== 'runtimePluginsState' &&
-        !(
-          typeof method === 'string' &&
-          method.startsWith('runtimePlugin') &&
-          Array.isArray(args) &&
-          (args[0] === runtimeOwner.pluginId ||
-            (method === 'runtimePluginTrust' && args[0]?.id === runtimeOwner.pluginId))
-        )
-      )
+      if (runtimeOwner && !packageWindowMethodAllowed(runtimeOwner, method, args))
         throw new Error('error.unauthorized');
       if (method === 'terminalFocus') {
         if (
@@ -453,9 +447,7 @@ async function bootstrap(): Promise<void> {
   window.once('closed', () => debuggerWindow?.close());
   const loadRenderer = () => {
     if (developmentUrl) {
-      const url = new URL(developmentUrl);
-      if (url.origin !== 'http://127.0.0.1:5173') throw new Error('error.invalidDevServer');
-      return window!.loadURL(url.toString());
+      return window!.loadURL(developmentRendererUrl(developmentUrl));
     }
     return window!.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   };
@@ -509,6 +501,17 @@ async function bootstrap(): Promise<void> {
     if (!closing) {
       sendToRenderer(window, EVENT_CHANNEL, event);
       sendToRenderer(debuggerWindow, EVENT_CHANNEL, event);
+      if (event.message === 'status.extensionsChanged') {
+        runtimeWindows?.publishExtensionEvent(EVENT_CHANNEL, event);
+        void hostServices?.generalExtensions
+          .state()
+          .then((state) =>
+            runtimeWindows?.retainExtensions(
+              new Set(state.plugins.filter((plugin) => plugin.enabled).map((plugin) => plugin.id)),
+            ),
+          )
+          .catch(() => {});
+      }
     }
     pipe?.publish(event);
     web?.publish(event);
@@ -598,6 +601,36 @@ async function bootstrap(): Promise<void> {
       return new Response('Runtime view unavailable', { status: 403 });
     }
   });
+  protocol.handle('blode-extension-ui', async (request) => {
+    try {
+      const url = new URL(request.url);
+      const [id, view, ...rest] = url.pathname.slice(1).split('/').map(decodeURIComponent);
+      if (
+        request.method !== 'GET' ||
+        url.hostname !== 'view' ||
+        url.search ||
+        url.hash ||
+        rest.length ||
+        !hostServices ||
+        closing
+      )
+        return new Response('Not found', { status: 404 });
+      const html = await hostServices.invoke('generalExtensionViewDocument', [{ id, view }]);
+      if (typeof html !== 'string' || html.length > 1_000_000 || closing)
+        return new Response('Not found', { status: 404 });
+      return new Response(html, {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': RUNTIME_VIEW_CSP,
+          'cache-control': 'no-store',
+          'referrer-policy': 'no-referrer',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    } catch {
+      return new Response('Extension view unavailable', { status: 403 });
+    }
+  });
   const originalSaveFile = core.saveFile.bind(core);
   collaboration = new CollaborationService({
     workspace: () => core!.workspaceSnapshot(),
@@ -642,6 +675,16 @@ async function bootstrap(): Promise<void> {
   const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
   const protection = protectSharedWorkspace(core, collaboration);
   hostServices = createHostServices({
+    ai,
+    extensionExamplesRoot: app.isPackaged
+      ? path.join(process.resourcesPath, 'extensions', 'plugins')
+      : path.join(app.getAppPath(), 'extensions', 'plugins'),
+    openExtensionView: async (id, view) => runtimeWindows!.open(id, view, 'extension'),
+    extensionViewUrl: (id, view) =>
+      `blode-extension-ui://view/${encodeURIComponent(id)}/${encodeURIComponent(view)}`,
+    openExtensionPanel: async (id, view) => {
+      await uiCommands!.command({ action: 'console', tab: generalExtensionPanelKey(id, view.id) });
+    },
     openRuntimeView: async (id, view) => {
       await runtimeWindows!.open(id, view);
       return { destination: 'window' };
@@ -700,6 +743,7 @@ async function bootstrap(): Promise<void> {
     (message) => emit({ kind: 'status', level: 'info', message, time: new Date().toISOString() }),
     () => core?.runtimePlugins,
     () => core?.currentConfig(),
+    (config) => resolveBuildDebugSymbols(core!, config),
   );
   await hardwareDebugger.restore();
   if (closing) return;
@@ -1039,7 +1083,15 @@ async function bootstrap(): Promise<void> {
         web?.publishDrafts(drafts);
       },
     },
-    build: { args: noArgs, run: () => core!.build() },
+    build: {
+      args: z.tuple([
+        z
+          .string()
+          .regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/)
+          .optional(),
+      ]),
+      run: (targetId) => core!.build(targetId),
+    },
     flash: { args: noArgs, run: () => core!.flash() },
     probe: {
       args: z.tuple([z.string().max(128).optional(), z.unknown().optional()]),

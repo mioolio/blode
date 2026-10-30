@@ -174,6 +174,30 @@ test('failed runtime window loads release ownership and allow a fresh retry', as
   }
 });
 
+test('general and board views have separate ownership and disabling closes only extension windows', async () => {
+  const f = fixture();
+  try {
+    const board = f.registry.open('same', f.view());
+    const extension = f.registry.open('same', f.view(), 'extension');
+    assert.equal(f.created.length, 2);
+    const [first, second] = f.created;
+    assert.equal(f.owner(first)?.kind, 'runtime');
+    assert.equal(f.owner(second)?.kind, 'extension');
+    assert.equal(second.file?.options.hash, '/extension-view/same/cpu');
+    first.loaded.resolve();
+    second.loaded.resolve();
+    await Promise.all([board, extension]);
+    f.registry.retainExtensions(new Set(['same']));
+    assert.equal(second.destroyed, false);
+    f.registry.retainExtensions(new Set());
+    assert.equal(second.destroyed, true);
+    assert.equal(first.destroyed, false);
+    assert.equal(f.owner(second), undefined);
+  } finally {
+    f.registry.close();
+  }
+});
+
 test('closing the registry while a view loads prevents late show and further opens', async () => {
   const f = fixture();
   const opening = f.registry.open('vendor.board', f.view());

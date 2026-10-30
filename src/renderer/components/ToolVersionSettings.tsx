@@ -4,6 +4,7 @@ import { Download, RefreshCw } from 'lucide-react';
 import type { ProjectConfig } from '../../shared/contracts';
 import type { ToolVersionsApi, ToolVersionsState } from '../../shared/tool-versions';
 import { useI18n } from '../i18n';
+import { ToolOfflineActions } from './ToolOfflineActions';
 
 const sourceLabels = {
   managed: 'settings.versions.source.managed',
@@ -30,6 +31,8 @@ export function ToolVersionSettings({
   const [selected, setSelected] = useState('');
   const [localSelected, setLocalSelected] = useState('');
   const [pending, setPending] = useState(false);
+  const [offlinePending, setOfflinePending] = useState(false);
+  const unavailable = busy || pending || offlinePending;
   const [notice, setNotice] = useState('');
   const acceptState = (next: ToolVersionsState) => {
     setState(next);
@@ -83,7 +86,7 @@ export function ToolVersionSettings({
     <section className="tool-versions" aria-label={t('settings.versions.title')}>
       <div className="settings-card-head">
         <h3>{t('settings.versions.title')}</h3>
-        <button className="text-button" disabled={busy || pending} onClick={() => void perform(refresh)}>
+        <button className="text-button" disabled={unavailable} onClick={() => void perform(refresh)}>
           <RefreshCw size={12} />
           {t('action.refresh')}
         </button>
@@ -124,7 +127,7 @@ export function ToolVersionSettings({
                     {t('settings.versions.localChoose')}
                     <ModernSelect
                       value={localSelected}
-                      disabled={busy || pending}
+                      disabled={unavailable}
                       onChange={(event) => setLocalSelected(event.target.value)}
                     >
                       {state.installedTools.map((item) => (
@@ -159,7 +162,7 @@ export function ToolVersionSettings({
                       <div className="tool-version-actions">
                         <button
                           className="primary"
-                          disabled={busy || pending || !workspaceOpen}
+                          disabled={unavailable || !workspaceOpen}
                           onClick={() => useTool(local.id)}
                         >
                           {t('settings.versions.use')}
@@ -176,7 +179,7 @@ export function ToolVersionSettings({
                 {t('settings.versions.choose')}
                 <ModernSelect
                   value={selected}
-                  disabled={pending || busy}
+                  disabled={unavailable}
                   onChange={(event) => {
                     setSelected(event.target.value);
                     setNotice('');
@@ -218,7 +221,7 @@ export function ToolVersionSettings({
                   <div className="tool-version-actions">
                     <button
                       className="secondary"
-                      disabled={busy || pending || !entry.installable || entry.installed}
+                      disabled={unavailable || !entry.installable || entry.installed}
                       onClick={() =>
                         void perform(async () => {
                           acceptState(await api.toolVersionInstall!({ id: entry.id, confirm: true }));
@@ -231,7 +234,7 @@ export function ToolVersionSettings({
                     </button>
                     <button
                       className="primary"
-                      disabled={busy || pending || !workspaceOpen || !entry.installed}
+                      disabled={unavailable || !workspaceOpen || !entry.installed}
                       onClick={() => useTool(entry.id)}
                     >
                       {t('settings.versions.use')}
@@ -248,6 +251,13 @@ export function ToolVersionSettings({
           {notice}
         </p>
       )}
+      <ToolOfflineActions
+        entry={tab === 'catalog' ? entry : undefined}
+        state={state}
+        disabled={busy || pending}
+        onInstalled={acceptState}
+        onPendingChange={setOfflinePending}
+      />
     </section>
   );
 }

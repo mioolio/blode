@@ -1,6 +1,7 @@
 import { ModernSelect } from './ModernSelect';
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, Settings2, X } from 'lucide-react';
+import { Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
+import type { BuildTarget, ProjectConfig } from '../../shared/contracts';
 import type { BuildSettings, CompilerChoice } from '../../shared/build-settings';
 import type { InstalledBuildTool } from '../../shared/tool-versions';
 import type { Studio } from '../workspace/useStudio';
@@ -30,19 +31,82 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
       return null;
     }
   });
-  const [settings, setSettings] = useState<BuildSettings>(() =>
+  const [baseSettings, setBaseSettings] = useState<BuildSettings>(() =>
     structuredClone(session?.draft.build.settings ?? {}),
   );
+  const [targets, setTargets] = useState<BuildTarget[]>(() =>
+    structuredClone(session?.draft.build.targets ?? []),
+  );
+  const [selectedTarget, setSelectedTarget] = useState('');
+  const [defaultTarget, setDefaultTarget] = useState(session?.draft.build.defaultTarget ?? '');
+  const target = targets.find((target) => target.id === selectedTarget);
+  const settings = target ? (target.build?.settings ?? {}) : baseSettings;
+  const setSettings = (update: BuildSettings | ((value: BuildSettings) => BuildSettings)) => {
+    const next = typeof update === 'function' ? update(settings) : update;
+    if (target)
+      setTargets((values) =>
+        values.map((value) =>
+          value.id === target.id ? { ...value, build: { ...value.build, settings: next } } : value,
+        ),
+      );
+    else setBaseSettings(next);
+  };
+  const updateTarget = (patch: Partial<BuildTarget>) =>
+    setTargets((values) =>
+      values.map((value) => (value.id === selectedTarget ? { ...value, ...patch } : value)),
+    );
+  const addTarget = () => {
+    const id = `target-${globalThis.crypto.randomUUID().slice(0, 8)}`;
+    setTargets((values) => [
+      ...values,
+      { id, name: `${t('buildTargets.target')} ${values.length + 1}`, root: '.' },
+    ]);
+    setSelectedTarget(id);
+  };
   const [scope, setScope] = useState<Scope>('common');
-  const [forceCompiler, setForceCompiler] = useState(session?.draft.config.runtime?.forceCompiler ?? false);
-  const [compilerRuntime, setCompilerRuntime] = useState(
+  const [baseForceCompiler, setBaseForceCompiler] = useState(
+    session?.draft.config.runtime?.forceCompiler ?? false,
+  );
+  const [baseCompilerRuntime, setBaseCompilerRuntime] = useState(
     session?.draft.config.runtime?.compilerRuntime ?? '',
   );
+  let childConfig: Partial<ProjectConfig> | undefined;
+  if (target && target.root !== '.') {
+    const marker = `${target.root}/be`;
+    const text = studio.drafts[marker] ?? studio.state?.files.find((file) => file.path === marker)?.content;
+    try {
+      if (text) childConfig = JSON.parse(text) as ProjectConfig;
+    } catch {}
+  }
+  const forceCompiler = target
+    ? (target.config?.runtime?.forceCompiler ?? childConfig?.runtime?.forceCompiler ?? baseForceCompiler)
+    : baseForceCompiler;
+  const compilerRuntime = target
+    ? (target.config?.runtime?.compilerRuntime ??
+      childConfig?.runtime?.compilerRuntime ??
+      baseCompilerRuntime)
+    : baseCompilerRuntime;
+  const setForceCompiler = (value: boolean) =>
+    target
+      ? updateTarget({
+          config: { ...target.config, runtime: { ...target.config?.runtime, forceCompiler: value } },
+        })
+      : setBaseForceCompiler(value);
+  const setCompilerRuntime = (value: string) =>
+    target
+      ? updateTarget({
+          config: {
+            ...target.config,
+            runtime: { ...target.config?.runtime, compilerRuntime: value || undefined },
+          },
+        })
+      : setBaseCompilerRuntime(value);
   const forceBackends = (studio.state?.boards ?? []).filter((board) =>
     ['Esp32_S3_CAM', 'STM32F103C8T6'].includes(board.id),
   );
   const projectRuntime = studio.state?.boards.find(
-    (board) => board.id === session?.draft.config.boardId,
+    (board) =>
+      board.id === (target?.config?.boardId ?? childConfig?.boardId ?? session?.draft.config.boardId),
   )?.runtimePlugin;
   const compilerPlugins = (studio.state?.boards ?? []).flatMap((board) =>
     (board.runtimePlugin?.compiler.mode === 'plugin' && board.runtimePlugin.compiler.defaultTool) ||
@@ -110,11 +174,22 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
         ...session.draft.config,
         runtime: {
           ...session.draft.config.runtime,
-          forceCompiler,
-          compilerRuntime: compilerRuntime || undefined,
+          forceCompiler: baseForceCompiler,
+          compilerRuntime: baseCompilerRuntime || undefined,
         },
       };
-      const draft = { ...session.draft, config, build: { ...session.draft.build, settings } };
+      if (targets.some((value) => !value.name.trim() || !value.root.trim()))
+        throw new Error('error.invalidBuildTarget');
+      const draft = {
+        ...session.draft,
+        config,
+        build: {
+          ...session.draft.build,
+          settings: baseSettings,
+          targets: targets.length ? targets : undefined,
+          defaultTarget: defaultTarget || undefined,
+        },
+      };
       await window.blode.saveFile('be', writeProjectSettings(draft), session.root);
       studio.setDrafts((values) => {
         if (values.be !== session.content) return values;
@@ -323,109 +398,243 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
         {!session ? (
           <p role="alert">{t('error.invalidProjectDescriptor')}</p>
         ) : (
-          <div className="build-settings-body">
-            <aside className="build-settings-nav" aria-label={t('buildSettings.scope')}>
-              {scopes.map((value) => (
-                <button
-                  key={value}
-                  className={scope === value ? 'active' : ''}
-                  aria-pressed={scope === value}
-                  onClick={() => setScope(value)}
+          <>
+            <div className="build-target-selector">
+              <label>
+                {t('buildTargets.target')}
+                <ModernSelect
+                  value={selectedTarget}
+                  onChange={(event) => setSelectedTarget(event.target.value)}
                 >
-                  {value === 'common'
-                    ? t('buildSettings.common')
-                    : (studio.state?.boards.find((board) => board.id === value)?.name ?? value)}
+                  <option value="">{t('buildTargets.workspaceDefaults')}</option>
+                  {targets.map((value) => (
+                    <option key={value.id} value={value.id}>
+                      {value.name}
+                    </option>
+                  ))}
+                </ModernSelect>
+              </label>
+              <button disabled={!!busy || targets.length >= 64} onClick={addTarget}>
+                <Plus size={14} />
+                {t('buildTargets.add')}
+              </button>
+              {target && (
+                <button
+                  className="icon-button"
+                  disabled={!!busy}
+                  aria-label={t('buildTargets.remove')}
+                  onClick={() => {
+                    setTargets((values) => values.filter((value) => value.id !== target.id));
+                    if (defaultTarget === target.id) setDefaultTarget('');
+                    setSelectedTarget('');
+                  }}
+                >
+                  <Trash2 size={15} />
                 </button>
-              ))}
-            </aside>
-            <div className="build-settings-detail">
-              <fieldset disabled={!!busy} className="build-mode-fields">
+              )}
+              {targets.length > 1 && (
                 <label>
-                  {t('buildSettings.mode')}
+                  {t('buildTargets.default')}
                   <ModernSelect
-                    value={settings.mode ?? 'release'}
-                    onChange={(event) =>
-                      setSettings({ ...settings, mode: event.target.value as BuildSettings['mode'] })
-                    }
+                    value={defaultTarget}
+                    onChange={(event) => setDefaultTarget(event.target.value)}
                   >
-                    <option value="debug">{t('buildSettings.debug')}</option>
-                    <option value="release">{t('buildSettings.release')}</option>
+                    <option value="">{t('buildTargets.askEachTime')}</option>
+                    {targets.map((value) => (
+                      <option key={value.id} value={value.id}>
+                        {value.name}
+                      </option>
+                    ))}
                   </ModernSelect>
                 </label>
-                <label className="build-size-option">
+              )}
+            </div>
+            {target && (
+              <fieldset className="build-target-fields" disabled={!!busy}>
+                <label>
+                  {t('buildTargets.name')}
                   <input
-                    type="checkbox"
-                    checked={settings.mode !== 'debug' && (settings.optimizeForSize ?? true)}
-                    disabled={settings.mode === 'debug'}
-                    onChange={(event) => setSettings({ ...settings, optimizeForSize: event.target.checked })}
+                    value={target.name}
+                    maxLength={120}
+                    onChange={(event) => updateTarget({ name: event.target.value })}
                   />
-                  {t('buildSettings.optimizeSize')}
+                </label>
+                <label>
+                  {t('buildTargets.directory')}
+                  <input
+                    value={target.root}
+                    placeholder="projects/controller"
+                    onChange={(event) => updateTarget({ root: event.target.value.replaceAll('\\', '/') })}
+                  />
+                </label>
+                <label>
+                  {t('device.board')}
+                  <ModernSelect
+                    value={target.config?.boardId ?? ''}
+                    onChange={(event) => {
+                      const config = { ...target.config };
+                      if (event.target.value) config.boardId = event.target.value;
+                      else delete config.boardId;
+                      updateTarget({ config });
+                    }}
+                  >
+                    <option value="">{t('buildTargets.followDescriptor')}</option>
+                    {(studio.state?.boards ?? []).map((board) => (
+                      <option key={board.id} value={board.id}>
+                        {board.name}
+                      </option>
+                    ))}
+                  </ModernSelect>
+                </label>
+                <label>
+                  {t('buildTargets.entry')}
+                  <input
+                    value={target.build?.entry ?? ''}
+                    placeholder={t('buildTargets.followDescriptor')}
+                    onChange={(event) =>
+                      updateTarget({ build: { ...target.build, entry: event.target.value || undefined } })
+                    }
+                  />
+                </label>
+                <label>
+                  {t('buildTargets.cStandard')}
+                  <ModernSelect
+                    value={target.build?.cStandard ?? ''}
+                    onChange={(event) =>
+                      updateTarget({
+                        build: {
+                          ...target.build,
+                          cStandard:
+                            (event.target.value as NonNullable<BuildTarget['build']>['cStandard']) ||
+                            undefined,
+                        },
+                      })
+                    }
+                  >
+                    <option value="">{t('buildTargets.followDescriptor')}</option>
+                    {['c99', 'c11', 'c17', 'c23'].map((standard) => (
+                      <option key={standard} value={standard}>
+                        {standard.toUpperCase()}
+                      </option>
+                    ))}
+                  </ModernSelect>
                 </label>
               </fieldset>
-              {(projectRuntime || compilerPlugins.length > 0 || forceCompiler) && (
-                <div className="build-plugin-compiler">
-                  {projectRuntime?.compiler.defaultTool && (
-                    <p>
-                      <strong>{t('buildSettings.runtimeCompiler')}</strong>
-                      <code>
-                        {projectRuntime.compiler.defaultTool.id}
-                        {projectRuntime.compiler.defaultTool.version
-                          ? ` ${projectRuntime.compiler.defaultTool.version}`
-                          : ''}
-                      </code>
-                    </p>
-                  )}
+            )}
+            <div className="build-settings-body">
+              <aside className="build-settings-nav" aria-label={t('buildSettings.scope')}>
+                {scopes.map((value) => (
+                  <button
+                    key={value}
+                    className={scope === value ? 'active' : ''}
+                    aria-pressed={scope === value}
+                    onClick={() => setScope(value)}
+                  >
+                    {value === 'common'
+                      ? t('buildSettings.common')
+                      : (studio.state?.boards.find((board) => board.id === value)?.name ?? value)}
+                  </button>
+                ))}
+              </aside>
+              <div className="build-settings-detail">
+                <fieldset disabled={!!busy} className="build-mode-fields">
+                  <label>
+                    {t('buildSettings.mode')}
+                    <ModernSelect
+                      value={settings.mode ?? (target ? 'inherit' : 'release')}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          mode:
+                            event.target.value === 'inherit'
+                              ? undefined
+                              : (event.target.value as BuildSettings['mode']),
+                        })
+                      }
+                    >
+                      {target && <option value="inherit">{t('buildSettings.followProject')}</option>}
+                      <option value="debug">{t('buildSettings.debug')}</option>
+                      <option value="release">{t('buildSettings.release')}</option>
+                    </ModernSelect>
+                  </label>
                   <label className="build-size-option">
                     <input
                       type="checkbox"
-                      checked={forceCompiler}
-                      disabled={!!busy}
-                      onChange={(event) => setForceCompiler(event.target.checked)}
+                      checked={settings.mode !== 'debug' && (settings.optimizeForSize ?? true)}
+                      disabled={settings.mode === 'debug'}
+                      onChange={(event) =>
+                        setSettings({ ...settings, optimizeForSize: event.target.checked })
+                      }
                     />
-                    {t('buildSettings.forceCompiler')}
+                    {t('buildSettings.optimizeSize')}
                   </label>
-                  {forceCompiler && (
-                    <label className="build-force-backend">
-                      {t('buildSettings.forceBackend')}
-                      <ModernSelect
-                        value={compilerRuntime}
+                </fieldset>
+                {(projectRuntime || compilerPlugins.length > 0 || forceCompiler) && (
+                  <div className="build-plugin-compiler">
+                    {projectRuntime?.compiler.defaultTool && (
+                      <p>
+                        <strong>{t('buildSettings.runtimeCompiler')}</strong>
+                        <code>
+                          {projectRuntime.compiler.defaultTool.id}
+                          {projectRuntime.compiler.defaultTool.version
+                            ? ` ${projectRuntime.compiler.defaultTool.version}`
+                            : ''}
+                        </code>
+                      </p>
+                    )}
+                    <label className="build-size-option">
+                      <input
+                        type="checkbox"
+                        checked={forceCompiler}
                         disabled={!!busy}
-                        onChange={(event) => setCompilerRuntime(event.target.value)}
-                      >
-                        <option value="">{t('buildSettings.followRuntime')}</option>
-                        {forceBackends.map((board) => (
-                          <option key={board.id} value={board.id}>
-                            {board.name}
-                          </option>
-                        ))}
-                        {compilerRuntime && !forceBackends.some((board) => board.id === compilerRuntime) && (
-                          <option value={compilerRuntime}>{compilerRuntime}</option>
-                        )}
-                      </ModernSelect>
+                        onChange={(event) => setForceCompiler(event.target.checked)}
+                      />
+                      {t('buildSettings.forceCompiler')}
                     </label>
-                  )}
-                </div>
-              )}
-              <div className="build-tool-heading">
-                <h4>{t('buildSettings.compiler')}</h4>
-                <button className="text-button" disabled={pending || !!busy} onClick={() => void refresh()}>
-                  <RefreshCw size={13} />
-                  {t('action.refresh')}
-                </button>
-              </div>
-              {pending && <p role="status">{t('buildSettings.detecting')}</p>}
-              <fieldset disabled={!!busy || pending} className="build-compiler-fields">
-                {renderChoice('common')}
-                {scope !== 'common' && (
-                  <>
-                    {renderChoice('c')}
-                    {renderChoice('cpp')}
-                  </>
+                    {forceCompiler && (
+                      <label className="build-force-backend">
+                        {t('buildSettings.forceBackend')}
+                        <ModernSelect
+                          value={compilerRuntime}
+                          disabled={!!busy}
+                          onChange={(event) => setCompilerRuntime(event.target.value)}
+                        >
+                          <option value="">{t('buildSettings.followRuntime')}</option>
+                          {forceBackends.map((board) => (
+                            <option key={board.id} value={board.id}>
+                              {board.name}
+                            </option>
+                          ))}
+                          {compilerRuntime &&
+                            !forceBackends.some((board) => board.id === compilerRuntime) && (
+                              <option value={compilerRuntime}>{compilerRuntime}</option>
+                            )}
+                        </ModernSelect>
+                      </label>
+                    )}
+                  </div>
                 )}
-              </fieldset>
-              {notice && <p role="status">{notice}</p>}
+                <div className="build-tool-heading">
+                  <h4>{t('buildSettings.compiler')}</h4>
+                  <button className="text-button" disabled={pending || !!busy} onClick={() => void refresh()}>
+                    <RefreshCw size={13} />
+                    {t('action.refresh')}
+                  </button>
+                </div>
+                {pending && <p role="status">{t('buildSettings.detecting')}</p>}
+                <fieldset disabled={!!busy || pending} className="build-compiler-fields">
+                  {renderChoice('common')}
+                  {scope !== 'common' && (
+                    <>
+                      {renderChoice('c')}
+                      {renderChoice('cpp')}
+                    </>
+                  )}
+                </fieldset>
+                {notice && <p role="status">{notice}</p>}
+              </div>
             </div>
-          </div>
+          </>
         )}
         <div className="modal-actions">
           <button disabled={!!busy} onClick={onClose}>

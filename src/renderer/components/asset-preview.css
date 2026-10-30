@@ -11,6 +11,10 @@
   background: var(--editor-bg);
   color: var(--text);
 }
+.asset-preview-toolbar {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
 .asset-preview-toolbar,
 .asset-preview-footer {
   display: flex;
@@ -34,6 +38,7 @@
   font-weight: 600;
 }
 .asset-preview-actions {
+  flex-shrink: 0;
   margin-left: auto;
   gap: 3px;
 }
@@ -56,34 +61,35 @@
   outline-offset: 1px;
 }
 .asset-image-scroll {
+  position: relative;
   flex: 1;
   min-height: 0;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: none;
+  cursor: grab;
   background-color: var(--editor-bg);
   background-image: repeating-conic-gradient(var(--hover-strong) 0% 25%, transparent 0% 50%);
   background-size: 20px 20px;
 }
+.asset-image-scroll.is-dragging {
+  cursor: grabbing;
+}
+.asset-image-scroll:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: -2px;
+}
 .asset-image {
   display: block;
-  height: auto;
+  position: absolute;
+  left: 50%;
+  top: 50%;
   max-width: none;
-  margin: 24px auto;
-  user-select: none;
-}
-.asset-image-scroll.is-fit {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-.asset-image-scroll.is-fit .asset-image {
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 100%;
   margin: 0;
-  object-fit: contain;
+  transform: translate(-50%, -50%);
+  user-select: none;
+  pointer-events: none;
 }
 .asset-media-stage,
 .asset-preview-placeholder {
@@ -187,7 +193,6 @@
   .asset-preview-footer time {
     display: none;
   }
-  .asset-image-scroll.is-fit,
   .asset-media-stage {
     padding: 12px;
   }

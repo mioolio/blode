@@ -51,8 +51,16 @@ class WindowDouble extends EventEmitter {
   }
 }
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-async function fixture(override: Partial<DesktopLifecycleOptions> = {}) {
+async function fixture(
+  override: Partial<DesktopLifecycleOptions> = {},
+  trayPreference: boolean | null = false,
+) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'blode-close-'));
+  if (trayPreference !== null)
+    await fs.writeFile(
+      path.join(directory, 'desktop-lifecycle.json'),
+      JSON.stringify({ closeToTray: trayPreference }),
+    );
   const window = new WindowDouble();
   const prepared: string[] = [];
   const trays: { spec: TraySpecification; destroyed: boolean }[] = [];
@@ -97,6 +105,19 @@ async function fixture(override: Partial<DesktopLifecycleOptions> = {}) {
     },
   };
 }
+
+test('the default close action hides the window in the tray without a save prompt', async () => {
+  const f = await fixture({}, null);
+  try {
+    assert.equal(f.controller.state().closeToTray, true);
+    assert.equal(f.window.close(), true);
+    assert.equal(f.window.hidden, 1);
+    assert.equal(f.window.messages.length, 0);
+    assert.equal(f.counts().exited, 0);
+  } finally {
+    await f.dispose();
+  }
+});
 
 test('clean native close is coalesced and exits after one renderer acknowledgement', async () => {
   const f = await fixture();
@@ -226,7 +247,7 @@ test('tray close hides drafts without prompting; tray quit uses the save decisio
   }
 });
 
-test('persisted preferences restore a tray, corrupt preferences keep ordinary close behavior', async () => {
+test('persisted preferences restore a tray, corrupt preferences restore the tray default', async () => {
   const f = await fixture();
   let replacement: DesktopLifecycle | undefined;
   try {
@@ -249,7 +270,7 @@ test('persisted preferences restore a tray, corrupt preferences keep ordinary cl
     await fs.writeFile(path.join(f.directory, 'desktop-lifecycle.json'), '{bad');
     replacement = new DesktopLifecycle(options);
     await replacement.initialize();
-    assert.equal(replacement.state().closeToTray, false);
+    assert.equal(replacement.state().closeToTray, true);
   } finally {
     replacement?.dispose();
     await f.dispose();

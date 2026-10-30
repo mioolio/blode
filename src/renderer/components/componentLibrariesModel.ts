@@ -13,6 +13,15 @@ export interface ComponentLibrariesBackend {
   componentsInstall(request: ComponentInstallRequest): Promise<ComponentLibrariesState>;
   componentsImport(request: ComponentImportRequest): Promise<ComponentLibrariesState>;
   componentsRemove(request: ComponentRemoveRequest): Promise<ComponentLibrariesState>;
+  componentsExport?(request: { expectedProjectRoot: string; ids?: string[]; confirm: true }): Promise<{
+    id: string;
+    name: string;
+    size: number;
+    sha256: string;
+    componentCount: number;
+    dependencies: string[];
+  }>;
+  componentsPackageSave?(id: string): Promise<boolean>;
 }
 
 export interface ComponentLibrariesSnapshot {
@@ -21,7 +30,7 @@ export interface ComponentLibrariesSnapshot {
   search?: ComponentSearchResult;
   loading: boolean;
   searching: boolean;
-  operation: 'install' | 'import' | 'remove' | null;
+  operation: 'install' | 'import' | 'remove' | 'export' | null;
   installation?: InstallationState;
   error: string;
   completed: boolean;
@@ -183,5 +192,34 @@ export class ComponentLibrariesModel {
     return this.mutate('remove', (expectedProjectRoot) =>
       this.api.componentsRemove({ id, expectedProjectRoot, confirm: true }),
     );
+  }
+  async export(ids?: string[]): Promise<boolean> {
+    if (!this.live || this.value.operation) return false;
+    const expectedProjectRoot = this.value.data?.projectRoot;
+    if (!expectedProjectRoot || expectedProjectRoot !== this.projectRoot) {
+      this.fail(new Error('components.projectChanged'));
+      return false;
+    }
+    const generation = this.generation;
+    this.update({ operation: 'export', error: '', completed: false });
+    try {
+      if (!this.api.componentsExport || !this.api.componentsPackageSave)
+        throw new Error('rpc.methodNotFound');
+      const archive = await this.api.componentsExport({
+        expectedProjectRoot,
+        ...(ids?.length ? { ids } : {}),
+        confirm: true,
+      });
+      if (!this.current(generation)) return false;
+      const saved = await this.api.componentsPackageSave(archive.id);
+      if (!this.current(generation)) return false;
+      this.update({ completed: saved });
+      return saved;
+    } catch (error) {
+      if (this.current(generation)) this.fail(error);
+      return false;
+    } finally {
+      if (this.current(generation)) this.update({ operation: null });
+    }
   }
 }

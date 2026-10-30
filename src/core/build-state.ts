@@ -10,6 +10,7 @@ export interface PersistedBuildState {
   result: BuildResult;
   sourceFingerprint: string;
   artifactHashes: Record<string, string>;
+  debugSymbols?: { file: string; sha256: string };
 }
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const schema = z
@@ -17,6 +18,10 @@ const schema = z
     version: z.literal(1),
     sourceFingerprint: digest,
     artifactHashes: z.record(z.string(), digest),
+    debugSymbols: z
+      .object({ file: z.string().min(1).max(1024), sha256: digest })
+      .strict()
+      .optional(),
     result: z
       .object({
         success: z.literal(true),
@@ -33,19 +38,34 @@ const schema = z
   .strict();
 
 /** Cached capacities describe the last actual successful compile, even when sources later change. */
-export async function loadBuildState(root: string): Promise<PersistedBuildState | null> {
+export async function loadBuildState(
+  root: string,
+  stateRelative = '.blode/build-state.json',
+): Promise<PersistedBuildState | null> {
   try {
-    const file = await safeWorkspacePath(root, '.blode/build-state.json', { internal: true });
+    const file = await safeWorkspacePath(root, stateRelative, { internal: true });
     if ((await fs.stat(file)).size > 4_000_000) return null;
     const state = schema.parse(JSON.parse(await fs.readFile(file, 'utf8')));
     if (Object.keys(state.artifactHashes).length !== state.result.artifacts.length) return null;
     for (const artifact of state.result.artifacts) {
       if (
-        !/^(?:firmware\.bin|\.blode\/build\/[^/\\]+\.bin)$/.test(artifact) ||
+        !/^(?:firmware\.bin|\.blode\/(?:targets\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/)?build\/[^/\\]+\.bin)$/.test(
+          artifact,
+        ) ||
         !Object.hasOwn(state.artifactHashes, artifact)
       )
         return null;
       await safeWorkspacePath(root, artifact, { internal: true });
+    }
+    if (state.debugSymbols) {
+      if (
+        !/\.elf$/i.test(state.debugSymbols.file) ||
+        !state.result.artifacts.some(
+          (artifact) => path.posix.dirname(artifact) === path.posix.dirname(state.debugSymbols!.file),
+        )
+      )
+        return null;
+      await safeWorkspacePath(root, state.debugSymbols.file, { internal: true });
     }
     return state;
   } catch {
@@ -53,10 +73,14 @@ export async function loadBuildState(root: string): Promise<PersistedBuildState 
   }
 }
 
-export async function saveBuildState(root: string, state: PersistedBuildState): Promise<void> {
+export async function saveBuildState(
+  root: string,
+  state: PersistedBuildState,
+  stateRelative = '.blode/build-state.json',
+): Promise<void> {
   schema.parse(state);
-  const file = await safeWorkspacePath(root, '.blode/build-state.json', { internal: true });
-  const temporary = await safeWorkspacePath(root, '.blode/build-state.json.tmp', { internal: true });
+  const file = await safeWorkspacePath(root, stateRelative, { internal: true });
+  const temporary = await safeWorkspacePath(root, stateRelative + '.tmp', { internal: true });
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(temporary, JSON.stringify(state, null, 2) + '\n', 'utf8');
   await fs.rename(temporary, file);

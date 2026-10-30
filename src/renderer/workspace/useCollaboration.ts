@@ -450,7 +450,12 @@ export function useCollaboration(studio: Studio) {
     const owner = latest.current;
     if (!connected || pageDeparted.current || recovering.current || owner.state?.projectRoot !== root) return;
     let selected = localTabPresence(
-      { ...owner, files: owner.state?.files ?? [], inventory: owner.state?.inventory },
+      {
+        ...owner,
+        files: owner.state?.files ?? [],
+        inventory: owner.state?.inventory,
+        readonlyPaths: Object.keys(owner.externalFiles ?? {}),
+      },
       currentView.current,
       closingPaths.current,
       closingTools.current,
@@ -513,7 +518,12 @@ export function useCollaboration(studio: Studio) {
     if (!connected || pageDeparted.current || owner.state?.projectRoot !== root) return;
     const selected = includeTabs
       ? localTabPresence(
-          { ...owner, files: owner.state?.files ?? [], inventory: owner.state?.inventory },
+          {
+            ...owner,
+            files: owner.state?.files ?? [],
+            inventory: owner.state?.inventory,
+            readonlyPaths: Object.keys(owner.externalFiles ?? {}),
+          },
           currentView.current,
           closingPaths.current,
           closingTools.current,
@@ -558,10 +568,10 @@ export function useCollaboration(studio: Studio) {
       owner.showHome ||
       owner.view !== 'code' ||
       !owner.openFiles.includes(view.path) ||
-      !isTextDocument(view.path)
+      !(isTextDocument(view.path) || owner.externalFiles?.[view.path])
     )
       return;
-    if (enabled)
+    if (enabled && isTextDocument(view.path))
       void actions.current.ensureOpen(view.path).catch((error) => setConnectionError(String(error)));
     currentView.current = { ...view, ownerPath: owner.activePath };
     waitingViewport.current = false;
@@ -1027,10 +1037,20 @@ export function useCollaboration(studio: Studio) {
     };
   }, [root, connected, enabled]);
 
+  useEffect(() => {
+    const paths = new Set(
+      peers.filter((peer) => peer.peerId !== self.peerId).flatMap((peer) => peer.openPaths ?? [peer.path]),
+    );
+    for (const path of paths) {
+      const id = /^@external\/([^/]+)\//.exec(path)?.[1];
+      if (id && !studio.externalFiles?.[path]) void studio.loadExternalSource(id).catch(() => {});
+    }
+  }, [root, peers, studio.externalFiles]);
   return {
     peers: peers.filter((peer) => peer.peerId !== self.peerId && peer.attention !== 'inactive'),
     allPeers: peers.filter((peer) => peer.attention !== 'inactive'),
     self,
+    aiActor: () => ({ peerId: self.peerId, actorToken }),
     conflicts,
     connectionError,
     enabled,

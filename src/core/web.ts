@@ -14,6 +14,8 @@ import { RecentLogs } from './recent-logs';
 import { RUNTIME_VIEW_CSP, renderRuntimeView } from '../shared/runtime-view';
 import { isRuntimeViewKind, type RuntimeViewKind, type RuntimeViewContribution } from '../shared/plugins';
 import { Readable } from 'node:stream';
+import { generalExtensionParameterSchemas } from './general-extensions/schema';
+import type { GeneralExtensionInfo } from '../shared/general-extensions';
 
 const defaultPort = 47821;
 const mime: Record<string, string> = {
@@ -85,8 +87,9 @@ const hostMethods = new Set([
   'firmwareFlash',
 ]);
 const isHostMethod = (method: string) =>
-  /^(?:components|git|toolVersion|host|projectPackage|terminal|language|runtimePlugin|vscode)/.test(method) ||
-  hostMethods.has(method);
+  /^(?:generalExtension|components|git|toolVersion|host|projectPackage|terminal|language|runtimePlugin|vscode|modelService|aiChat)/.test(
+    method,
+  ) || hostMethods.has(method);
 
 function lanEndpoint(port: number): string {
   for (const entries of Object.values(networkInterfaces()))
@@ -156,7 +159,13 @@ async function invoke(api: CoreApi, method: string, args: unknown[]): Promise<un
         throw new Error('rpc.invalidParams');
       return api.setBuildEntry(args[0]);
     case 'build':
-      return api.build();
+      if (
+        args.length > 1 ||
+        (args[0] !== undefined &&
+          (typeof args[0] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(args[0])))
+      )
+        throw new Error('error.invalidRequest');
+      return api.build(args[0] as string | undefined);
     case 'flash':
       return api.flash();
     case 'probe':
@@ -212,9 +221,12 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
   }
   const pages = new Map<string, PageTransport>();
   const runtimeViews = new Map<string, { id: string; kind: RuntimeViewKind; expiresAt: number }>();
+  const extensionViews = new Map<string, { id: string; view: string; expiresAt: number }>();
   let stopped = false;
   const pruneRuntimeViews = () => {
     for (const [ticket, view] of runtimeViews) if (view.expiresAt <= Date.now()) runtimeViews.delete(ticket);
+    for (const [ticket, view] of extensionViews)
+      if (view.expiresAt <= Date.now()) extensionViews.delete(ticket);
   };
   const clientId = (value: unknown) =>
     typeof value === 'string' && /^[a-f0-9]{32}$/.test(value) ? value : undefined;
@@ -354,6 +366,42 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
           response.writeHead(404);
           response.end();
         }
+      }
+      return;
+    }
+    if (url.pathname.startsWith('/extension-ui/')) {
+      if (request.method !== 'GET') {
+        response.writeHead(405, { allow: 'GET' });
+        response.end();
+        return;
+      }
+      response.setHeader('cache-control', 'no-store');
+      response.setHeader('referrer-policy', 'no-referrer');
+      response.setHeader('x-content-type-options', 'nosniff');
+      const ticket = url.pathname.slice('/extension-ui/'.length);
+      const view = /^[a-f0-9]{48}$/.test(ticket) ? extensionViews.get(ticket) : undefined;
+      if (view) extensionViews.delete(ticket);
+      pruneRuntimeViews();
+      if (!view || view.expiresAt <= Date.now() || !options.hostServices) {
+        response.writeHead(404);
+        response.end('Extension view unavailable.');
+        return;
+      }
+      try {
+        if (!validOrigin(request, url)) throw new Error('rpc.unauthorized');
+        const html = await options.hostServices.invoke('generalExtensionViewDocument', [
+          { id: view.id, view: view.view },
+        ]);
+        if (stopped || typeof html !== 'string' || html.length > 1_000_000)
+          throw new Error('error.extensionSize');
+        response.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': RUNTIME_VIEW_CSP,
+        });
+        response.end(html);
+      } catch {
+        response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end('Extension view unavailable.');
       }
       return;
     }
@@ -553,7 +601,23 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
         const page = id && ownsLease ? pageTransport(id) : undefined;
         if (page?.closed && !page.streams.size) throw new Error('rpc.unauthorized');
         let result: unknown;
-        if (body.method === 'runtimePluginOpenView') {
+        if (body.method === 'generalExtensionOpenView') {
+          if (!options.hostServices) throw new Error('rpc.methodNotFound');
+          if (body.args.length !== 1) throw new Error('rpc.invalidParams');
+          const input = generalExtensionParameterSchemas['extensions.openView'].parse(body.args[0]);
+          const plugin = (await options.hostServices.invoke('generalExtensionContext', [
+            { id: input.id },
+          ])) as GeneralExtensionInfo;
+          const view = plugin.manifest.ui.views?.find((view) => view.id === input.view);
+          if (!plugin.enabled || !view) throw new Error('error.extensionPermission');
+          result =
+            view.location === 'panel'
+              ? await options.hostServices.invoke('generalExtensionOpenView', [input])
+              : {
+                  destination: 'browser',
+                  url: `${url.origin}/#/extension-view/${encodeURIComponent(input.id)}/${encodeURIComponent(input.view)}`,
+                };
+        } else if (body.method === 'runtimePluginOpenView') {
           if (
             !options.hostServices ||
             body.args.length !== 2 ||
@@ -572,6 +636,18 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
                   destination: 'browser',
                   url: `${url.origin}/#/runtime-view/${encodeURIComponent(pluginId)}/${encodeURIComponent(viewId)}`,
                 };
+        } else if (body.method === 'generalExtensionViewUrl') {
+          if (!options.hostServices) throw new Error('rpc.methodNotFound');
+          if (body.args.length !== 1) throw new Error('rpc.invalidParams');
+          const view = generalExtensionParameterSchemas['extensions.viewUrl'].parse(body.args[0]);
+          const html = await options.hostServices.invoke('generalExtensionViewDocument', [view]);
+          if (stopped || typeof html !== 'string' || html.length > 1_000_000)
+            throw new Error('error.extensionSize');
+          pruneRuntimeViews();
+          if (extensionViews.size >= 64) throw new Error('rpc.limitExceeded');
+          const ticket = randomBytes(24).toString('hex');
+          extensionViews.set(ticket, { ...view, expiresAt: Date.now() + 15_000 });
+          result = `${url.origin}/extension-ui/${ticket}`;
         } else if (body.method === 'runtimePluginViewDocument') {
           if (!options.hostServices) throw new Error('rpc.methodNotFound');
           if (
@@ -735,6 +811,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
       stopped = true;
       clearInterval(heartbeat);
       runtimeViews.clear();
+      extensionViews.clear();
       for (const page of pages.values()) {
         clearTimeout(page.timer);
         clearTimeout(page.retire);

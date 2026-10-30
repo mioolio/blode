@@ -24,6 +24,7 @@ import {
   type UartGdbBridge,
 } from '../../extensions/boards/Esp32_S3_CAM/debugger/uart-gdb';
 import { esp32UartGdbEnvironment } from '../../extensions/boards/Esp32_S3_CAM/debugger/uart-gdb-config';
+import type { AutomaticDebugSymbolResolver } from './build-debug-symbols';
 import {
   breakpointLocationsSchema,
   debuggerPatchSchema,
@@ -73,7 +74,8 @@ export class HardwareDebugger {
   private profile: DebuggerProfile = debuggerProfiles.STM32F103C8T6;
   private debugConfig: ProjectConfig | undefined;
   private readonly gdbOverrides = new Map<string, string>();
-  private readonly symbolFiles = new Map<string, { file: string; name: string }>();
+  private readonly symbolFiles = new Map<string, { file: string; name: string; automaticId?: string }>();
+  private symbolRevision = 0;
   private refreshTask: Promise<void> | undefined;
   private editing = false;
   private editSettled?: Promise<void>;
@@ -89,6 +91,7 @@ export class HardwareDebugger {
     private readonly root: string,
     private readonly dataRoot: string,
     private readonly emit: (message: string) => void = () => {},
+    private readonly automaticSymbols?: AutomaticDebugSymbolResolver,
   ) {}
   get active() {
     return (
@@ -211,6 +214,7 @@ export class HardwareDebugger {
     const profile = this.profile,
       session = this.session,
       selection = this.debugConfig;
+    await this.refreshAutomaticSymbols();
     const tools = await this.tools(selection, profile);
     if (profile !== this.profile || session !== this.session || selection !== this.debugConfig)
       return this.state();
@@ -257,11 +261,57 @@ export class HardwareDebugger {
   }
   async symbolsFile(file: string) {
     if (this.active) throw new Error('error.debuggerBusy');
+    const revision = ++this.symbolRevision,
+      profile = this.profile;
     const bytes = await fs.readFile(file);
+    if (revision !== this.symbolRevision || this.profile !== profile)
+      throw new Error('error.debuggerSessionChanged');
     return this.symbolsBytes(bytes, path.basename(file));
   }
   async symbolsBytes(bytes: Buffer, name: string) {
-    if (this.active) throw new Error('error.debuggerBusy');
+    return this.storeSymbols(bytes, name);
+  }
+  private canUpdateSymbols(session?: number) {
+    return session === undefined
+      ? !this.active
+      : session === this.session &&
+          this.snapshot.connection === 'connecting' &&
+          !this.gdb &&
+          !this.server &&
+          !this.uartPort &&
+          !this.disconnecting;
+  }
+  private async refreshAutomaticSymbols(session?: number) {
+    if (!this.automaticSymbols || !this.debugConfig || !this.canUpdateSymbols(session)) return;
+    const profile = this.profile,
+      selection = this.debugConfig,
+      revision = this.symbolRevision;
+    const current = this.symbolFiles.get(profile.id);
+    if (current && current.automaticId === undefined) return;
+    const automatic = await this.automaticSymbols(selection);
+    if (
+      this.profile !== profile ||
+      this.debugConfig !== selection ||
+      revision !== this.symbolRevision ||
+      !this.canUpdateSymbols(session)
+    )
+      return;
+    if (!automatic) {
+      if (current?.automaticId !== undefined) {
+        this.symbolRevision++;
+        this.symbolFiles.delete(profile.id);
+        this.symbols = '';
+        this.snapshot.symbols = '';
+        await fs.unlink(current.file).catch(() => {});
+      }
+      return;
+    }
+    if (automatic.id !== current?.automaticId)
+      await this.storeSymbols(automatic.bytes, automatic.name, automatic.id, session);
+  }
+  private async storeSymbols(bytes: Buffer, name: string, automaticId?: string, session?: number) {
+    if (!this.canUpdateSymbols(session)) throw new Error('error.debuggerBusy');
+    const revision = ++this.symbolRevision;
     const profile = this.profile;
     if (
       bytes.length < 52 ||
@@ -275,14 +325,14 @@ export class HardwareDebugger {
     await fs.mkdir(this.dataRoot, { recursive: true });
     const file = path.join(this.dataRoot, `${profile.id}-${randomUUID()}.elf`);
     await fs.writeFile(file, bytes);
-    if (this.active || this.profile !== profile) {
+    if (!this.canUpdateSymbols(session) || this.profile !== profile || revision !== this.symbolRevision) {
       await fs.unlink(file).catch(() => {});
       throw new Error('error.debuggerSessionChanged');
     }
     const previous = this.symbolFiles.get(profile.id)?.file;
     this.symbols = file;
     this.snapshot.symbols = path.basename(name).slice(0, 255);
-    this.symbolFiles.set(profile.id, { file: this.symbols, name: this.snapshot.symbols });
+    this.symbolFiles.set(profile.id, { file: this.symbols, name: this.snapshot.symbols, automaticId });
     if (previous && previous !== file) await fs.unlink(previous).catch(() => {});
     return this.snapshot.symbols;
   }
@@ -460,6 +510,8 @@ export class HardwareDebugger {
     this.snapshot.stack = [];
     this.snapshot.breakpoints = [];
     try {
+      await this.refreshAutomaticSymbols(session);
+      assertSession();
       const tools = await this.tools(config);
       assertSession();
       if (!tools.gdb || (profile.transport !== 'uart-gdb' && !tools.server))

@@ -374,3 +374,218 @@
     padding: 12px;
   }
 }
+/* File lists, diff and commit controls each keep their own scroll boundary. */
+.git-content-changes {
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}
+.git-content-changes .git-warning {
+  margin: 0;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.git-content-changes .git-changes-grid {
+  flex: 1;
+  grid-template-columns: minmax(240px, 0.65fr) minmax(0, 1.5fr);
+  gap: 0;
+  min-height: 0;
+}
+.git-content-changes .git-change-list {
+  padding: 12px;
+  gap: 12px;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+.git-content-changes .git-change-group.has-files {
+  flex: 1 1 0;
+  min-height: 64px;
+}
+.git-content-changes .git-change-group {
+  border-radius: var(--radius-sm);
+}
+.git-content-changes .git-change-files {
+  max-height: none;
+}
+.git-change-row.selected {
+  background: var(--accent-soft);
+}
+.git-change-row.selected .git-file {
+  color: var(--accent);
+}
+.git-file > span:last-child {
+  font-size: 12px;
+}
+.git-change-row {
+  padding-block: 2px;
+  border-top-color: transparent;
+}
+.git-file {
+  padding-block: 5px;
+}
+.git-content-changes .git-diff {
+  min-height: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  max-height: none;
+}
+.git-diff-heading {
+  display: flex;
+  align-items: center;
+  padding-right: 12px;
+  border-bottom: 1px solid var(--border);
+  min-height: 38px;
+  flex-shrink: 0;
+}
+.git-diff-heading h3 {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border-bottom: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.git-diff-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.git-diff-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font:
+    12px/20px Consolas,
+    monospace;
+  user-select: text;
+  contain: strict;
+}
+.git-diff-canvas {
+  position: relative;
+}
+.git-diff-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.git-diff-line {
+  height: 20px;
+  display: flex;
+  white-space: pre;
+}
+.git-diff-number {
+  width: 40px;
+  flex: 0 0 40px;
+  padding-right: 7px;
+  text-align: right;
+  color: var(--text-faint);
+  font-size: 11px;
+  user-select: none;
+}
+.git-diff-line code {
+  font: inherit;
+  padding: 0 12px 0 8px;
+  color: var(--text);
+}
+.git-diff-line.added {
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+.git-diff-line.removed {
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+}
+.git-diff-line.hunk {
+  background: var(--accent-soft);
+}
+.git-diff-line.hunk code {
+  color: var(--accent);
+}
+.git-diff-line.meta code {
+  color: var(--text-faint);
+}
+.git-commit {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.git-commit > label {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.git-commit textarea {
+  resize: none;
+  min-height: 52px;
+  max-height: 100px;
+  font-size: 12px;
+}
+.git-commit > button {
+  height: 34px;
+  padding-inline: 15px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+}
+.git-commit > button .count-badge {
+  background: color-mix(in srgb, white 18%, transparent);
+  color: inherit;
+}
+.git-root {
+  padding-block: 8px;
+}
+.git-navigation {
+  padding-block: 5px;
+}
+.git-navigation button {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.git-output {
+  margin: 0;
+  padding: 8px 16px;
+  flex-shrink: 0;
+  max-height: 180px;
+  overflow: auto;
+}
+.git-content-changes .git-output {
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .git-content-changes .git-changes-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(100px, 0.65fr) minmax(120px, 1fr);
+  }
+  .git-content-changes .git-change-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+    padding: 8px;
+  }
+  .git-content-changes .git-change-group.has-files {
+    min-height: 0;
+  }
+  .git-change-group > header {
+    padding: 6px;
+    gap: 5px;
+  }
+  .git-change-group > header button {
+    font-size: 10px;
+  }
+  .git-commit {
+    padding: 9px;
+    gap: 8px;
+  }
+}

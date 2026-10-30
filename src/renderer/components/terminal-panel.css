@@ -9,35 +9,96 @@
   flex: 1;
   background: var(--surface-1);
 }
-.terminal-location {
+.terminal-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 3px 10px;
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--text-dim);
-  min-height: 28px;
-}
-.terminal-location > span:first-child {
-  flex-shrink: 0;
-}
-.terminal-cwd {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
+  min-height: 32px;
+  padding: 0 6px;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.terminal-tabs {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  overflow: auto hidden;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+.terminal-tab {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 84px;
+  max-width: 190px;
+  border-radius: var(--radius-sm);
+}
+.terminal-tab.active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.terminal-tab > [role='tab'] {
+  min-width: 0;
+  flex: 1;
+  height: 28px;
+  padding: 3px 7px;
+  gap: 6px;
+  justify-content: flex-start;
+}
+.terminal-tab > [role='tab'] > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.terminal-tab-close {
+  flex-shrink: 0;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border-radius: 4px;
+  color: var(--text-faint);
+}
+.terminal-running {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
 }
 .terminal-actions {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
 }
 .terminal-actions .icon-button {
   width: 26px;
-  height: 24px;
+  height: 26px;
   border-radius: 4px;
+}
+.terminal-session-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.terminal-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  font-size: 11px;
+  color: var(--text-faint);
 }
 .terminal-screen {
   flex: 1;

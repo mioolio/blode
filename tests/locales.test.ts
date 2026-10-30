@@ -40,6 +40,8 @@ test('all direct t calls, board descriptions and backend error/status keys are t
   const directories = ['src/renderer', 'src/core', 'src/automation', 'extensions', 'scripts'];
   for (const directory of directories) {
     for (const file of await files(path.join(root, directory))) {
+      // General extensions own their locale catalogs; validate them separately below.
+      if (file.startsWith(path.join(root, 'extensions', 'plugins') + path.sep)) continue;
       if (/\.(ts|tsx|mjs)$/.test(file)) {
         const content = await readFile(file, 'utf8');
         for (const match of content.matchAll(/\bt\(\s*(['"])([^'"]+)\1/g)) referenced.add(match[2]);
@@ -74,6 +76,32 @@ test('all direct t calls, board descriptions and backend error/status keys are t
     'memory.ram',
   ])
     assertTranslated(key, 'dynamic UI map');
+});
+
+test('general extension examples keep independent complete locale catalogs', async () => {
+  const directory = path.join(root, 'extensions/plugins/Personalization');
+  const manifest = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
+  const localZh = JSON.parse(await readFile(path.join(directory, manifest.locales['zh-CN']), 'utf8'));
+  const localEn = JSON.parse(await readFile(path.join(directory, manifest.locales.en), 'utf8'));
+  assert.deepEqual(Object.keys(localZh).sort(), Object.keys(localEn).sort());
+  for (const key of Object.keys(localZh)) {
+    assert.ok(localZh[key]?.trim(), key);
+    assert.ok(localEn[key]?.trim(), key);
+  }
+  const referenced = new Set<string>();
+  for (const file of await files(directory))
+    if (/\.(?:mjs|js)$/.test(file))
+      for (const match of (await readFile(file, 'utf8')).matchAll(/\bt\(\s*(['"])([^'"]+)\1/g))
+        referenced.add(match[2]);
+  for (const menu of manifest.ui.menus) if (menu.labelKey) referenced.add(menu.labelKey);
+  for (const field of manifest.settings.fields) {
+    referenced.add(field.label);
+    for (const option of field.options ?? []) referenced.add(option.label);
+  }
+  for (const key of referenced) {
+    assert.ok(localZh[key]?.trim(), key);
+    assert.ok(localEn[key]?.trim(), key);
+  }
 });
 
 test('protocol-key translation preserves filename suffixes and raw tool output', () => {

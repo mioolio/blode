@@ -12,7 +12,7 @@ import {
 import { Bot, ChevronRight, Columns2, FileCode, FolderOpen, LayoutGrid, Settings2, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { FileIcon } from './FileIcon';
-import { setCompletionProject } from '../editor/completionProvider';
+import { setCompletionProject, registerExternalSource } from '../editor/completionProvider';
 import type { PreferencesSection } from './Settings';
 import { supportsLayout, supportsPartitionEditing } from '../workspace/capabilities';
 import { resizeAppRegion, resizeFixedLayout } from '../workspace/layout';
@@ -25,6 +25,7 @@ import { EditorLoading } from '../editor/EditorLoading';
 import type { SourceLocation } from '../../shared/language';
 import { openableFilePaths, workspaceFileView } from '../../shared/file-views';
 import { EditorActions } from './EditorActions';
+import { SourceNavigation, type NavigationPane } from '../workspace/sourceNavigation';
 
 const CodeEditor = lazy(() =>
   import('../editor/CodeEditor').then((module) => ({ default: module.CodeEditor })),
@@ -59,6 +60,14 @@ function greetingKey(now = new Date()): string {
 /** EditorWorkspace renders the tabbed editor and its tool views. */
 export function EditorWorkspace({ studio }: { studio: Studio }) {
   const collaboration = useCollaboration(studio);
+  useEffect(() => {
+    const requested = (event: Event) =>
+      (
+        event as CustomEvent<{ reply: (actor: ReturnType<typeof collaboration.aiActor>) => void }>
+      ).detail?.reply(collaboration.aiActor());
+    window.addEventListener('blode:ai-actor-request', requested);
+    return () => window.removeEventListener('blode:ai-actor-request', requested);
+  }, [collaboration.self.peerId]);
   useEffect(() => {
     const conflict = () => studio.notify(studio.t('collaboration.undoConflict'), false, true);
     window.addEventListener('blode:undo-conflict', conflict);
@@ -101,7 +110,10 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   } = studio;
   const segments = activePath.replaceAll('\\', '/').split('/').filter(Boolean);
   const toolTabs = visibleFilePaths(openTools, collaboration.remoteTools, new Set());
-  const availableFiles = useMemo(() => new Set(openableFilePaths(state)), [state?.files, state?.inventory]);
+  const availableFiles = useMemo(
+    () => new Set([...openableFilePaths(state), ...Object.keys(studio.externalFiles)]),
+    [state?.files, state?.inventory, studio.externalFiles],
+  );
   const fileTabs = visibleFilePaths(openFiles, collaboration.remotePaths, new Set())
     .filter((path) => availableFiles.has(path))
     .map((path) => ({ path }));
@@ -143,7 +155,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
       if (!(await studio.save())) return;
       await window.blode.vscodeOpen({
         expectedProjectRoot: projectRoot,
-        ...(activePath ? { path: activePath, ...cursor } : {}),
+        ...(activePath && !studio.externalFiles[activePath] ? { path: activePath, ...cursor } : {}),
         confirm: true,
       });
       studio.notify(t('toast.vscodeOpened'));
@@ -157,39 +169,66 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
       setOpeningVSCode(false);
     }
   };
-  const [navigationTarget, setNavigationTarget] = useState<SourceLocation>();
-  const navigationHistory = useRef<SourceLocation[]>([]);
+  const [navigationTargets, setNavigationTargets] = useState<Partial<Record<NavigationPane, SourceLocation>>>(
+    {},
+  );
+  const navigationOwner = useRef(studio);
+  const secondaryNavigationPath = useRef(secondaryPath);
+  secondaryNavigationPath.current = secondaryPath;
+  navigationOwner.current = studio;
   useEffect(() => {
-    navigationHistory.current = [];
-    setNavigationTarget(undefined);
-  }, [state?.projectRoot]);
-  useEffect(() => {
+    setNavigationTargets({});
+    const navigation = new SourceNavigation({
+      snapshot: () => {
+        const owner = navigationOwner.current;
+        return {
+          root: owner.state?.projectRoot ?? '',
+          primary: owner.activePath,
+          secondary: secondaryNavigationPath.current,
+          active: !!owner.state?.workspaceOpen && !owner.showHome && owner.view === 'code',
+        };
+      },
+      exists: (path) =>
+        !!navigationOwner.current.state?.files.some((file) => file.path === path) ||
+        !!navigationOwner.current.externalFiles[path],
+      external: (id) => navigationOwner.current.loadExternalSource(id, true),
+      open: (pane, path) => {
+        if (pane === 'secondary') {
+          navigationOwner.current.pinFile(path);
+          secondaryNavigationPath.current = path;
+          setSecondaryPath(path);
+        } else navigationOwner.current.openFile(path);
+      },
+      locate: (pane, target) => setNavigationTargets((current) => ({ ...current, [pane]: target })),
+      failed: (error) =>
+        navigationOwner.current.notify(
+          navigationOwner.current.t(error instanceof Error ? error.message : String(error)),
+          true,
+        ),
+    });
     const navigate = (event: Event) => {
-      const detail = (event as CustomEvent<{ root: string; target: SourceLocation; origin?: SourceLocation }>)
-        .detail;
-      if (
-        detail?.root !== state?.projectRoot ||
-        !state?.files.some((file) => file.path === detail.target.path)
-      )
-        return;
-      if (detail.origin) navigationHistory.current.push(detail.origin);
-      if (navigationHistory.current.length > 100) navigationHistory.current.shift();
-      openFile(detail.target.path);
-      setNavigationTarget({ ...detail.target });
+      const detail = (
+        event as CustomEvent<{
+          root: string;
+          target: SourceLocation;
+          origin?: SourceLocation;
+          pane?: NavigationPane;
+        }>
+      ).detail;
+      if (detail?.root !== state?.projectRoot) return;
+      void navigation.visit(detail.root, detail.target, detail.origin, detail.pane);
     };
-    const back = () => {
-      const target = navigationHistory.current.pop();
-      if (!target || !state?.files.some((file) => file.path === target.path)) return;
-      openFile(target.path);
-      setNavigationTarget({ ...target });
+    const back = (event: Event) => {
+      void navigation.back((event as CustomEvent<{ pane?: NavigationPane }>).detail?.pane);
     };
     window.addEventListener('blode:navigate-source', navigate);
     window.addEventListener('blode:navigate-back', back);
     return () => {
+      navigation.reset();
       window.removeEventListener('blode:navigate-source', navigate);
       window.removeEventListener('blode:navigate-back', back);
     };
-  }, [state?.projectRoot, state?.files, openFile]);
+  }, [state?.projectRoot]);
   const splitRegion = useRef<HTMLDivElement>(null);
   const tabStrip = useRef<HTMLDivElement>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
@@ -201,7 +240,14 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   useEffect(() => {
     const openPreferences = (event: Event) => {
       const section = (event as CustomEvent<{ section?: unknown }>).detail?.section;
-      const target = section === 'toolchain' || section === 'drivers' ? section : 'general';
+      const target =
+        section === 'toolchain' ||
+        section === 'drivers' ||
+        section === 'ai' ||
+        section === 'status' ||
+        section === 'installation'
+          ? section
+          : 'general';
       setPreferencesTarget((current) => ({ section: target, revision: (current?.revision ?? 0) + 1 }));
       setPreferencesOpen(true);
     };
@@ -245,7 +291,15 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
         language: state?.language,
       },
     );
-  }, [drafts, state?.files, state?.projectRoot, state?.build?.cStandard, state?.language]);
+    for (const file of Object.values(studio.externalFiles)) registerExternalSource(file);
+  }, [
+    drafts,
+    state?.files,
+    state?.projectRoot,
+    state?.build?.cStandard,
+    state?.language,
+    studio.externalFiles,
+  ]);
   useEffect(() => {
     if (!state?.workspaceOpen || !window.blode.languageIndex) return;
     // Saved-source cache is maintained off the typing path; buffers stay local.
@@ -302,7 +356,8 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
           />
         </Suspense>
       );
-    const file = state?.files.find((item) => item.path === path);
+    const external = studio.externalFiles[path];
+    const file = state?.files.find((item) => item.path === path) ?? external;
     if (!file)
       return (
         <div className="editor-empty">
@@ -313,7 +368,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     return (
       <Suspense fallback={<EditorLoading value={drafts[path] ?? file.content} />}>
         <CodeEditor
-          readOnly={studio.frozenFilePaths.has(path)}
+          readOnly={!!external || studio.frozenFilePaths.has(path)}
           projectRoot={state?.projectRoot ?? ''}
           path={path}
           language={file.language}
@@ -321,11 +376,19 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
           onCursor={primary ? (position) => setCursor(position) : undefined}
           peers={collaboration.peers}
           onPresence={collaboration.reportPresence}
-          onUndo={collaboration.enabled ? (direction) => collaboration.undo(path, direction) : undefined}
+          onUndo={
+            !external && collaboration.enabled
+              ? (direction) => collaboration.undo(path, direction)
+              : undefined
+          }
           primary={primary}
-          navigation={primary && navigationTarget?.path === path ? navigationTarget : undefined}
+          navigation={
+            navigationTargets[primary ? 'primary' : 'secondary']?.path === path
+              ? navigationTargets[primary ? 'primary' : 'secondary']
+              : undefined
+          }
           onChange={(value) => {
-            if (studio.frozenFilePaths.has(path)) return;
+            if (external || studio.frozenFilePaths.has(path)) return;
             if (value !== file.content) pinFile(path);
             setDrafts((current) => {
               const next = { ...current };
@@ -509,7 +572,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                     renderEditor(activePath, true)
                   )}
                 </div>
-                {workspaceFileView(state, activePath) === 'text' && (
+                {(workspaceFileView(state, activePath) === 'text' || !!studio.externalFiles[activePath]) && (
                   <div className="editor-footer">
                     <span className="footer-position">
                       {t('status.line')} {cursor.line}, {t('status.column')} {cursor.column}
@@ -651,7 +714,6 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
           >
             <h2>{t('project.close')}</h2>
             <p>{t(studio.dirty || studio.configDirty ? 'project.saveClosePrompt' : 'project.closePrompt')}</p>
-            {studio.syncDrafts && <p>{t('collaboration.closeProjectNote')}</p>}
             <div className="modal-actions">
               <button onClick={() => setCloseProjectPending(false)} disabled={!!busy}>
                 {t('action.cancel')}

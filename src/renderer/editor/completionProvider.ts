@@ -1,6 +1,10 @@
 import type * as Monaco from 'monaco-editor';
 import { WorkspaceLanguageIndex, normalizeSourcePath } from '../../shared/language-index';
-import type { SourceLocation } from '../../shared/language';
+import type {
+  LanguageExternalSource,
+  LanguageNavigationRequest,
+  SourceLocation,
+} from '../../shared/language';
 import type { CStandard } from '../../../extensions/completions/rules';
 import { LanguageRuleCache } from './languageRuleCache';
 import { resolveCCompletionCatalog } from '../../shared/c-completion-catalog';
@@ -14,6 +18,8 @@ import {
   type ModuleLanguageState,
 } from '../../shared/module-languages';
 import { ModuleLanguageCache } from './moduleLanguageCache';
+import { NavigationRequests, yieldNavigation, type NavigationCancellation } from './navigationRequests';
+import { refreshExternalModel } from './externalModelUpdates';
 import type {
   CompletionEntry,
   CompletionKind,
@@ -144,6 +150,7 @@ interface CompletionScope {
 }
 
 let projectFiles: readonly CompletionFile[] = [];
+let projectPaths = new Map<string, string>();
 let projectRoot = '';
 let cStandard: CStandard = 'c17';
 let moduleLanguage: ModuleLanguageState | undefined;
@@ -179,16 +186,23 @@ export function setCompletionProject(
   moduleLanguage = nextLanguage;
   moduleSignature = signature;
   projectFiles = files;
-  if (options.projectRoot !== undefined && options.projectRoot !== projectRoot) definitionOrigins.clear();
+  projectPaths = new Map(files.map((file) => [normalizeSourcePath(file.path), file.path]));
+  const rootChanged = options.projectRoot !== undefined && options.projectRoot !== projectRoot;
+  if (rootChanged) {
+    definitionOrigins = new WeakMap();
+    externalSources.clear();
+  }
   projectRoot = options.projectRoot ?? projectRoot;
   cStandard = options.cStandard ?? 'c17';
   const symbolsChanged = workspaceIndex.update(files);
   const legacyChanged =
     files.find((file) => file.path === 'blode.completions.json')?.content !== legacyContent;
   legacyContent = files.find((file) => file.path === 'blode.completions.json')?.content;
-  if (symbolsChanged || legacyChanged) {
+  if (symbolsChanged || legacyChanged || rootChanged || languageChanged) {
     projectVersion += 1;
     cCache.clear();
+    navigationRequests.reset();
+    pendingExternalSources.clear();
   }
   languageRules.update(files, cStandard, catalog.useBuiltins, projectRoot);
   cCatalogCache.clear();
@@ -309,7 +323,7 @@ function activeProjectPath(uriPath: string): string {
   if (root) {
     if (!normalized.toLowerCase().startsWith(root.toLowerCase() + '/')) return '';
     const relative = normalized.slice(root.length + 1);
-    return projectFiles.find((file) => normalizeSourcePath(file.path) === relative)?.path ?? '';
+    return projectPaths.get(relative) ?? '';
   }
   const match = projectFiles.find(
     (file) =>
@@ -320,16 +334,163 @@ function activeProjectPath(uriPath: string): string {
 }
 
 const navigationModels = new Map<string, ReturnType<typeof setTimeout>>();
-const definitionOrigins = new Map<string, SourceLocation>();
-/** Capture before Peek changes the source editor's selection. */
-export function definitionOriginForUri(uriPath: string): SourceLocation | undefined {
-  return definitionOrigins.get(activeProjectPath(uriPath));
+let definitionOrigins = new WeakMap<
+  Monaco.editor.ICodeEditor,
+  { root: string; model: Monaco.editor.ITextModel; version: number; origin: SourceLocation }
+>();
+const externalSources = new Map<string, LanguageExternalSource>();
+export function registerExternalSource(
+  source: LanguageExternalSource,
+  options: { fresh?: boolean } = {},
+): void {
+  if (
+    source.readonly !== true ||
+    !/^[a-f0-9]{32}$/.test(source.id) ||
+    !source.path.startsWith(`@external/${source.id}/`)
+  )
+    throw new Error('error.invalidPath');
+  const previous = externalSources.get(source.id);
+  if (previous && !options.fresh) return;
+  externalSources.set(source.id, source);
+  if (
+    (!previous ||
+      previous.content !== source.content ||
+      previous.path !== source.path ||
+      previous.displayPath !== source.displayPath ||
+      previous.name !== source.name) &&
+    typeof window !== 'undefined' &&
+    typeof window.dispatchEvent === 'function'
+  )
+    window.dispatchEvent(
+      new CustomEvent('blode:external-source-updated', { detail: { root: projectRoot, source } }),
+    );
 }
-function targetLocation(monaco: MonacoApi, target: SourceLocation): Monaco.languages.Location {
+/** External navigation models are read-only capabilities, never workspace drafts. */
+export function externalSourceForUri(uriPath: string): LanguageExternalSource | undefined {
+  let decoded = uriPath.replaceAll('\\', '/');
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    /* Native percent in a filename. */
+  }
+  const id = /\/@external\/([a-f0-9]{32})\//.exec(decoded)?.[1];
+  const source = id ? externalSources.get(id) : undefined;
+  if (source && decoded.endsWith('/' + source.path)) return source;
+  return;
+}
+function navigationPath(uriPath: string): string {
+  return externalSourceForUri(uriPath)?.path ?? activeProjectPath(uriPath);
+}
+/** Capture before Peek changes the source editor's selection. */
+export function definitionOriginForEditor(editor: Monaco.editor.ICodeEditor): SourceLocation | undefined {
+  const visited = new Set<Monaco.editor.ICodeEditor>();
+  let current: Monaco.editor.ICodeEditor | null = editor;
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    const saved = definitionOrigins.get(current),
+      model = current.getModel();
+    if (
+      saved &&
+      saved.root === projectRoot &&
+      model === saved.model &&
+      !model.isDisposed() &&
+      model.getVersionId() === saved.version
+    )
+      return saved.origin;
+    const parent: (() => Monaco.editor.ICodeEditor | null) | undefined = (
+      current as Monaco.editor.ICodeEditor & { getParentEditor?: () => Monaco.editor.ICodeEditor | null }
+    ).getParentEditor;
+    if (!parent) break;
+    current = parent.call(current);
+  }
+}
+function requestEditor(
+  monaco: MonacoApi,
+  model: Monaco.editor.ITextModel,
+  position: Monaco.IPosition,
+): Monaco.editor.ICodeEditor | undefined {
+  return monaco.editor.getEditors?.().find((editor) => {
+    const cursor = editor.getPosition();
+    return (
+      editor.getModel() === model &&
+      (editor.hasTextFocus() || editor.hasWidgetFocus()) &&
+      cursor?.lineNumber === position.lineNumber &&
+      cursor.column === position.column
+    );
+  });
+}
+const pendingExternalSources = new Map<string, Promise<LanguageExternalSource>>();
+const externalIndexes = new WeakMap<
+  Monaco.editor.ITextModel,
+  { version: number | undefined; path: string; index: WorkspaceLanguageIndex }
+>();
+function parsedModel(
+  model: Monaco.editor.ITextModel,
+  path: string,
+  external?: LanguageExternalSource,
+): WorkspaceLanguageIndex {
+  if (!external) return workspaceIndex;
+  const version = model.getVersionId?.(),
+    cached = externalIndexes.get(model);
+  if (cached && cached.version === version && cached.path === path) return cached.index;
+  const index = new WorkspaceLanguageIndex();
+  index.update([{ path, content: model.getValue() }]);
+  externalIndexes.set(model, { version, path, index });
+  return index;
+}
+function navigationGuard(model: Monaco.editor.ITextModel, token: NavigationCancellation) {
+  const root = projectRoot,
+    generation = projectVersion,
+    version = model.getVersionId?.();
+  return () =>
+    !token.isCancellationRequested &&
+    !model.isDisposed?.() &&
+    root === projectRoot &&
+    generation === projectVersion &&
+    version === model.getVersionId?.();
+}
+async function targetLocation(
+  monaco: MonacoApi,
+  target: SourceLocation,
+  current: () => boolean,
+  refreshed = new Set<string>(),
+): Promise<Monaco.languages.Location | undefined> {
+  if (!current()) return;
+  const root = projectRoot;
+  if (target.externalId && !refreshed.has(target.externalId)) {
+    const key = `${root}:${target.externalId}`;
+    let pending = pendingExternalSources.get(key);
+    if (!pending) {
+      pending = window.blode.languageOpenExternal({
+        expectedProjectRoot: root,
+        externalId: target.externalId,
+      });
+      pendingExternalSources.set(key, pending);
+      void pending
+        .finally(() => {
+          if (pendingExternalSources.get(key) === pending) pendingExternalSources.delete(key);
+        })
+        .catch(() => {});
+    }
+    let source: LanguageExternalSource;
+    try {
+      source = await pending;
+    } catch (error) {
+      if (!current()) return;
+      throw error;
+    }
+    if (!current() || root !== projectRoot) return;
+    registerExternalSource(source, { fresh: true });
+    refreshed.add(target.externalId);
+  }
   const uri = monaco.Uri.file(`${projectRoot}/${target.path}`);
   const key = uri.toString();
-  const text = workspaceIndex.source(target.path);
-  if (text !== undefined && !monaco.editor.getModel(uri)) {
+  const text = target.externalId
+    ? externalSources.get(target.externalId)?.content
+    : workspaceIndex.source(target.path);
+  const existing = monaco.editor.getModel(uri);
+  if (target.externalId && text !== undefined && existing) refreshExternalModel(existing, text);
+  if (text !== undefined && !existing) {
     monaco.editor.createModel(text, 'cpp', uri);
     const release = () => {
       if (monaco.editor.getEditors().some((editor) => editor.getModel()?.uri.toString() === key)) {
@@ -343,44 +504,117 @@ function targetLocation(monaco: MonacoApi, target: SourceLocation): Monaco.langu
   }
   return { uri, range: new monaco.Range(target.line, target.column, target.endLine, target.endColumn) };
 }
+async function targetLocations(
+  monaco: MonacoApi,
+  targets: SourceLocation[],
+  current: () => boolean,
+): Promise<Monaco.languages.Location[]> {
+  const result: Monaco.languages.Location[] = [];
+  const refreshed = new Set<string>();
+  let sliceStarted = performance.now();
+  for (let index = 0; index < targets.length; index++) {
+    if (!current()) return [];
+    const location = await targetLocation(monaco, targets[index], current, refreshed);
+    if (!location) return [];
+    result.push(location);
+    if (performance.now() - sliceStarted >= 6) {
+      await yieldNavigation();
+      sliceStarted = performance.now();
+    }
+  }
+  return current() ? result : [];
+}
 
 function languageNavigation(monaco: MonacoApi, declaration = false): Monaco.languages.DefinitionProvider {
   return {
-    provideDefinition(model, position) {
-      const path = activeProjectPath(model.uri.path);
-      if (path)
-        definitionOrigins.set(path, {
-          path,
-          line: position.lineNumber,
-          column: position.column,
-          endLine: position.lineNumber,
-          endColumn: position.column,
-        });
-      const include = workspaceIndex
-        .snapshot()
-        .includes.find(
+    async provideDefinition(model, position, token) {
+      const current = navigationGuard(model, token);
+      const sourceEditor = requestEditor(monaco, model, position);
+      if (!current()) return [];
+      await yieldNavigation();
+      if (!current()) return [];
+      const root = projectRoot,
+        path = navigationPath(model.uri.path),
+        external = externalSourceForUri(model.uri.path);
+      if (!path) return [];
+      const parsed = parsedModel(model, path, external);
+      const specifier = parsed
+        .includesForPath(path)
+        .find(
           (item) =>
             item.path === path &&
             item.line === position.lineNumber &&
             position.column >= item.column &&
             position.column <= item.endColumn,
-        );
-      if (include)
-        return workspaceIndex
-          .resolveInclude(path, include.specifier)
-          .map((file) =>
-            targetLocation(monaco, { path: file, line: 1, column: 1, endLine: 1, endColumn: 1 }),
-          );
+        )?.specifier;
       const word = model.getWordAtPosition(position);
-      if (!word) return [];
-      return workspaceIndex
-        .definitions(word.word, path, declaration)
-        .map((target) => targetLocation(monaco, target));
+      if (!specifier && !word) return [];
+      const local: SourceLocation[] =
+        specifier && !external
+          ? workspaceIndex
+              .resolveInclude(path, specifier)
+              .map((file) => ({ path: file, line: 1, column: 1, endLine: 1, endColumn: 1 }))
+          : specifier
+            ? []
+            : workspaceIndex.definitions(word!.word, path, declaration);
+      const targets = local.length
+        ? local
+        : await hostNavigation(
+            {
+              expectedProjectRoot: root,
+              path,
+              ...(external ? { externalId: external.id } : {}),
+              kind: specifier ? 'include' : declaration ? 'declaration' : 'definition',
+              ...(specifier ? { specifier } : { symbol: word!.word }),
+            },
+            token,
+            current,
+          );
+      if (!current()) return [];
+      const locations = await targetLocations(monaco, targets, current);
+      if (locations.length && current() && sourceEditor && sourceEditor.getModel() === model)
+        definitionOrigins.set(sourceEditor, {
+          root,
+          model,
+          version: model.getVersionId(),
+          origin: {
+            path,
+            ...(external ? { externalId: external.id } : {}),
+            line: position.lineNumber,
+            column: position.column,
+            endLine: position.lineNumber,
+            endColumn: position.column,
+          },
+        });
+      return locations;
     },
   };
 }
 
+const navigationRequests = new NavigationRequests({
+  invoke: (request) => window.blode.languageNavigate(request),
+  cancel: (request) => window.blode.languageCancel?.(request) ?? Promise.resolve(),
+});
+async function hostNavigation(
+  request: LanguageNavigationRequest,
+  token: NavigationCancellation,
+  current: () => boolean,
+): Promise<SourceLocation[]> {
+  if (
+    !request.expectedProjectRoot ||
+    !request.path ||
+    typeof window === 'undefined' ||
+    !window.blode?.languageNavigate
+  )
+    return [];
+  if (request.kind !== 'include' && !/^[A-Za-z_]\w{0,255}$/.test(request.symbol ?? '')) return [];
+  if (request.kind === 'include' && (!request.specifier || request.specifier.length > 1024)) return [];
+  return navigationRequests.query(request, token, current);
+}
+
 export function sourcePathForUri(uriPath: string): string | undefined {
+  const external = externalSourceForUri(uriPath);
+  if (external) return external.path;
   const path = activeProjectPath(uriPath);
   return projectFiles.some((file) => normalizeSourcePath(file.path) === path) ? path : undefined;
 }
@@ -526,31 +760,133 @@ export function registerCompletions(monaco: MonacoApi): void {
     );
     disposables.push(
       monaco.languages.registerLinkProvider(language, {
-        provideLinks(model) {
-          const path = activeProjectPath(model.uri.path);
+        async provideLinks(model, token) {
+          if (token.isCancellationRequested || model.isDisposed?.()) return { links: [] };
+          const root = projectRoot,
+            path = navigationPath(model.uri.path),
+            external = externalSourceForUri(model.uri.path);
+          // Only explicit header links trigger host I/O. Resolve lazily when the user opens one.
+          if (!path) return { links: [] };
+          const includes = parsedModel(model, path, external).includesForPath(path);
           return {
-            links: workspaceIndex
-              .snapshot()
-              .includes.filter((item) => item.path === path)
-              .flatMap((item) => {
-                const targets = workspaceIndex.resolveInclude(path, item.specifier);
-                // Ambiguous headers use F12/Peek, which can show all matching paths.
-                if (targets.length !== 1) return [];
-                return [
-                  {
-                    range: new monaco.Range(item.line, item.column, item.endLine, item.endColumn),
-                    url: targetLocation(monaco, {
-                      path: targets[0],
-                      line: 1,
-                      column: 1,
-                      endLine: 1,
-                      endColumn: 1,
-                    }).uri,
-                    tooltip: targets[0],
-                  },
-                ];
-              }),
+            links: includes.map((item) => ({
+              range: new monaco.Range(item.line, item.column, item.endLine, item.endColumn),
+              tooltip: item.specifier,
+              _blodeInclude: {
+                root,
+                path,
+                specifier: item.specifier,
+                externalId: external?.id,
+                generation: projectVersion,
+                model,
+                version: model.getVersionId?.(),
+              },
+            })),
           };
+        },
+        async resolveLink(link, token) {
+          const request = (
+            link as typeof link & {
+              _blodeInclude?: {
+                root: string;
+                path: string;
+                specifier: string;
+                externalId?: string;
+                generation: number;
+                model: Monaco.editor.ITextModel;
+                version?: number;
+              };
+            }
+          )._blodeInclude;
+          if (!request) return link;
+          const current = () =>
+            !token.isCancellationRequested &&
+            request.root === projectRoot &&
+            request.generation === projectVersion &&
+            !request.model.isDisposed?.() &&
+            request.version === request.model.getVersionId?.();
+          if (!current()) return link;
+          await yieldNavigation();
+          if (!current()) return link;
+          const local = request.externalId
+            ? []
+            : workspaceIndex
+                .resolveInclude(request.path, request.specifier)
+                .map((path) => ({ path, line: 1, column: 1, endLine: 1, endColumn: 1 }));
+          const targets = local.length
+            ? local
+            : await hostNavigation(
+                {
+                  expectedProjectRoot: request.root,
+                  path: request.path,
+                  externalId: request.externalId,
+                  kind: 'include',
+                  specifier: request.specifier,
+                },
+                token,
+                current,
+              );
+          if (!current() || targets.length !== 1) return link;
+          const target = await targetLocation(monaco, targets[0], current);
+          return target && current() ? { ...link, url: target.uri } : link;
+        },
+      }),
+    );
+    disposables.push(
+      monaco.languages.registerReferenceProvider(language, {
+        async provideReferences(model, position, _context, token) {
+          const current = navigationGuard(model, token);
+          const sourceEditor = requestEditor(monaco, model, position);
+          if (!current()) return [];
+          await yieldNavigation();
+          if (!current()) return [];
+          const root = projectRoot,
+            path = navigationPath(model.uri.path),
+            word = model.getWordAtPosition(position),
+            external = externalSourceForUri(model.uri.path);
+          if (!word || !path) return [];
+          const remotePromise = hostNavigation(
+            {
+              expectedProjectRoot: root,
+              path,
+              externalId: external?.id,
+              kind: 'reference',
+              symbol: word.word,
+            },
+            token,
+            current,
+          );
+          const [local, remote] = await Promise.all([
+            workspaceIndex.referencesAsync(word.word, {
+              cancelled: () => !current(),
+              yieldControl: yieldNavigation,
+            }),
+            remotePromise,
+          ]);
+          if (!current()) return [];
+          // Current draft references replace the saved version for every loaded workspace file.
+          const targets = [
+            ...local,
+            ...remote.filter(
+              (target) => target.externalId || !projectPaths.has(normalizeSourcePath(target.path)),
+            ),
+          ];
+          const locations = await targetLocations(monaco, targets, current);
+          if (locations.length && current() && sourceEditor && sourceEditor.getModel() === model)
+            definitionOrigins.set(sourceEditor, {
+              root,
+              model,
+              version: model.getVersionId(),
+              origin: {
+                path,
+                ...(external ? { externalId: external.id } : {}),
+                line: position.lineNumber,
+                column: position.column,
+                endLine: position.lineNumber,
+                endColumn: position.column,
+              },
+            });
+          return locations;
         },
       }),
     );

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Code2, LoaderCircle, MoreHorizontal } from 'lucide-react';
+import { Code2, LoaderCircle, MessageSquareText, MoreHorizontal } from 'lucide-react';
+import { openAiAssistant } from '../workspace/aiContext';
 import { useI18n } from '../i18n';
 import './editor-actions.css';
 
@@ -91,6 +92,21 @@ export function EditorActions({
             role="menu"
             aria-label={t('editor.more')}
             style={position}
+            onKeyDown={(event) => {
+              if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const items = [
+                ...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+              ];
+              const index = items.indexOf(document.activeElement as HTMLButtonElement);
+              const next =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? items.length - 1
+                    : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+              items[next]?.focus();
+            }}
           >
             <button
               role="menuitem"
@@ -101,6 +117,16 @@ export function EditorActions({
             >
               <Code2 size={15} aria-hidden="true" />
               <span>{t('editor.openVSCode')}</span>
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => {
+                close();
+                openAiAssistant();
+              }}
+            >
+              <MessageSquareText size={15} aria-hidden="true" />
+              <span>{t('ai.chat.title')}</span>
             </button>
           </div>,
           document.body,

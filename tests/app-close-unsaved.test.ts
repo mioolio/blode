@@ -37,6 +37,15 @@ test('only changed contents or project configuration require a close decision', 
   assert.equal(hasUnsavedChanges(owner), false);
 });
 
+test('configuration key order and acknowledged drafts are not changes', () => {
+  const owner = snapshot();
+  owner.config = Object.fromEntries(Object.entries(owner.config!).reverse()) as typeof owner.config;
+  owner.drafts['main.c'] = owner.state!.files[0].content;
+  assert.equal(hasUnsavedChanges(owner), false);
+  const canonical = { ...owner.state!, config: structuredClone(owner.config!) };
+  assert.equal(refreshedConfig(owner.config, owner.state, canonical), canonical.config);
+});
+
 test('unsuccessful save never produces permission to close', async () => {
   const owner = snapshot();
   owner.drafts['main.c'] = 'changed';

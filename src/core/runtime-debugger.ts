@@ -4,6 +4,7 @@ import type { RuntimePlugins } from './runtime-plugins';
 import type { DebuggerAction, DebuggerState, DebuggerStorage, ProjectConfig } from '../shared/contracts';
 import type { RuntimePluginInfo } from '../shared/plugins';
 import { getDebuggerProfile } from '../shared/debugger-profiles';
+import type { AutomaticDebugSymbolResolver } from './build-debug-symbols';
 import {
   breakpointLocationsSchema,
   debuggerPatchSchema,
@@ -125,8 +126,9 @@ export class RuntimeDebugger extends HardwareDebugger {
     emit: ((message: string) => void) | undefined,
     private readonly plugins: () => RuntimePlugins | undefined,
     private readonly config: () => ProjectConfig | undefined,
+    automaticSymbols?: AutomaticDebugSymbolResolver,
   ) {
-    super(root, dataRoot, emit);
+    super(root, dataRoot, emit, automaticSymbols);
   }
   override get active() {
     return this.providerActive || super.active;

@@ -58,7 +58,17 @@ async function renameWithRetry(source: string, destination: string, validate: ()
     }
   }
 }
-const skipped = new Set(['.git', '.svn', '.hg', '.blode', '.tools', 'node_modules', '.DS_Store', '__MACOSX']);
+const skipped = new Set([
+  '.git',
+  '.svn',
+  '.hg',
+  '.blode',
+  '.tools',
+  'node_modules',
+  '.DS_Store',
+  '__MACOSX',
+  'model-credentials',
+]);
 const excludedSources = /(?:^|\/)(?:examples?|tests?|extras|docs?|build|dist)(?:\/|$)/i;
 const sourceExtension = /\.(?:c|cc|cpp|cxx|s)$/i;
 const headerExtension = /\.(?:h|hh|hpp|hxx)$/i;
@@ -77,6 +87,7 @@ const safeRelative = (value: string) =>
         /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part),
     );
 const relativeSchema = z.string().refine(safeRelative);
+export const safeComponentRelativePath = safeRelative;
 const componentPath = z
   .string()
   .regex(/^(?:libraries|components)\/[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/)
@@ -181,6 +192,7 @@ interface Release extends DependencyRelease {
 interface Payload {
   library: ManagedComponentLibrary;
   files: Map<string, Buffer>;
+  directories?: string[];
 }
 function properties(bytes: Buffer | undefined): Record<string, string> {
   if (!bytes) return {};
@@ -262,7 +274,10 @@ function payload(files: Map<string, Buffer>, fallback: string, source: Component
     },
   };
 }
-async function directoryFiles(directory: string, includeIgnored = false): Promise<Map<string, Buffer>> {
+export async function readComponentDirectory(
+  directory: string,
+  includeIgnored = false,
+): Promise<Map<string, Buffer>> {
   const root = await fs.realpath(directory);
   const original = await fs.lstat(directory);
   if (!original.isDirectory() || original.isSymbolicLink()) throw new Error('error.componentPath');
@@ -272,7 +287,12 @@ async function directoryFiles(directory: string, includeIgnored = false): Promis
   async function visit(current: string, depth: number) {
     if (depth > 32) throw new Error('error.componentTooLarge');
     for (const entry of await fs.readdir(current, { withFileTypes: true })) {
-      if (!includeIgnored && (skipped.has(entry.name) || /^\.env(?:\.|$)/i.test(entry.name))) continue;
+      if (
+        !includeIgnored &&
+        (skipped.has(entry.name) ||
+          /^(?:\.env(?:\.|$)|model-service\.json$|.*\.credential$)/i.test(entry.name))
+      )
+        continue;
       const full = path.join(current, entry.name);
       const relative = slash(path.relative(root, full));
       if (
@@ -765,6 +785,10 @@ export class ComponentLibraries {
     try {
       for (const item of payloads) {
         const destination = path.join(stage, item.library.path);
+        for (const relative of item.directories ?? []) {
+          if (!safeRelative(relative)) throw new Error('error.componentPath');
+          await fs.mkdir(path.join(destination, relative), { recursive: true });
+        }
         for (const [relative, bytes] of item.files) {
           this.abort(hooks);
           if (!safeRelative(relative)) throw new Error('error.componentPath');
@@ -860,7 +884,7 @@ export class ComponentLibraries {
     return this.mutate(() =>
       this.transaction(expectedProjectRoot, hooks, async (root, manifest, provided) => {
         if (within(await fs.realpath(directory), root)) throw new Error('error.componentPath');
-        const item = payload(await directoryFiles(directory), path.basename(directory), {
+        const item = payload(await readComponentDirectory(directory), path.basename(directory), {
           type: 'directory',
         });
         if (provided.some((value) => keyOf(value.name) === keyOf(item.library.name)))
@@ -885,13 +909,21 @@ export class ComponentLibraries {
     return this.mutate(() =>
       this.transaction(expectedProjectRoot, hooks, async (_root, manifest, provided) => {
         const stat = await fs.lstat(file);
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE)
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_TOTAL)
           throw new Error('error.componentArchive');
-        const item = payload(
-          unwrap(readComponentZip(await fs.readFile(file))),
-          path.basename(file, path.extname(file)),
-          { type: 'archive' },
-        );
+        const files = unwrap(readComponentZip(await fs.readFile(file), { maxArchive: MAX_TOTAL }));
+        const { readComponentPackage } = await import('./component-package');
+        const bundle = readComponentPackage(files);
+        if (bundle) {
+          for (const item of bundle)
+            if (provided.some((value) => keyOf(value.name) === keyOf(item.library.name)))
+              throw new Error('error.componentProvided');
+          const required = bundle.flatMap((item) =>
+            parseComponentDependencies(item.library.dependencies.join(',')),
+          );
+          return this.dependencies(required, manifest, provided, hooks, bundle);
+        }
+        const item = payload(unwrap(files), path.basename(file, path.extname(file)), { type: 'archive' });
         if (provided.some((value) => keyOf(value.name) === keyOf(item.library.name)))
           throw new Error('error.componentProvided');
         return this.dependencies(
@@ -954,7 +986,7 @@ export class ComponentLibraries {
   }
   private async unchanged(directory: string, component: ManagedComponentLibrary): Promise<boolean> {
     try {
-      const files = await directoryFiles(directory, true);
+      const files = await readComponentDirectory(directory, true);
       return (
         files.size === Object.keys(component.integrity).length &&
         [...files].every(([file, bytes]) => component.integrity[file] === hash(bytes))

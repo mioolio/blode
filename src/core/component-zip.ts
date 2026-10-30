@@ -61,8 +61,8 @@ interface Entry {
 }
 
 /** Bounded ZIP reader for component imports. No paths are created or files executed. */
-export function readComponentZip(bytes: Buffer): Map<string, Buffer> {
-  if (bytes.length > MAX_ARCHIVE) tooLarge();
+export function readComponentZip(bytes: Buffer, limits: { maxArchive?: number } = {}): Map<string, Buffer> {
+  if (bytes.length > (limits.maxArchive ?? MAX_ARCHIVE)) tooLarge();
   if (bytes.length < 22) invalid();
   const range = (start: number, size: number, end = bytes.length) => {
     if (

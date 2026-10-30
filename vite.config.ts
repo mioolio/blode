@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { monacoHighlightCancellation } from './scripts/monaco-highlights.ts';
 export default defineConfig({
-  plugins: [react()],
+  plugins: [monacoHighlightCancellation(), react()],
   base: './',
   // Discover the optional editor before the first file is opened, so its deep
   // ESM dependencies do not trigger a second optimizer pass and a page reload.
   optimizeDeps: {
+    rolldownOptions: { plugins: [monacoHighlightCancellation()] },
     // The application has one HTML entry. Do not crawl bundled toolchain SDKs
     // and their documentation to find unrelated HTML/JavaScript dependencies.
     entries: ['index.html'],
@@ -28,7 +30,7 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
-    strictPort: true,
+    strictPort: false,
     watch: { ignored: ['**/.tools/**', '**/tools/**', '**/dist/**', '**/release/**', '**/.git/**'] },
   },
   build: { outDir: 'dist/renderer', emptyOutDir: true },

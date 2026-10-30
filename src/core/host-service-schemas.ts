@@ -1,10 +1,19 @@
 import * as z from 'zod';
+import { generalExtensionParameterSchemas } from './general-extensions/schema';
+import { languageParameterSchemas } from './language-schemas';
+import { terminalParameterSchemas } from './terminal-schemas';
+import { modelServiceParameterSchemas } from './model-service/schemas';
 import { gitParameterSchemas } from './git-schemas';
+import { deliveryParameterSchemas } from './delivery-routes';
 import { toolVersionSchemas } from './tool-version-schemas';
-import { configSchema } from './config';
+import { configSchema } from './config-schema';
 import { RUNTIME_VIEW_KIND_PATTERN } from '../shared/plugins';
 const empty = z.object({}).strict();
 export const hostParameterSchemas = {
+  ...generalExtensionParameterSchemas,
+  ...languageParameterSchemas,
+  ...modelServiceParameterSchemas,
+  ...deliveryParameterSchemas,
   'components.state': empty,
   'components.search': z.object({ query: z.string().trim().min(1).max(200) }).strict(),
   'components.install': z
@@ -90,38 +99,11 @@ export const hostParameterSchemas = {
     .refine((value) => value.path || (value.line === undefined && value.column === undefined)),
   'project.package.preview': empty,
   'project.package.export': z
-    .object({ confirmExternal: z.literal(true).optional(), allowIncomplete: z.literal(true).optional() })
-    .strict(),
-  'terminal.state': z
-    .object({ sessionId: z.string().max(128).optional(), after: z.number().int().nonnegative().optional() })
-    .strict(),
-  'terminal.open': z
     .object({
-      cols: z.number().int().min(20).max(500).optional(),
-      rows: z.number().int().min(5).max(300).optional(),
-      confirm: z.literal(true),
+      confirmExternal: z.literal(true).optional(),
+      allowIncomplete: z.literal(true).optional(),
+      expectedProjectRoot: z.string().min(1).max(4096).optional(),
     })
     .strict(),
-  'terminal.run': z
-    .object({ command: z.string().trim().min(1).max(16384), confirm: z.literal(true) })
-    .strict(),
-  'terminal.stop': empty,
-  'terminal.write': z
-    .object({
-      data: z
-        .string()
-        .max(32768)
-        .refine((value) => !value.includes('\0')),
-      sessionId: z.string().max(128).optional(),
-      confirm: z.literal(true),
-    })
-    .strict(),
-  'terminal.resize': z
-    .object({
-      cols: z.number().int().min(20).max(500),
-      rows: z.number().int().min(5).max(300),
-      sessionId: z.string().max(128).optional(),
-    })
-    .strict(),
-  'terminal.close': z.object({ confirm: z.literal(true) }).strict(),
+  ...terminalParameterSchemas,
 } as const;

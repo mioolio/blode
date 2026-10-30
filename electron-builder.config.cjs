@@ -48,16 +48,39 @@ module.exports = {
     'package.json',
     'LICENSE',
     '!**/*.map',
+    {
+      // beforeBuild=false also disables electron-builder's dependency collector.
+      // The verified branch stages this exact runtime closure; fallback leaves it empty.
+      from: process.env.BLODE_NATIVE_STAGE_ROOT
+        ? require('node:path').join(process.env.BLODE_NATIVE_STAGE_ROOT, '${os}-${arch}')
+        : '.tools/native-runtime-stage/${os}-${arch}',
+      to: 'node_modules',
+      filter: ['**/*', '!**/*.map'],
+    },
   ],
   extraResources: [
+    {
+      from: 'extensions/plugins',
+      to: 'extensions/plugins',
+      filter: [
+        '**/*',
+        '!**/.vscode/**',
+        '!**/.git/**',
+        '!**/.tools/**',
+        '!**/.env*',
+        '!**/.uel',
+        '!**/node_modules/**',
+      ],
+    },
     { from: 'docs', to: 'docs' },
     { from: 'extensions/boards', to: 'boards', filter: ['*/manifest.json'] },
     { from: 'tools/STSW-LINK', to: 'drivers/STSW-LINK' },
     ...bundledTools,
   ],
-  asarUnpack: ['**/*.node', 'node_modules/node-pty/**/*'],
+  asarUnpack: ['**/*.node', '**/node-pty/**/*'],
   artifactName: `Blode.Studio-${releaseVersion}-desktop${full ? '-full' : ''}-win-x64.\${ext}`,
   publish: null,
+  beforeBuild: require('./scripts/native-runtime.cjs').beforeBuild,
   win: {
     // A 3+ GiB portable executable would unpack itself on every launch, so the
     // full build is published as a plain, directly runnable folder archive.

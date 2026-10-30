@@ -13,10 +13,15 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import TypeScriptWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 import { useI18n } from '../i18n';
-import { registerCompletions, sourcePathForUri, definitionOriginForUri } from './completionProvider';
+import {
+  registerCompletions,
+  sourcePathForUri,
+  definitionOriginForEditor,
+  externalSourceForUri,
+} from './completionProvider';
 import type { SourceLocation } from '../../shared/language';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { attachInlineCompletions } from './inlineCompletions';
+import { attachInlineCompletions, type PredictionFeedback } from './inlineCompletions';
 import { mapTextOffset, textChanges } from './collaborationText';
 import { LocalUndoHistory } from '../../shared/selective-undo';
 import { UndoCommand, RedoCommand } from 'monaco-editor/esm/vs/editor/browser/editorExtensions.js';
@@ -24,6 +29,10 @@ import type { CollaborationPeer } from '../../shared/collaboration';
 import type { EditorPresence } from '../workspace/useCollaboration';
 import { PeerRangeOverlay } from './PeerRangeOverlay';
 import { EditorLoading } from './EditorLoading';
+import { attachAiEditorActions } from './aiActions';
+import { localizeMonacoContextMenu } from './localizeMonaco';
+import { ownsEditorNavigation } from './navigationOwner';
+import { externalModelIsRefreshing, refreshExternalModel } from './externalModelUpdates';
 
 // Bundle the editor locally: no CDN dependency, even on a fully offline workstation.
 self.MonacoEnvironment = {
@@ -137,6 +146,7 @@ const ownUndoModels = new WeakSet<monaco.editor.ITextModel>();
 const modelTexts = new WeakMap<monaco.editor.ITextModel, string>();
 const undoHistories = new WeakMap<monaco.editor.ITextModel, LocalUndoHistory>();
 let lastFocusedEditor: monaco.editor.IStandaloneCodeEditor | null = null;
+const mountedEditors = new WeakSet<monaco.editor.ICodeEditor>();
 const ownedModels = new Set<string>();
 let retainedModels = new Set<string>();
 const releaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -202,12 +212,70 @@ export function CodeEditor({
   navigation?: SourceLocation;
   readOnly?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const cursorHandler = useRef(onCursor);
   const subscriptions = useRef<monaco.IDisposable[]>([]);
-  const latest = useRef({ projectRoot, path, value, peers, onPresence, primary, onUndo, navigation });
-  latest.current = { projectRoot, path, value, peers, onPresence, primary, onUndo, navigation };
+  const aiActions = useRef<monaco.IDisposable | undefined>(undefined);
+  const inlineCompletions = useRef<monaco.IDisposable | undefined>(undefined);
+  const [predictionFeedback, setPredictionFeedback] = useState<PredictionFeedback>({ kind: 'idle' });
+  const installInlineCompletions = (instance: monaco.editor.IStandaloneCodeEditor) => {
+    inlineCompletions.current?.dispose();
+    inlineCompletions.current = attachInlineCompletions(monaco, instance, {
+      acceptLabel: t('ai.completions.acceptPrediction'),
+      completeLabel: t('ai.completions.complete'),
+      projectRoot: () => latest.current.projectRoot,
+      path: () => latest.current.path,
+      onStatus: setPredictionFeedback,
+    });
+  };
+  const installAiActions = (instance: monaco.editor.IStandaloneCodeEditor) => {
+    aiActions.current?.dispose();
+    aiActions.current = attachAiEditorActions(monaco, instance, {
+      t,
+      active: () => (lastFocusedEditor ? lastFocusedEditor === instance : latest.current.primary),
+      context: () => {
+        const model = instance.getModel();
+        if (!model || model.isDisposed()) return undefined;
+        const selection = instance.getSelection();
+        const selected =
+          selection && !selection.isEmpty()
+            ? {
+                start: model.getOffsetAt(selection.getStartPosition()),
+                end: model.getOffsetAt(selection.getEndPosition()),
+              }
+            : undefined;
+        return {
+          projectRoot: latest.current.projectRoot,
+          readonly: instance.getOption(monaco.editor.EditorOption.readOnly),
+          source: {
+            path: sourcePathForUri(model.uri.path) ?? latest.current.path,
+            content: model.getValue(),
+            ...(selected ? { selection: selected } : {}),
+          },
+        };
+      },
+    });
+  };
+  useEffect(() => {
+    void localizeMonacoContextMenu(locale);
+    if (editor.current) {
+      installAiActions(editor.current);
+      installInlineCompletions(editor.current);
+    }
+  }, [locale]);
+  const latest = useRef({
+    projectRoot,
+    path,
+    value,
+    peers,
+    onPresence,
+    primary,
+    onUndo,
+    navigation,
+    readOnly,
+  });
+  latest.current = { projectRoot, path, value, peers, onPresence, primary, onUndo, navigation, readOnly };
   const applyingRemote = useRef(false);
   const decorations = useRef<monaco.editor.IEditorDecorationsCollection | undefined>(undefined);
   const peerRanges = useRef<PeerRangeOverlay | undefined>(undefined);
@@ -256,6 +324,11 @@ export function CodeEditor({
         monaco.Uri.file(`${latest.current.projectRoot}/${latest.current.path}`).toString()
     )
       return;
+    const external = externalSourceForUri(model.uri.path);
+    if (external) {
+      refreshExternalModel(model, external.content);
+      return;
+    }
     const changes = textChanges(model.getValue(), latest.current.value);
     if (!changes.length) return;
     const top = instance.getVisibleRanges()[0]?.startLineNumber ?? 1;
@@ -338,6 +411,8 @@ export function CodeEditor({
   useEffect(
     () => () => {
       subscriptions.current.forEach((item) => item.dispose());
+      aiActions.current?.dispose();
+      inlineCompletions.current?.dispose();
       if (navigationFrame.current !== undefined) cancelAnimationFrame(navigationFrame.current);
       if (lastFocusedEditor === editor.current) lastFocusedEditor = null;
       decorations.current?.clear();
@@ -377,264 +452,331 @@ export function CodeEditor({
     return () => window.removeEventListener('blode:editor-command', handle);
   }, []);
   return (
-    <Editor
-      path={modelPath}
-      language={['arduino', 'c'].includes(language) ? 'cpp' : language}
-      defaultValue={value}
-      keepCurrentModel
-      theme={dark ? 'blode' : 'blode-light'}
-      onMount={(instance) => {
-        editor.current = instance;
-        decorations.current = instance.createDecorationsCollection();
-        peerRanges.current = new PeerRangeOverlay(instance);
-        const report = (position: monaco.Position) =>
-          cursorHandler.current?.({ line: position.lineNumber, column: position.column });
-        subscriptions.current.push(
-          monaco.editor.registerEditorOpener({
-            openCodeEditor(source, resource, selection) {
-              const path = sourcePathForUri(resource.path),
-                from = source.getModel();
-              if (!path || !from) return false;
-              const originPath = sourcePathForUri(from.uri.path);
-              if (!originPath) return false;
-              const position = source.getPosition() ?? new monaco.Position(1, 1);
-              const origin = definitionOriginForUri(from.uri.path);
-              const range = selection && 'startLineNumber' in selection ? selection : undefined;
-              const line =
-                range?.startLineNumber ?? (selection && 'lineNumber' in selection ? selection.lineNumber : 1);
-              const column =
-                range?.startColumn ?? (selection && 'column' in selection ? selection.column : 1);
-              window.dispatchEvent(
-                new CustomEvent('blode:navigate-source', {
-                  detail: {
-                    root: latest.current.projectRoot,
-                    target: {
-                      path,
-                      line,
-                      column,
-                      endLine: range?.endLineNumber ?? line,
-                      endColumn: range?.endColumn ?? column,
-                    },
-                    origin: origin ?? {
-                      path: originPath,
-                      line: position.lineNumber,
-                      column: position.column,
-                      endLine: position.lineNumber,
-                      endColumn: position.column,
-                    },
-                  },
-                }),
-              );
-              return true;
-            },
-          }),
-          monaco.editor.registerLinkOpener({
-            open(resource) {
-              if (lastFocusedEditor && lastFocusedEditor !== instance) return false;
-              const path = sourcePathForUri(resource.path);
-              if (!path) return false;
-              const position = instance.getPosition() ?? new monaco.Position(1, 1);
-              window.dispatchEvent(
-                new CustomEvent('blode:navigate-source', {
-                  detail: {
-                    root: latest.current.projectRoot,
-                    target: { path, line: 1, column: 1, endLine: 1, endColumn: 1 },
-                    origin: {
-                      path: latest.current.path,
-                      line: position.lineNumber,
-                      column: position.column,
-                      endLine: position.lineNumber,
-                      endColumn: position.column,
-                    },
-                  },
-                }),
-              );
-              return true;
-            },
-          }),
-          instance.addAction({
-            id: 'blode.navigationBack',
-            label: t('editor.navigationBack'),
-            keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow],
-            contextMenuGroupId: 'navigation',
-            contextMenuOrder: 1.9,
-            run: () => {
-              window.dispatchEvent(new CustomEvent('blode:navigate-back'));
-            },
-          }),
-          instance.onDidChangeCursorPosition((event) => report(event.position)),
-          attachInlineCompletions(monaco, instance, {
-            acceptLabel: t('ai.completions.acceptPrediction'),
-            projectRoot: () => latest.current.projectRoot,
-            path: () => latest.current.path,
-          }),
-        );
-        const initialModel = instance.getModel();
-        if (initialModel && !modelTexts.has(initialModel))
-          modelTexts.set(initialModel, initialModel.getValue());
-        const runUndo = async (direction: 'undo' | 'redo') => {
-          if (latest.current.onUndo) {
-            await latest.current.onUndo(direction);
-            return;
-          }
-          const model = instance.getModel();
-          if (!model) return;
-          const history = undoHistories.get(model);
-          if (!history) return;
-          try {
-            const changes = history.take(model.getValue(), direction);
-            if (!changes?.length) return;
-            const edits = changes.map((change) => {
-              const start = model.getPositionAt(change.start),
-                end = model.getPositionAt(change.end);
-              return {
-                range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
-                text: change.text,
-                forceMoveMarkers: true,
-              };
-            });
-            ownUndoModels.add(model);
-            try {
-              instance.executeEdits('blode:own-undo', edits);
-            } finally {
-              ownUndoModels.delete(model);
-            }
-          } catch {
-            window.dispatchEvent(new CustomEvent('blode:undo-conflict'));
-          }
-        };
-        // Monaco's global command registry drives keyboard, Edit menu and command palette.
-        // Intercept commands, not model.undo(), so internal suggestion rollback keeps working.
-        for (const [command, direction] of [
-          [UndoCommand, 'undo'],
-          [RedoCommand, 'redo'],
-        ] as const)
+    <div style={{ height: '100%', minHeight: 0, position: 'relative' }}>
+      <Editor
+        path={modelPath}
+        language={['arduino', 'c'].includes(language) ? 'cpp' : language}
+        defaultValue={value}
+        keepCurrentModel
+        theme={dark ? 'blode' : 'blode-light'}
+        onMount={(instance) => {
+          mountedEditors.add(instance);
+          installAiActions(instance);
+          void localizeMonacoContextMenu(locale);
+          editor.current = instance;
+          decorations.current = instance.createDecorationsCollection();
+          peerRanges.current = new PeerRangeOverlay(instance);
+          const report = (position: monaco.Position) =>
+            cursorHandler.current?.({ line: position.lineNumber, column: position.column });
           subscriptions.current.push(
-            command.addImplementation(10000, `blode-${direction}-${instance.getId()}`, () => {
-              if (!instance.hasTextFocus() && !instance.hasWidgetFocus()) return false;
-              if (window.__blodeWeb !== true && !latest.current.onUndo) return false;
-              return runUndo(direction);
+            monaco.editor.registerEditorOpener({
+              openCodeEditor(source, resource, selection) {
+                if (!ownsEditorNavigation(source, instance, mountedEditors)) return false;
+                const path = sourcePathForUri(resource.path),
+                  from = source.getModel();
+                if (!path || !from) return false;
+                const originPath = sourcePathForUri(from.uri.path);
+                if (!originPath) return false;
+                const position = source.getPosition() ?? new monaco.Position(1, 1);
+                const origin = definitionOriginForEditor(source);
+                const range = selection && 'startLineNumber' in selection ? selection : undefined;
+                const line =
+                  range?.startLineNumber ??
+                  (selection && 'lineNumber' in selection ? selection.lineNumber : 1);
+                const column =
+                  range?.startColumn ?? (selection && 'column' in selection ? selection.column : 1);
+                window.dispatchEvent(
+                  new CustomEvent('blode:navigate-source', {
+                    detail: {
+                      root: latest.current.projectRoot,
+                      pane: latest.current.primary ? 'primary' : 'secondary',
+                      target: {
+                        path,
+                        externalId: externalSourceForUri(resource.path)?.id,
+                        line,
+                        column,
+                        endLine: range?.endLineNumber ?? line,
+                        endColumn: range?.endColumn ?? column,
+                      },
+                      origin: origin ?? {
+                        path: originPath,
+                        externalId: externalSourceForUri(from.uri.path)?.id,
+                        line: position.lineNumber,
+                        column: position.column,
+                        endLine: position.lineNumber,
+                        endColumn: position.column,
+                      },
+                    },
+                  }),
+                );
+                return true;
+              },
             }),
+            monaco.editor.registerLinkOpener({
+              open(resource) {
+                if (lastFocusedEditor && lastFocusedEditor !== instance) return false;
+                const path = sourcePathForUri(resource.path);
+                if (!path) return false;
+                const position = instance.getPosition() ?? new monaco.Position(1, 1);
+                window.dispatchEvent(
+                  new CustomEvent('blode:navigate-source', {
+                    detail: {
+                      root: latest.current.projectRoot,
+                      pane: latest.current.primary ? 'primary' : 'secondary',
+                      target: {
+                        path,
+                        externalId: externalSourceForUri(resource.path)?.id,
+                        line: 1,
+                        column: 1,
+                        endLine: 1,
+                        endColumn: 1,
+                      },
+                      origin: {
+                        path: latest.current.path,
+                        externalId: externalSourceForUri(instance.getModel()?.uri.path ?? '')?.id,
+                        line: position.lineNumber,
+                        column: position.column,
+                        endLine: position.lineNumber,
+                        endColumn: position.column,
+                      },
+                    },
+                  }),
+                );
+                return true;
+              },
+            }),
+            instance.addAction({
+              id: 'blode.navigationBack',
+              label: t('editor.navigationBack'),
+              keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow],
+              contextMenuGroupId: 'navigation',
+              contextMenuOrder: 1.9,
+              run: () => {
+                window.dispatchEvent(
+                  new CustomEvent('blode:navigate-back', {
+                    detail: { pane: latest.current.primary ? 'primary' : 'secondary' },
+                  }),
+                );
+              },
+            }),
+            instance.onDidChangeCursorPosition((event) => report(event.position)),
           );
-        subscriptions.current.push(
-          instance.onDidChangeModelContent(() => {
+          installInlineCompletions(instance);
+          const initialModel = instance.getModel();
+          if (initialModel && !modelTexts.has(initialModel))
+            modelTexts.set(initialModel, initialModel.getValue());
+          const runUndo = async (direction: 'undo' | 'redo') => {
+            if (
+              latest.current.readOnly ||
+              instance.getOption(monaco.editor.EditorOption.readOnly) ||
+              externalSourceForUri(instance.getModel()?.uri.path ?? '')
+            )
+              return;
+            if (latest.current.onUndo) {
+              await latest.current.onUndo(direction);
+              return;
+            }
             const model = instance.getModel();
             if (!model) return;
-            const after = model.getValue(),
-              before = modelTexts.get(model) ?? after;
-            modelTexts.set(model, after);
-            if (ownUndoModels.has(model) || before === after) return;
-            let history = undoHistories.get(model);
-            if (!history) {
-              history = new LocalUndoHistory();
-              undoHistories.set(model, history);
+            const history = undoHistories.get(model);
+            if (!history) return;
+            try {
+              const changes = history.take(model.getValue(), direction);
+              if (!changes?.length) return;
+              const edits = changes.map((change) => {
+                const start = model.getPositionAt(change.start),
+                  end = model.getPositionAt(change.end);
+                return {
+                  range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
+                  text: change.text,
+                  forceMoveMarkers: true,
+                };
+              });
+              ownUndoModels.add(model);
+              try {
+                instance.executeEdits('blode:own-undo', edits);
+              } finally {
+                ownUndoModels.delete(model);
+              }
+            } catch {
+              window.dispatchEvent(new CustomEvent('blode:undo-conflict'));
             }
-            const changes = textChanges(before, after);
-            if (changes.length) history.record(before, changes, !remoteModels.has(model));
-          }),
-        );
-        const reportView = () => {
-          if (applyingRemote.current) return;
+          };
+          // Monaco's global command registry drives keyboard, Edit menu and command palette.
+          // Intercept commands, not model.undo(), so internal suggestion rollback keeps working.
+          for (const [command, direction] of [
+            [UndoCommand, 'undo'],
+            [RedoCommand, 'redo'],
+          ] as const)
+            subscriptions.current.push(
+              command.addImplementation(10000, `blode-${direction}-${instance.getId()}`, () => {
+                if (!instance.hasTextFocus() && !instance.hasWidgetFocus()) return false;
+                if (latest.current.readOnly || externalSourceForUri(instance.getModel()?.uri.path ?? ''))
+                  return Promise.resolve();
+                if (window.__blodeWeb !== true && !latest.current.onUndo) return false;
+                return runUndo(direction);
+              }),
+            );
+          subscriptions.current.push(
+            instance.onDidChangeModelContent(() => {
+              const model = instance.getModel();
+              if (!model) return;
+              const after = model.getValue(),
+                before = modelTexts.get(model) ?? after;
+              modelTexts.set(model, after);
+              if (
+                externalModelIsRefreshing(model) ||
+                latest.current.readOnly ||
+                externalSourceForUri(model.uri.path)
+              ) {
+                undoHistories.delete(model);
+                return;
+              }
+              if (ownUndoModels.has(model) || before === after) return;
+              let history = undoHistories.get(model);
+              if (!history) {
+                history = new LocalUndoHistory();
+                undoHistories.set(model, history);
+              }
+              const changes = textChanges(before, after);
+              if (changes.length) history.record(before, changes, !remoteModels.has(model));
+            }),
+          );
+          const reportView = () => {
+            if (applyingRemote.current) return;
+            if (
+              instance.getModel()?.uri.toString() !==
+              modelUri(latest.current.projectRoot, latest.current.path)
+            )
+              return;
+            if (!latest.current.primary && !instance.hasTextFocus() && !instance.hasWidgetFocus()) return;
+            const ranges = instance.getVisibleRanges(),
+              position = instance.getPosition();
+            latest.current.onPresence?.({
+              path: latest.current.path,
+              startLine: ranges[0]?.startLineNumber ?? 1,
+              endLine: ranges.at(-1)?.endLineNumber ?? 1,
+              cursor: position ? { line: position.lineNumber, column: position.column } : undefined,
+            });
+          };
+          let restoredFrame: number | undefined;
+          const attentionRestored = () => {
+            if (restoredFrame !== undefined) cancelAnimationFrame(restoredFrame);
+            restoredFrame = requestAnimationFrame(() => {
+              restoredFrame = undefined;
+              if (editor.current === instance) reportView();
+            });
+          };
+          window.addEventListener('blode:attention-restored', attentionRestored);
+          subscriptions.current.push({
+            dispose() {
+              window.removeEventListener('blode:attention-restored', attentionRestored);
+              if (restoredFrame !== undefined) cancelAnimationFrame(restoredFrame);
+            },
+          });
+          subscriptions.current.push(
+            instance.onDidScrollChange(reportView),
+            instance.onDidChangeCursorPosition(reportView),
+            instance.onDidFocusEditorText(reportView),
+            instance.onDidFocusEditorText(() => {
+              lastFocusedEditor = instance;
+            }),
+            instance.onDidChangeModel(() => {
+              const model = instance.getModel();
+              if (model) ownedModels.add(model.uri.toString());
+              if (model && !modelTexts.has(model)) modelTexts.set(model, model.getValue());
+              synchronizeValue();
+              scheduleNavigation();
+              decoratePeers(false);
+              reportView();
+            }),
+          );
+          synchronizeValue();
+          scheduleNavigation();
+          decoratePeers(false);
+          if (latest.current.primary) {
+            const visible = instance.getVisibleRanges();
+            latest.current.onPresence?.({
+              path: latest.current.path,
+              startLine: visible[0]?.startLineNumber ?? 1,
+              endLine: visible.at(-1)?.endLineNumber ?? 1,
+            });
+          }
+          report(instance.getPosition() ?? new monaco.Position(1, 1));
+        }}
+        loading={<EditorLoading value={value} />}
+        onChange={(value) => {
+          const model = editor.current?.getModel();
           if (
-            instance.getModel()?.uri.toString() !== modelUri(latest.current.projectRoot, latest.current.path)
+            latest.current.readOnly ||
+            (model && (externalModelIsRefreshing(model) || externalSourceForUri(model.uri.path)))
           )
             return;
-          if (!latest.current.primary && !instance.hasTextFocus() && !instance.hasWidgetFocus()) return;
-          const ranges = instance.getVisibleRanges(),
-            position = instance.getPosition();
-          latest.current.onPresence?.({
-            path: latest.current.path,
-            startLine: ranges[0]?.startLineNumber ?? 1,
-            endLine: ranges.at(-1)?.endLineNumber ?? 1,
-            cursor: position ? { line: position.lineNumber, column: position.column } : undefined,
-          });
-        };
-        let restoredFrame: number | undefined;
-        const attentionRestored = () => {
-          if (restoredFrame !== undefined) cancelAnimationFrame(restoredFrame);
-          restoredFrame = requestAnimationFrame(() => {
-            restoredFrame = undefined;
-            if (editor.current === instance) reportView();
-          });
-        };
-        window.addEventListener('blode:attention-restored', attentionRestored);
-        subscriptions.current.push({
-          dispose() {
-            window.removeEventListener('blode:attention-restored', attentionRestored);
-            if (restoredFrame !== undefined) cancelAnimationFrame(restoredFrame);
+          if (!applyingRemote.current && (!model || !remoteModels.has(model))) onChange(value ?? '');
+        }}
+        options={{
+          readOnly,
+          gotoLocation: { multipleDefinitions: 'peek', multipleDeclarations: 'peek' },
+          fontFamily: 'Cascadia Code, Consolas, monospace',
+          fontSize: 13,
+          lineHeight: 23,
+          minimap: { enabled: true, maxColumn: 80, scale: 1 },
+          padding: { top: 20, bottom: 20 },
+          scrollBeyondLastLine: false,
+          smoothScrolling: true,
+          cursorSmoothCaretAnimation: 'on',
+          bracketPairColorization: { enabled: true },
+          guides: { bracketPairs: true },
+          automaticLayout: true,
+          tabSize: 2,
+          wordWrap: 'off',
+          renderLineHighlight: 'line',
+          overviewRulerBorder: false,
+          fixedOverflowWidgets: true,
+          quickSuggestions: { other: true, comments: false, strings: false },
+          suggestOnTriggerCharacters: true,
+          acceptSuggestionOnEnter: 'on',
+          tabCompletion: 'on',
+          inlineSuggest: { enabled: true },
+          wordBasedSuggestions: 'currentDocument',
+          snippetSuggestions: 'top',
+          parameterHints: { enabled: true },
+          suggest: {
+            showMethods: true,
+            showFunctions: true,
+            showVariables: true,
+            showConstants: true,
+            showSnippets: true,
+            preview: true,
           },
-        });
-        subscriptions.current.push(
-          instance.onDidScrollChange(reportView),
-          instance.onDidChangeCursorPosition(reportView),
-          instance.onDidFocusEditorText(reportView),
-          instance.onDidFocusEditorText(() => {
-            lastFocusedEditor = instance;
-          }),
-          instance.onDidChangeModel(() => {
-            const model = instance.getModel();
-            if (model) ownedModels.add(model.uri.toString());
-            if (model && !modelTexts.has(model)) modelTexts.set(model, model.getValue());
-            synchronizeValue();
-            scheduleNavigation();
-            decoratePeers(false);
-            reportView();
-          }),
-        );
-        synchronizeValue();
-        scheduleNavigation();
-        decoratePeers(false);
-        if (latest.current.primary) {
-          const visible = instance.getVisibleRanges();
-          latest.current.onPresence?.({
-            path: latest.current.path,
-            startLine: visible[0]?.startLineNumber ?? 1,
-            endLine: visible.at(-1)?.endLineNumber ?? 1,
-          });
-        }
-        report(instance.getPosition() ?? new monaco.Position(1, 1));
-      }}
-      loading={<EditorLoading value={value} />}
-      onChange={(value) => {
-        const model = editor.current?.getModel();
-        if (!applyingRemote.current && (!model || !remoteModels.has(model))) onChange(value ?? '');
-      }}
-      options={{
-        readOnly,
-        gotoLocation: { multipleDefinitions: 'peek', multipleDeclarations: 'peek' },
-        fontFamily: 'Cascadia Code, Consolas, monospace',
-        fontSize: 13,
-        lineHeight: 23,
-        minimap: { enabled: true, maxColumn: 80, scale: 1 },
-        padding: { top: 20, bottom: 20 },
-        scrollBeyondLastLine: false,
-        smoothScrolling: true,
-        cursorSmoothCaretAnimation: 'on',
-        bracketPairColorization: { enabled: true },
-        guides: { bracketPairs: true },
-        automaticLayout: true,
-        tabSize: 2,
-        wordWrap: 'off',
-        renderLineHighlight: 'line',
-        overviewRulerBorder: false,
-        fixedOverflowWidgets: true,
-        quickSuggestions: { other: true, comments: false, strings: false },
-        suggestOnTriggerCharacters: true,
-        acceptSuggestionOnEnter: 'on',
-        tabCompletion: 'on',
-        inlineSuggest: { enabled: true },
-        wordBasedSuggestions: 'currentDocument',
-        snippetSuggestions: 'top',
-        parameterHints: { enabled: true },
-        suggest: {
-          showMethods: true,
-          showFunctions: true,
-          showVariables: true,
-          showConstants: true,
-          showSnippets: true,
-          preview: true,
-        },
-      }}
-    />
+        }}
+      />
+      {predictionFeedback.kind !== 'idle' && predictionFeedback.message && (
+        <div
+          className="ai-prediction-feedback"
+          role={predictionFeedback.kind === 'error' ? 'alert' : 'status'}
+          aria-live="polite"
+          data-state={predictionFeedback.kind}
+          style={{
+            position: 'absolute',
+            right: 18,
+            bottom: 7,
+            maxWidth: 'calc(100% - 36px)',
+            padding: '4px 8px',
+            borderRadius: 5,
+            fontSize: 12,
+            color:
+              predictionFeedback.kind === 'error'
+                ? 'var(--danger, #dc2626)'
+                : 'var(--text-secondary, #64748b)',
+            background: 'var(--surface-1, #fff)',
+            pointerEvents: 'none',
+            zIndex: 5,
+          }}
+        >
+          {t(predictionFeedback.message)}
+        </div>
+      )}
+    </div>
   );
 }

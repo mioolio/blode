@@ -224,3 +224,67 @@ test('progress belongs to the component operation and unrelated installs cannot 
   model.receive(event('different', 'components', 'starting'));
   assert.equal(model.getSnapshot().installation?.id, 'mine');
 });
+
+test('component export is root-bound, includes selected ids and waits for the host save result', async () => {
+  const requests: unknown[] = [],
+    saves: string[] = [];
+  const api = backend({
+    componentsExport: async (request) => {
+      requests.push(request);
+      return {
+        id: 'fixture-package',
+        name: 'components.zip',
+        size: 100,
+        sha256: 'a'.repeat(64),
+        componentCount: 2,
+        dependencies: ['Bus'],
+      };
+    },
+    componentsPackageSave: async (id) => {
+      saves.push(id);
+      return true;
+    },
+  });
+  const model = new ComponentLibrariesModel(api, root);
+  await model.load();
+  assert.equal(await model.export(['display']), true);
+  assert.deepEqual(requests, [{ expectedProjectRoot: root, ids: ['display'], confirm: true }]);
+  assert.deepEqual(saves, ['fixture-package']);
+  assert.equal(model.getSnapshot().operation, null);
+  assert.equal(model.getSnapshot().completed, true);
+});
+
+test('closing a component dialog during export does not start a late download', async () => {
+  const archive = deferred<{
+    id: string;
+    name: string;
+    size: number;
+    sha256: string;
+    componentCount: number;
+    dependencies: string[];
+  }>();
+  let downloads = 0;
+  const model = new ComponentLibrariesModel(
+    backend({
+      componentsExport: () => archive.promise,
+      componentsPackageSave: async () => {
+        downloads++;
+        return true;
+      },
+    }),
+    root,
+  );
+  await model.load();
+  const exporting = model.export();
+  model.dispose();
+  archive.resolve({
+    id: 'late',
+    name: 'late.zip',
+    size: 1,
+    sha256: 'a'.repeat(64),
+    componentCount: 1,
+    dependencies: [],
+  });
+  assert.equal(await exporting, false);
+  assert.equal(downloads, 0);
+});

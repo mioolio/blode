@@ -1,6 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import * as z from 'zod';
+import { ModelService } from './model-service';
+import { createModelRoutes } from './model-service/routes';
+import type { AiAssistance } from './ai-assistance';
 import type { LogEvent } from '../shared/contracts';
 import type { CoreService } from './service';
 import type { CollaborationService } from './collaboration';
@@ -9,8 +12,9 @@ import { FirmwareStore, prepareBuildExport } from './firmware';
 import { GitService, createGitRoutes } from './git';
 import { ToolVersions } from './tool-versions';
 import { ProjectPackages } from './project-package';
-import { HostTerminal } from './terminal';
+import { HostTerminals } from './terminal-sessions';
 import { ComponentLibraries } from './components';
+import { createDeliveryRoutes } from './delivery-routes';
 import type { ComponentLibrariesState } from '../shared/components';
 import { browseHost } from './host-files';
 import { openVSCode, type VSCodeOptions } from './vscode';
@@ -19,10 +23,19 @@ import { configSchema, parseProjectBuild } from './config';
 import { toolVersionSchemas } from './tool-version-schemas';
 import { hostParameterSchemas } from './host-service-schemas';
 import { LanguageIndexService } from './language-index';
+import { GeneralExtensions } from './general-extensions';
+import { createGeneralExtensionRoutes } from './general-extensions/routes';
+import { LanguageNavigationService } from './language-navigation';
+import { languageNavigationSchema, languageExternalSchema, languageCancelSchema } from './language-schemas';
 import type { RuntimeDebugger } from './runtime-debugger';
 import { isRuntimeViewKind, type RuntimeViewContribution, type RuntimeViewKind } from '../shared/plugins';
 
 interface Options {
+  extensionExamplesRoot?: string;
+  openExtensionView?: (id: string, view: RuntimeViewContribution) => Promise<void>;
+  openExtensionPanel?: (id: string, view: RuntimeViewContribution) => Promise<void>;
+  extensionViewUrl?: (id: string, view: string) => string;
+  ai?: AiAssistance;
   core: CoreService;
   collaboration: CollaborationService;
   firmware: FirmwareStore;
@@ -49,9 +62,51 @@ const absolute = (value: string) => {
 /** One validated capability registry shared by IPC, HTTP and trusted local AI. */
 export function createHostServices(options: Options) {
   const { core, collaboration } = options;
+  const generalExtensions = new GeneralExtensions({
+    dataRoot: options.dataRoot,
+    examplesRoot: options.extensionExamplesRoot,
+    openView: options.openExtensionView,
+    openPanel: options.openExtensionPanel,
+    changed: () =>
+      options.emit({
+        kind: 'status',
+        level: 'info',
+        message: 'status.extensionsChanged',
+        time: new Date().toISOString(),
+      }),
+    log: (message) => options.emit({ kind: 'log', level: 'info', message, time: new Date().toISOString() }),
+  });
+  const extensionRoutes = createGeneralExtensionRoutes(
+    generalExtensions,
+    options.savePackage,
+    options.extensionViewUrl,
+  );
+  const model = new ModelService({
+    dataRoot: options.dataRoot,
+    projectRoot: () => core.currentProjectRoot(),
+    collaboration,
+    emit: options.emit,
+    fetcher: options.fetcher,
+    automate: (method, params) => {
+      if (!core.automationInvoke) throw new Error('rpc.methodNotFound');
+      return core.automationInvoke(method, params);
+    },
+    refreshFiles: () => core.workspaceSnapshot(true),
+  });
+  const modelRoutes = createModelRoutes(model);
+  options.ai?.setPredictionEngine({
+    handles: () => model.handlesPredictions(),
+    complete: (request, signal) => model.predict(request, signal),
+  });
   const language = new LanguageIndexService(core);
+  const languageNavigation = new LanguageNavigationService({
+    core,
+    toolchainRoot: options.toolchainRoot,
+    env: options.toolchainEnv,
+  });
+  collaboration.setReadonlySources?.((root) => languageNavigation.readonlyPaths(root));
   const git = new GitService({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
-  const terminal = new HostTerminal({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
+  const terminal = new HostTerminals({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
   const projectBuild = async () => {
     const marker = (await core.workspaceSnapshot()).files.find((file) => file.path === 'be');
     if (!marker?.content.trim()) return {};
@@ -92,6 +147,14 @@ export function createHostServices(options: Options) {
   const packages = new ProjectPackages({
     dataRoot: options.dataRoot,
     projectRoot: () => core.currentProjectRoot(),
+    toolchainRoots: () => [
+      options.toolchainRoot,
+      ...Object.values(core.currentConfig().toolchain).filter(
+        (value): value is string => typeof value === 'string' && path.isAbsolute(value),
+      ),
+    ],
+    buildEvidenceState: () => core.buildEvidenceState(),
+    privateRoots: () => [options.dataRoot],
   });
   const toolRunner: typeof runCommand = (command, args, settings = {}) =>
     runCommand(command, args, { ...settings, env: { ...options.toolchainEnv, ...settings.env } });
@@ -105,9 +168,19 @@ export function createHostServices(options: Options) {
     fetcher: options.fetcher,
   };
   const tools = new ToolVersions(toolOptions);
+  const delivery = createDeliveryRoutes({
+    dataRoot: options.dataRoot,
+    projectRoot: () => core.currentProjectRoot(),
+    savePackage: options.savePackage,
+    toolOptions,
+    runInstallation: core.runInstallation,
+  });
   const noArgs = z.tuple([]),
     nativePath = z.string().min(1).max(4096);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    ...extensionRoutes.routes,
+    ...modelRoutes.routes,
+    ...delivery.routes,
     componentsState: { args: noArgs, run: () => components.list() },
     componentsSearch: {
       args: z.tuple([hostParameterSchemas['components.search'].shape.query]),
@@ -269,6 +342,18 @@ export function createHostServices(options: Options) {
       },
     },
     languageIndex: { args: noArgs, run: () => language.snapshot() },
+    languageNavigate: {
+      args: z.tuple([languageNavigationSchema]),
+      run: (request) => languageNavigation.navigate(request),
+    },
+    languageCancel: {
+      args: z.tuple([languageCancelSchema]),
+      run: (request) => languageNavigation.cancel(request),
+    },
+    languageOpenExternal: {
+      args: z.tuple([languageExternalSchema]),
+      run: (request) => languageNavigation.openExternal(request),
+    },
     ...createGitRoutes(git).routes,
     toolVersionsState: { args: noArgs, run: () => tools.toolVersionsState() },
     toolVersionSelect: {
@@ -341,6 +426,7 @@ export function createHostServices(options: Options) {
         return options.savePackage(packages.download(id));
       },
     },
+    terminalSessions: { args: noArgs, run: () => terminal.sessions() },
     terminalState: {
       args: z.tuple([hostParameterSchemas['terminal.state'].optional()]),
       run: (cursor) => terminal.state(cursor),
@@ -357,12 +443,18 @@ export function createHostServices(options: Options) {
       args: z.tuple([hostParameterSchemas['terminal.resize']]),
       run: (request) => terminal.resize(request),
     },
-    terminalClose: { args: noArgs, run: () => terminal.close() },
-    terminalRun: {
-      args: z.tuple([z.object({ command: z.string().trim().min(1).max(16384) }).strict()]),
-      run: (request) => terminal.run(request.command),
+    terminalClose: {
+      args: z.tuple([hostParameterSchemas['terminal.close'].omit({ confirm: true }).optional()]),
+      run: (target) => terminal.close(target),
     },
-    terminalStop: { args: noArgs, run: () => terminal.stop() },
+    terminalRun: {
+      args: z.tuple([hostParameterSchemas['terminal.run'].omit({ confirm: true })]),
+      run: (request) => terminal.run(request),
+    },
+    terminalStop: {
+      args: z.tuple([hostParameterSchemas['terminal.stop'].optional()]),
+      run: (target) => terminal.stop(target),
+    },
     firmwareChoosePath: {
       args: z.tuple([nativePath]),
       run: (file) => options.firmware.choose(absolute(file)),
@@ -436,11 +528,17 @@ export function createHostServices(options: Options) {
     return route.run(...(parsed.data as unknown[]));
   };
   const aliases: Record<string, [string, (params: any) => unknown[]]> = {
+    ...extensionRoutes.aliases,
+    ...modelRoutes.aliases,
     'components.state': ['componentsState', () => []],
     'components.search': ['componentsSearch', (p) => [p.query]],
     'components.install': ['componentsInstall', (p) => [p]],
     'components.import': ['componentsImport', (p) => [p]],
     'components.remove': ['componentsRemove', (p) => [p]],
+    'components.export': ['componentsExport', (p) => [p]],
+    'tools.downloadVersion': ['toolVersionDownload', (p) => [p]],
+    'tools.importVersion': ['toolVersionImport', (p) => [p]],
+    'tools.cancelVersionTransfer': ['toolVersionCancel', () => []],
     'runtime.plugins': ['runtimePluginsState', () => []],
     'runtime.context': ['runtimePluginContext', (p) => [p.id]],
     'runtime.configure': ['runtimePluginConfigure', (p) => [p.id, p.value]],
@@ -450,6 +548,9 @@ export function createHostServices(options: Options) {
     'runtime.view.info': ['runtimePluginViewInfo', (p) => [p.id, p.viewId]],
     'runtime.debug': ['runtimePluginDebug', (p) => [p.id, p.method, p.args]],
     'language.index': ['languageIndex', () => []],
+    'language.navigate': ['languageNavigate', (p) => [p]],
+    'language.cancel': ['languageCancel', (p) => [p]],
+    'language.openExternal': ['languageOpenExternal', (p) => [p]],
     'git.status': ['gitStatus', () => []],
     'git.diff': ['gitDiff', (p) => [p]],
     'git.action': ['gitAction', (p) => [p]],
@@ -460,19 +561,50 @@ export function createHostServices(options: Options) {
     'vscode.open': ['vscodeOpen', (p) => [p]],
     'project.package.preview': ['projectPackagePreview', () => []],
     'project.package.export': ['projectPackageExport', (p) => [p]],
-    'terminal.state': ['terminalState', (p) => [{ sessionId: p.sessionId, after: p.after }]],
-    'terminal.open': ['terminalOpen', (p) => [{ cols: p.cols, rows: p.rows }]],
-    'terminal.run': ['terminalRun', (p) => [{ command: p.command }]],
-    'terminal.stop': ['terminalStop', () => []],
-    'terminal.write': ['terminalWrite', (p) => [{ data: p.data, sessionId: p.sessionId }]],
-    'terminal.resize': ['terminalResize', (p) => [{ cols: p.cols, rows: p.rows, sessionId: p.sessionId }]],
-    'terminal.close': ['terminalClose', () => []],
+    'terminal.sessions': ['terminalSessions', () => []],
+    'terminal.state': [
+      'terminalState',
+      (p) => [{ terminalId: p.terminalId, sessionId: p.sessionId, after: p.after }],
+    ],
+    'terminal.open': [
+      'terminalOpen',
+      (p) => [{ terminalId: p.terminalId, name: p.name, create: p.create, cols: p.cols, rows: p.rows }],
+    ],
+    'terminal.run': [
+      'terminalRun',
+      (p) => [{ terminalId: p.terminalId, sessionId: p.sessionId, command: p.command }],
+    ],
+    'terminal.stop': ['terminalStop', (p) => [{ terminalId: p.terminalId, sessionId: p.sessionId }]],
+    'terminal.write': [
+      'terminalWrite',
+      (p) => [{ data: p.data, terminalId: p.terminalId, sessionId: p.sessionId }],
+    ],
+    'terminal.resize': [
+      'terminalResize',
+      (p) => [{ cols: p.cols, rows: p.rows, terminalId: p.terminalId, sessionId: p.sessionId }],
+    ],
+    'terminal.close': ['terminalClose', (p) => [{ terminalId: p.terminalId, sessionId: p.sessionId }]],
   };
   return {
     routes,
     invoke,
-    packages,
+    packages: {
+      download: async (id: string) => {
+        try {
+          return await delivery.download(id);
+        } catch {
+          try {
+            return generalExtensions.download(id);
+          } catch {
+            return packages.download(id);
+          }
+        }
+      },
+    },
+    generalExtensions,
+    languageNavigation,
     terminal,
+    model,
     git,
     tools,
     automationInvoke: (method: string, params: Record<string, unknown>) => {
@@ -480,7 +612,11 @@ export function createHostServices(options: Options) {
       if (!entry) throw new Error('rpc.methodNotFound');
       return invoke(entry[0], entry[1](params));
     },
-    close: () => terminal.close(),
+    close: async () => {
+      languageNavigation.dispose();
+      model.close();
+      await Promise.allSettled([terminal.closeAll(), generalExtensions.close()]);
+    },
   };
 }
 export type HostServices = ReturnType<typeof createHostServices>;

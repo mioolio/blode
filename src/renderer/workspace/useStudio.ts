@@ -18,10 +18,13 @@ import { flushCollaboration } from './collaborationFlush';
 import { mergeRecentLogs } from '../../shared/recent-logs';
 import { useFileTabClose, type SharedCloseSource } from './useFileTabClose';
 import { closeRecoveryKey, recoverCloseDrafts, workspaceCloseGate } from './workspaceCloseGate';
-import { refreshedConfig } from './unsavedChanges';
+import { refreshedConfig, sameConfiguration } from './unsavedChanges';
 import { openableFilePaths } from '../../shared/file-views';
 import type { WorkspaceConsoleTabId, WorkspaceSyncTarget } from '../../shared/workspace-surfaces';
 import { publishSharedSurface, requestSharedTabClose } from './sharedTabs';
+import type { LanguageExternalSource } from '../../shared/language';
+import { registerExternalSource } from '../editor/completionProvider';
+import { externalSourceUpdate } from './externalSourceUpdates';
 
 type View = 'code' | 'layout' | 'ai';
 type ConsoleTab = WorkspaceConsoleTabId;
@@ -76,7 +79,28 @@ export function useStudio() {
   const initial = route.current;
   const [state, setState] = useState<AppState | null>(null);
   const canonicalState = useRef(state);
+  const [externalFiles, setExternalFiles] = useState<Record<string, LanguageExternalSource>>({});
+  const externalFilesRef = useRef(externalFiles);
+  externalFilesRef.current = externalFiles;
+  const externalRoot = useRef('');
+  const externalLoads = useRef(new Map<string, Promise<LanguageExternalSource>>());
   canonicalState.current = state;
+  useEffect(() => {
+    const updated = (event: Event) => {
+      const root = canonicalState.current?.projectRoot ?? '';
+      if (externalRoot.current !== root) return;
+      const next = externalSourceUpdate(
+        externalFilesRef.current,
+        root,
+        (event as CustomEvent<unknown>).detail,
+      );
+      if (next === externalFilesRef.current) return;
+      externalFilesRef.current = next;
+      setExternalFiles(next);
+    };
+    window.addEventListener('blode:external-source-updated', updated);
+    return () => window.removeEventListener('blode:external-source-updated', updated);
+  }, []);
   const refreshSequence = useRef(0);
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -129,9 +153,11 @@ export function useStudio() {
   const [runtimeExpanded, setRuntimeExpanded] = useState(false);
   const logEnd = useRef<HTMLDivElement>(null);
   const restoredFolder = useRef('');
-  const dirty = Object.keys(drafts).length > 0;
-  const configDirty = !!state && !!config && JSON.stringify(state.config) !== JSON.stringify(config);
-  const source = state?.files.find((file) => file.path === activePath);
+  const dirty = Object.entries(drafts).some(
+    ([path, value]) => state?.files.find((file) => file.path === path)?.content !== value,
+  );
+  const configDirty = !!state && !!config && !sameConfiguration(state.config, config);
+  const source = state?.files.find((file) => file.path === activePath) ?? externalFiles[activePath];
   const content = drafts[activePath] ?? source?.content ?? '';
   const lines = content.split('\n');
   const comments = lines.filter((line) => /^\s*(\/\/|\/\*|\*|\*\/)/.test(line)).length;
@@ -181,6 +207,12 @@ export function useStudio() {
     }
     if (sequence !== refreshSequence.current) return canonicalState.current ?? next;
     const previous = canonicalState.current;
+    if (externalRoot.current !== next.projectRoot) {
+      externalRoot.current = next.projectRoot;
+      externalFilesRef.current = {};
+      externalLoads.current.clear();
+      setExternalFiles({});
+    }
     setState(next);
     if (next.recentLogs)
       setLogs((current) =>
@@ -198,7 +230,7 @@ export function useStudio() {
       return retained === current ? retainDraftConfig(retained, next) : retained;
     });
     setStale(next.buildStale ?? false);
-    const availablePaths = new Set(openableFilePaths(next));
+    const availablePaths = new Set([...openableFilePaths(next), ...Object.keys(externalFilesRef.current)]);
     const exists = (path: string) => availablePaths.has(path);
     if (restoredFolder.current !== next.projectRoot) {
       restoredFolder.current = next.projectRoot;
@@ -542,29 +574,46 @@ export function useStudio() {
       await refresh();
       notify(t('toast.deleted'));
     });
-  const build = () =>
-    perform(validatesFirmware ? 'action.validateFirmware' : 'action.build', async () => {
-      setConsolePanelVisible(true);
-      setTab('output');
-      if (
-        !isAuto &&
-        !board?.capabilities.some((capability) => capability === 'compile' || capability === 'flash')
-      )
-        throw new Error('error.detectBoardFirst');
-      await saveFiles();
-      if (config && configDirty) await window.blode.saveConfig(config, state?.projectRoot);
-      const result = await window.blode.build();
-      await refresh();
-      setStale(!result.success);
-      if (result.success) notify(t(validatesFirmware ? 'toast.firmwareValidated' : 'toast.built'));
-    });
+  const build = (targetId?: string) =>
+    perform(
+      !state?.build.targets?.length && validatesFirmware ? 'action.validateFirmware' : 'action.build',
+      async () => {
+        setConsolePanelVisible(true);
+        setTab('output');
+        if (
+          !state?.build.targets?.length &&
+          !isAuto &&
+          !board?.capabilities.some((capability) => capability === 'compile' || capability === 'flash')
+        )
+          throw new Error('error.detectBoardFirst');
+        await saveFiles();
+        if (config && configDirty) await window.blode.saveConfig(config, state?.projectRoot);
+        if (!targetId && (state?.build.targets?.length ?? 0) > 1 && !state?.build.defaultTarget) {
+          window.dispatchEvent(new CustomEvent('blode:build-select'));
+          return;
+        }
+        const result = await window.blode.build(targetId);
+        await refresh();
+        setStale(!result.success);
+        if (result.success)
+          notify(
+            t(!state?.build.targets?.length && validatesFirmware ? 'toast.firmwareValidated' : 'toast.built'),
+          );
+      },
+    );
   const flash = () => {
-    if (!board?.capabilities.includes('flash')) {
+    const compiledBoard = state?.buildTarget
+      ? state.boards.find((value) => value.id === state.buildTarget!.config.boardId)
+      : board;
+    const compiledUsesStlink = state?.buildTarget
+      ? state.buildTarget.config.programmer?.transport === 'stlink'
+      : usesStlink;
+    if (!compiledBoard?.capabilities.includes('flash')) {
       reportWarning('error.detectBoardFirst');
       return;
     }
-    if (usesStlink ? !config?.programmer?.serialNumber : !config?.port) {
-      reportWarning(usesStlink ? 'error.selectDebugProbe' : 'toast.noPort');
+    if (compiledUsesStlink ? !config?.programmer?.serialNumber : !config?.port) {
+      reportWarning(compiledUsesStlink ? 'error.selectDebugProbe' : 'toast.noPort');
       return;
     }
     if (!state?.lastBuild?.success || state.buildStale || stale || dirty || configDirty) {
@@ -761,6 +810,10 @@ export function useStudio() {
       await restoreOpenedProject();
       setShowHome(true);
     });
+  const requestCloseProject = () => {
+    if (dirty || configDirty) setCloseProjectPending(true);
+    else void closeProject(false);
+  };
   const install = () =>
     perform('action.install', async () => {
       setTab('output');
@@ -831,6 +884,30 @@ export function useStudio() {
     window.dispatchEvent(
       new CustomEvent('blode:file-opened', { detail: { root: state?.projectRoot ?? '', path } }),
     );
+  };
+  const loadExternalSource = (externalId: string, fresh = false): Promise<LanguageExternalSource> => {
+    const root = canonicalState.current?.projectRoot;
+    if (!root) return Promise.reject(new Error('error.noWorkspace'));
+    const key = `${root}\0${externalId}`;
+    const pending = externalLoads.current.get(key);
+    if (pending) return pending;
+    const existing = Object.values(externalFilesRef.current).find((file) => file.id === externalId);
+    if (existing && !fresh) return Promise.resolve(existing);
+    const work = window.blode
+      .languageOpenExternal({ expectedProjectRoot: root, externalId })
+      .then((file) => {
+        if (canonicalState.current?.projectRoot !== root || externalRoot.current !== root)
+          throw new Error('error.collaborationProjectChanged');
+        registerExternalSource(file, { fresh: true });
+        externalFilesRef.current = { ...externalFilesRef.current, [file.path]: file };
+        setExternalFiles((current) => ({ ...current, [file.path]: file }));
+        return file;
+      })
+      .finally(() => {
+        if (externalLoads.current.get(key) === work) externalLoads.current.delete(key);
+      });
+    externalLoads.current.set(key, work);
+    return work;
   };
   const fileTabClose = useFileTabClose({
     state,
@@ -993,9 +1070,12 @@ export function useStudio() {
     closeProjectPending,
     setCloseProjectPending,
     closeProject,
+    requestCloseProject,
     openRecentProject,
     removeRecentProject,
     openFile,
+    externalFiles,
+    loadExternalSource,
     closeTab,
     frozenFilePaths: fileTabClose.frozenPaths,
     prepareSharedTabClose: (target: WorkspaceSyncTarget, requestId: string, source?: SharedCloseSource) =>

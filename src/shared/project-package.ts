@@ -27,6 +27,7 @@ export interface ProjectPackageResult {
 export interface ProjectPackageApi {
   projectPackagePreview(): Promise<ProjectPackagePlan>;
   projectPackageExport(options: {
+    expectedProjectRoot?: string;
     confirmExternal?: true;
     allowIncomplete?: true;
   }): Promise<ProjectPackageResult>;

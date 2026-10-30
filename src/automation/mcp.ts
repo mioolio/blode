@@ -8,6 +8,11 @@ import zh from './locales/zh-CN.json';
 import en from './locales/en-US.json';
 
 const readOnly = new Set<RouteName>([
+  'extensions.state',
+  'extensions.review',
+  'extensions.context',
+  'extensions.view',
+  'extensions.viewUrl',
   'components.state',
   'components.search',
   'state.get',
@@ -37,9 +42,13 @@ const readOnly = new Set<RouteName>([
   'host.browse',
   'project.package.preview',
   'terminal.state',
+  'terminal.sessions',
   'runtime.view.info',
 ]);
 const destructive = new Set<RouteName>([
+  'extensions.install',
+  'extensions.enable',
+  'extensions.remove',
   'components.remove',
   'flash.run',
   'file.write',

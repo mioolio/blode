@@ -65,6 +65,31 @@ test('resource tabs share viewing presence without creating text documents or ed
   assert.equal((await f.service.state()).peers[0].path, 'assets/logo.webp');
 });
 
+test('issued readonly SDK tabs synchronize ranges and close without exposing writable documents', async (t) => {
+  const f = fixture();
+  t.after(() => f.service.dispose());
+  const header = '@external/' + 'a'.repeat(32) + '/esp_log.h';
+  f.service.setReadonlySources((root) => (root === f.workspace.projectRoot ? [header] : []));
+  const state = await f.service.presence(
+    f.presence(1, { path: header, openPaths: [header], clientKind: 'web' }),
+    false,
+  );
+  assert.equal(state.peers[0].path, header);
+  assert.equal(state.peers[0].startLine, 64);
+  assert.equal(state.peers[0].editing, false);
+  assert.deepEqual(state.documents, []);
+  assert.equal((await f.service.state()).peers[0].endLine, 84);
+  await assert.rejects(f.service.open(f.workspace.projectRoot, header), /fileNotFound/);
+  await assert.rejects(f.service.writeFile(f.workspace.projectRoot, header, 'edit'), /fileType/);
+  const desktop = await f.service.presence(
+    f.presence(2, { path: header, openPaths: [header], clientKind: 'desktop' }),
+  );
+  assert.equal(desktop.peers[0].path, '');
+  assert.deepEqual(desktop.peers[0].openPaths, [header]);
+  f.service.setReadonlySources(() => []);
+  assert.equal((await f.service.state()).peers.length, 0);
+});
+
 test('media and binary inventory paths cannot enter collaborative text open, edit or save', async (t) => {
   const f = fixture();
   t.after(() => f.service.dispose());

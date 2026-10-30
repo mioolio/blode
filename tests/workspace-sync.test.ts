@@ -269,7 +269,7 @@ test('atomic surface bootstrap seeds first client preferences without letting la
     {
       ...f.context('alice'),
       surfaces: [
-        { target: { kind: 'console', id: 'memory' }, open: true },
+        { target: { kind: 'console', id: 'resources' }, open: true },
         { target: { kind: 'panel', id: 'console' }, open: false },
         { target: { kind: 'panel', id: 'device' }, open: false },
         { target: { kind: 'panel', id: 'runtime' }, open: true },
@@ -292,7 +292,7 @@ test('atomic surface bootstrap seeds first client preferences without letting la
   assert.deepEqual(
     late.surfaces!.map(({ target, open }) => [target.kind, target.id, open]),
     [
-      ['console', 'memory', true],
+      ['console', 'resources', true],
       ['panel', 'console', false],
       ['panel', 'device', false],
       ['panel', 'runtime', true],

@@ -1,0 +1,371 @@
+.extension-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  background: var(--overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.extension-manager {
+  width: min(1140px, 96vw);
+  height: min(820px, 90vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  outline: none;
+  position: relative;
+}
+.extension-manager > header {
+  height: 62px;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--border);
+}
+.extension-manager h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  margin: 0;
+}
+.extension-manager > header > div {
+  display: flex;
+  gap: 6px;
+}
+.extension-manager > header button {
+  height: 30px;
+  width: 30px;
+}
+.extension-manager-body {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.extension-manager-body > aside {
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+  min-height: 0;
+  gap: 12px;
+}
+.extension-manager input:not([type='checkbox']) {
+  height: 34px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text);
+}
+.extension-manager-body nav {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.extension-manager-body nav button {
+  width: 100%;
+  padding: 12px 10px;
+  gap: 10px;
+  justify-content: flex-start;
+  border-radius: 6px;
+}
+.extension-manager-body nav button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.extension-manager-body nav button > span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.extension-manager-body nav strong {
+  max-width: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  font-size: 12px;
+}
+.extension-manager-body nav small {
+  color: var(--text-faint);
+}
+.extension-manager-body nav i {
+  width: 6px;
+  height: 6px;
+  background: var(--text-faint);
+  border-radius: 50%;
+}
+.extension-manager-body nav i.enabled {
+  background: var(--green);
+}
+.extension-manager-body aside footer {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.extension-manager-body aside footer > div {
+  display: flex;
+  gap: 5px;
+}
+.extension-manager-body aside footer input {
+  width: 100%;
+}
+.extension-manager-body aside footer > button {
+  height: 32px;
+  justify-content: flex-start;
+  padding: 0 10px;
+}
+.extension-manager-body > article {
+  padding: 26px;
+  overflow: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.extension-details-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.extension-details-heading h3 {
+  margin: 0;
+  font-size: 23px;
+}
+.extension-details-heading p,
+.extension-manager article > p {
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.extension-details-heading > span {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 5px 9px;
+  background: var(--surface-2);
+  border-radius: 5px;
+}
+.extension-details-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+.extension-details-actions button {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.extension-manager article section {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 22px;
+}
+.extension-manager h4 {
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+.extension-permissions {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  padding: 0;
+  gap: 7px;
+}
+.extension-permissions li {
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+.extension-settings-grid {
+  display: grid;
+  gap: 14px;
+}
+.extension-settings-grid > label {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+.extension-settings-grid input[type='checkbox'] {
+  justify-self: start;
+}
+.extension-manager details {
+  margin-top: 20px;
+  color: var(--text-dim);
+}
+.extension-manager summary {
+  cursor: pointer;
+}
+.extension-manager code {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.8;
+  margin-top: 8px;
+}
+.extension-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text-faint);
+}
+.extension-error {
+  color: var(--red);
+  padding: 8px 20px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+.extension-diagnostics {
+  max-height: 140px;
+  overflow: auto;
+  padding: 8px 20px;
+  border-top: 1px solid var(--border);
+  margin: 0 !important;
+}
+.extension-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 2;
+}
+.extension-confirm {
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 24px;
+  width: min(620px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  box-shadow: var(--shadow-pop);
+}
+.extension-confirm h3 {
+  margin: 0 0 10px;
+}
+.extension-confirm > p {
+  color: var(--text-dim);
+}
+.extension-confirm ul {
+  padding-left: 20px;
+  line-height: 1.9;
+}
+.extension-confirm pre {
+  max-height: 160px;
+  overflow: auto;
+  font-size: 11px;
+}
+.extension-confirm .extension-native-warning {
+  padding: 12px;
+  border: 1px solid var(--amber);
+  color: var(--text);
+  border-radius: 6px;
+  line-height: 1.7;
+}
+.extension-permanent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+.extension-confirm footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+.extension-confirm footer button {
+  padding: 8px 14px;
+}
+.extension-fingerprint {
+  color: var(--text-faint);
+}
+.general-extension-frame {
+  border: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  background: var(--surface-1);
+}
+.extension-view-error {
+  padding: 20px;
+  color: var(--red);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.extension-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 35px;
+  z-index: 110;
+  padding: 14px;
+  max-width: 480px;
+  display: flex;
+  gap: 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--red);
+  border-radius: 8px;
+}
+.extension-wallpaper body {
+  background-image: var(--extension-background-image);
+  background-size: cover;
+  background-position: center;
+}
+.extension-wallpaper .studio {
+  background: transparent;
+}
+.extension-glass .studio-header {
+  backdrop-filter: blur(var(--extension-blur, 16px));
+}
+.extension-glass .project-panel,
+.extension-glass .editor-panel,
+.extension-glass .console-panel {
+  background: var(--surface-1);
+}
+@media (max-width: 700px) {
+  .extension-backdrop {
+    padding: 5px;
+  }
+  .extension-manager {
+    width: 100%;
+    height: 96vh;
+  }
+  .extension-manager-body {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+  .extension-manager-body > article {
+    padding: 18px;
+  }
+  .extension-settings-grid > label {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .extension-details-heading {
+    display: block;
+  }
+  .extension-details-heading h3 {
+    font-size: 18px;
+  }
+}

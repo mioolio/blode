@@ -38,6 +38,7 @@ export const aiParameterSchemas = {
     .object({
       revision: z.number().int().nonnegative(),
       predictionEnabled: z.boolean().optional(),
+      predictionDelayMs: z.number().int().min(100).max(10000).optional(),
       useBuiltins: z.boolean().optional(),
       entries: z.array(entry).max(1000).optional(),
       resetCatalog: z.boolean().optional(),
@@ -53,6 +54,7 @@ export const aiParameterSchemas = {
       column: z.number().int().positive(),
       prefix: z.string().max(12000),
       suffix: z.string().max(12000),
+      manual: z.boolean().optional(),
     })
     .strict(),
   'ai.prediction.cancel': z.object({ editorId: id, requestId: id.optional() }).strict(),

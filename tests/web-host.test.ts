@@ -111,6 +111,22 @@ test(
       );
       const componentState = await (await rpc('componentsState', [])).json();
       assert.equal(componentState.components[0].id, imported.components[0].id);
+      const shareResponse = await rpc('componentsExport', [
+        { expectedProjectRoot: state.projectRoot, ids: [imported.components[0].id], confirm: true },
+      ]);
+      assert.equal(shareResponse.status, 200, await shareResponse.clone().text());
+      const shared = await shareResponse.json();
+      assert.equal(shared.componentCount, 1);
+      const sharedDownload = await fetch(`${host.web.endpoint}/project/package/${shared.id}`, {
+        headers: { 'x-blode-token': token },
+      });
+      assert.equal(sharedDownload.status, 200);
+      const sharedBytes = Buffer.from(await sharedDownload.arrayBuffer());
+      assert.equal(sharedBytes.length, shared.size);
+      assert.equal(sharedBytes.readUInt32LE(0), 0x04034b50);
+      const unauthorizedShared = await fetch(`${host.web.endpoint}/project/package/${shared.id}`);
+      assert.equal(unauthorizedShared.status, 401);
+      await unauthorizedShared.text();
       const componentRemove = await rpc('componentsRemove', [
         { id: imported.components[0].id, expectedProjectRoot: state.projectRoot, confirm: true },
       ]);

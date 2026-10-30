@@ -59,7 +59,7 @@ async function nativeTray(spec: TraySpecification): Promise<LifecycleTray> {
 /** Window close, application quit and tray quit all share one save decision. */
 export class DesktopLifecycle {
   private preferences: DesktopLifecycleState = {
-    closeToTray: false,
+    closeToTray: true,
     locale: 'zh-CN',
     available: true,
     quitting: false,
@@ -92,7 +92,7 @@ export class DesktopLifecycle {
         if (value.locale === 'en' || value.locale === 'zh-CN') this.preferences.locale = value.locale;
       }
     } catch {
-      /* Missing or obsolete preferences keep the safe default. */
+      /* Missing or obsolete preferences keep the default. */
     }
     if (this.preferences.closeToTray)
       try {

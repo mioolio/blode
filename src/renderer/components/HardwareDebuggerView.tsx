@@ -16,6 +16,7 @@ import {
   debuggerToolIdentity,
   debuggerToolsAvailable,
   debuggerCan,
+  debuggerProjectConfig,
 } from './debuggerProfiles';
 import { DebuggerToolsPanel } from './DebuggerToolsPanel';
 import { DebuggerUartSettings } from './DebuggerUartSettings';
@@ -206,7 +207,10 @@ export function HardwareDebuggerView() {
     }
     setDebug(next);
   };
-  const targetIdentity = `${config?.boardId ?? ''}:${config?.programmer?.serialNumber ?? ''}:${config?.runtime?.deviceId ?? ''}:${config?.debugger?.transport ?? ''}:${config?.debugger?.port ?? ''}:${config?.debugger?.stubMode ?? ''}`;
+  const buildIdentity = useRef('');
+  if (!connected && !attaching)
+    buildIdentity.current = `${app?.projectRoot ?? ''}:${app?.buildTarget?.id ?? ''}:${app?.lastBuild?.timestamp ?? ''}:${app?.buildStale ?? false}`;
+  const targetIdentity = `${config?.boardId ?? ''}:${config?.programmer?.serialNumber ?? ''}:${config?.runtime?.deviceId ?? ''}:${config?.debugger?.transport ?? ''}:${config?.debugger?.port ?? ''}:${config?.debugger?.stubMode ?? ''}:${buildIdentity.current}`;
   useEffect(() => {
     requests.current.invalidate();
     let disposed = false;
@@ -280,22 +284,7 @@ export function HardwareDebuggerView() {
         (debugRef.current && ['running', 'stopped', 'connecting'].includes(debugRef.current.connection))
       )
         return current;
-      const target =
-        state.config.boardId !== 'auto'
-          ? state.config
-          : (state.boards.find((board) => board.id === 'STM32F103C8T6')?.defaultConfig as ProjectConfig);
-      const next =
-        current?.boardId === target?.boardId
-          ? { ...target, programmer: current.programmer, debugger: current.debugger ?? target.debugger }
-          : target;
-      if (!next) return null;
-      if (
-        state.connections?.probes.state === 'ready' &&
-        next.programmer?.serialNumber &&
-        !state.debugProbes.some((probe) => probe.serialNumber === next.programmer?.serialNumber)
-      )
-        return { ...next, programmer: { ...next.programmer, serialNumber: '' } };
-      return next;
+      return debuggerProjectConfig(state, current);
     });
   };
   useEffect(() => {
@@ -328,6 +317,8 @@ export function HardwareDebuggerView() {
           'status.configSaved',
           'status.projectOpened',
           'status.projectClosed',
+          'status.buildSucceeded',
+          'status.buildFailed',
         ].includes(event.message)
       )
         void devices().catch(reportError);

@@ -1,5 +1,5 @@
 import * as z from 'zod';
-import { configSchema } from '../core/config';
+import { configSchema } from '../core/config-schema';
 import { aiParameterSchemas } from '../core/ai-schemas';
 import { collaborationSchemas } from '../core/collaboration-schemas';
 import { uiCommandSchema } from '../core/ui-commands';
@@ -82,6 +82,30 @@ export const workbenchRouteSchemas = {
 export type WorkbenchRouteName = keyof typeof workbenchRouteSchemas;
 
 export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
+  'extensions.state': 'List installed general extensions, permissions, enabled state and official examples.',
+  'extensions.review': 'Inspect a host extension folder or ZIP without executing its code.',
+  'extensions.install': 'Install the exact reviewed package without enabling it; confirm=true is required.',
+  'extensions.enable':
+    'Approve the package fingerprint and enable its declared capabilities; confirm=true is required.',
+  'extensions.disable': 'Disable an extension and remove its UI contributions.',
+  'extensions.remove':
+    'Uninstall an extension from the application-managed directory; confirm=true is required.',
+  'extensions.configure': 'Update declared settings for an enabled extension.',
+  'extensions.export': 'Export a self-contained extension ZIP without machine trust or host credentials.',
+  'extensions.context': 'Read the enabled extension context and its settings.',
+  'extensions.view': 'Read the isolated document for a declared extension view.',
+  'extensions.viewUrl': 'Create an isolated document URL for an enabled extension view.',
+  'extensions.openView': 'Open a declared extension window or bottom panel.',
+  'model.state': 'Read model provider settings without exposing credentials.',
+  'model.configure': 'Configure the host model provider and store a credential with explicit confirmation.',
+  'model.test': 'Check the configured provider connection and list available models.',
+  'ai.chat.start': 'Ask the configured model or request edits within an explicitly authorized scope.',
+  'ai.chat.state': 'Read a private model conversation using its session token.',
+  'ai.chat.cancel': 'Stop an active model conversation.',
+  'tools.downloadVersion': 'Download a shareable offline tool archive without installing it.',
+  'tools.importVersion': 'Validate and install a previously downloaded offline tool archive.',
+  'tools.cancelVersionTransfer': 'Cancel the current offline tool transfer.',
+  'components.export': 'Export configured components and dependencies as a portable ZIP package.',
   'components.state': 'List project components and platform-provided libraries.',
   'components.search': 'Search the Arduino library catalog on explicit request.',
   'components.install':
@@ -103,6 +127,10 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
     'Request a declared extension view in one workbench. Browser windows require a user click.',
   'runtime.debug': 'Invoke an approved runtime debug provider method.',
   'language.index': 'Index saved C/C++ workspace symbols and export their source locations.',
+  'language.navigate':
+    'Resolve source symbols and includes through actual workspace and compiler include directories.',
+  'language.cancel': 'Cancel a pending source navigation request in the expected project.',
+  'language.openExternal': 'Open a previously resolved external source as read-only in the expected project.',
   'capabilities.get': 'List all available automation capabilities and required confirmations.',
   'file.create': 'Create a project-relative file.',
   'directory.create': 'Create a project-relative directory.',
@@ -179,15 +207,17 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
   'project.package.preview': 'Inspect portable ZIP files, external dependencies and unresolved paths.',
   'project.package.export':
     'Save shared drafts and produce a portable ZIP. External dependencies require confirmExternal=true; unresolved paths require allowIncomplete=true.',
+  'terminal.sessions': 'List the host terminal sessions without starting a shell.',
   'terminal.state':
     'Read the target terminal state and ANSI output after a session cursor; does not start a shell.',
   'terminal.open':
-    'Open or reuse a persistent interactive shell on the target machine; confirm=true is required.',
+    'Open the default shell, reuse terminalId, or create an independent shell with create=true; optional name labels a session. Requires confirm=true.',
   'terminal.run':
-    'Submit a command to the persistent target shell, preserving its directory and variables; confirm=true is required.',
+    'Run a command in terminalId (default when omitted), preserving that session’s directory and variables; confirm=true is required.',
   'terminal.stop': 'Send Ctrl+C to the host terminal without closing its shell.',
   'terminal.write':
     'Send raw terminal input, including interactive answers or control keys; confirm=true is required.',
   'terminal.resize': 'Set terminal columns and rows for the current session.',
-  'terminal.close': 'Close the host terminal and its child processes; confirm=true is required.',
+  'terminal.close':
+    'Close only the specified terminalId and its child processes; omitting terminalId closes the default session. Requires confirm=true.',
 };

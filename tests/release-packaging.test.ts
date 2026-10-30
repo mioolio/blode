@@ -51,3 +51,32 @@ test('Web payload traversal omits source maps and refuses linked payload directo
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('plugin examples in a Web release exclude trust, credentials and developer directories', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'blode-release-plugin-'));
+  try {
+    for (const name of [
+      'manifest.json',
+      'runtime/index.mjs',
+      '.uel',
+      '.env',
+      '.env.local',
+      '.vscode/settings.json',
+      '.git/config',
+      '.tools/profile.json',
+      'node_modules/private.js',
+    ]) {
+      await mkdir(path.dirname(path.join(root, name)), { recursive: true });
+      await writeFile(path.join(root, name), 'fixture');
+    }
+    const names: string[] = [];
+    for await (const file of releaseFiles(root, 'extensions/plugins/Example', true)) names.push(file.path);
+    assert.deepEqual(names, [
+      'extensions/plugins/Example/manifest.json',
+      'extensions/plugins/Example/runtime/index.mjs',
+    ]);
+  } finally {
+    assert.equal(path.dirname(root), path.resolve(tmpdir()));
+    await rm(root, { recursive: true, force: true });
+  }
+});

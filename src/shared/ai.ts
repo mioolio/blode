@@ -9,6 +9,7 @@ export interface AiCompletionEntry extends CompletionEntry {
 export interface AiAssistanceState {
   revision: number;
   predictionEnabled: boolean;
+  predictionDelayMs: number;
   useBuiltins: boolean;
   entries: AiCompletionEntry[];
   builtins: LanguageCompletions[];
@@ -16,6 +17,7 @@ export interface AiAssistanceState {
 export interface AiAssistanceConfiguration {
   revision: number;
   predictionEnabled?: boolean;
+  predictionDelayMs?: number;
   useBuiltins?: boolean;
   entries?: AiCompletionEntry[];
   resetCatalog?: boolean;
@@ -29,6 +31,8 @@ export interface AiPredictionContext {
   column: number;
   prefix: string;
   suffix: string;
+  /** A deliberate, single completion action; automatic callers omit this. */
+  manual?: boolean;
 }
 export interface AiPredictionRequest extends AiPredictionContext {
   id: string;

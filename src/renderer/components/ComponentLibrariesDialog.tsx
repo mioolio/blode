@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Download, FolderOpen, LoaderCircle, Package, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  Download,
+  FolderOpen,
+  LoaderCircle,
+  Package,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import type { ComponentLibrary } from '../../shared/components';
 import type { Studio } from '../workspace/useStudio';
 import { pickHostPath } from '../workspace/hostPicker';
@@ -25,6 +36,9 @@ export default function ComponentLibrariesDialog({
   const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
   const [tab, setTab] = useState<LibraryTab>('installed');
   const [selected, setSelected] = useState('');
+  const [localSelected, setLocalSelected] = useState('');
+  const [localQuery, setLocalQuery] = useState('');
+  const [exportIds, setExportIds] = useState<ReadonlySet<string>>(new Set());
   const [version, setVersion] = useState('');
   const [importPath, setImportPath] = useState('');
   const [importKind, setImportKind] = useState<'directory' | 'archive'>('directory');
@@ -43,7 +57,17 @@ export default function ComponentLibrariesDialog({
     !!model.projectRoot &&
     snapshot.data?.projectRoot === model.projectRoot &&
     currentProject === model.projectRoot;
-  const selectedLibrary = snapshot.search?.entries.find((entry) => entry.name === selected);
+  const selectedLibrary =
+    snapshot.search?.entries.find((entry) => entry.name === selected) ?? snapshot.search?.entries[0];
+  const installed = snapshot.data?.components ?? [];
+  const localLibrary = installed.find((library) => library.id === localSelected) ?? installed[0];
+  const localLibraries = installed.filter((library) =>
+    `${library.name} ${library.path}`.toLowerCase().includes(localQuery.trim().toLowerCase()),
+  );
+  const installedLibrary = installed.find(
+    (library) => library.name.toLowerCase() === selectedLibrary?.name.toLowerCase(),
+  );
+  const selectedExportIds = [...exportIds].filter((id) => installed.some((library) => library.id === id));
   const selectedVersion = selectedLibrary?.versions.includes(version)
     ? version
     : (selectedLibrary?.latestVersion ?? '');
@@ -115,6 +139,13 @@ export default function ComponentLibrariesDialog({
       if (model.active) setPicking(false);
     }
   };
+  const exportLibraries = async (ids?: string[]) => {
+    if (blocked || !projectAvailable || !(await studio.save())) return;
+    if (!model.active || currentProjectRef.current !== model.projectRoot) return;
+    await studio.perform('components.export', async () => {
+      if (await model.export(ids)) studio.notify(t('components.exported'));
+    });
+  };
   const dependencies = (names: string[] | undefined) =>
     !!names?.length && (
       <div className="component-dependencies">
@@ -160,11 +191,6 @@ export default function ComponentLibrariesDialog({
             <X size={17} />
           </button>
         </header>
-        {model.projectRoot && (
-          <div className="component-project" title={model.projectRoot}>
-            {model.projectRoot}
-          </div>
-        )}
         <nav className="component-tabs" aria-label={t('components.title')}>
           {(['installed', 'browse', 'import'] as const).map((item) => (
             <button
@@ -173,80 +199,188 @@ export default function ComponentLibrariesDialog({
               aria-pressed={tab === item}
               onClick={() => setTab(item)}
             >
-              {t(`components.${item}`)}
+              {t(`components.${item}`)}{' '}
+              {item === 'installed' && <span className="count-badge">{installed.length}</span>}
             </button>
           ))}
         </nav>
-        <div className="component-content">
-          {snapshot.error && (
-            <pre role="alert" className="component-error error-text">
-              {t(snapshot.error)}
-            </pre>
-          )}
-          {snapshot.completed && !snapshot.error && (
-            <p role="status" className="component-message">
-              {t('components.done')}
-            </p>
-          )}
+        {(snapshot.error || snapshot.completed) && (
+          <div
+            className={`component-notice${snapshot.error ? ' error-text' : ''}`}
+            role={snapshot.error ? 'alert' : 'status'}
+          >
+            {t(
+              snapshot.error || (snapshot.operation === 'export' ? 'components.exported' : 'components.done'),
+            )}
+          </div>
+        )}
+        <div className={`component-content component-page-${tab}`}>
           {tab === 'installed' && (
             <>
-              {snapshot.loading && (
-                <p role="status" className="component-message">
+              <div className="component-toolbar">
+                <div className="component-filter">
+                  <Search size={14} />
+                  <input
+                    value={localQuery}
+                    placeholder={t('components.filterInstalled')}
+                    aria-label={t('components.filterInstalled')}
+                    onChange={(event) => setLocalQuery(event.target.value)}
+                  />
+                </div>
+                <button
+                  disabled={blocked || !projectAvailable || !installed.length}
+                  onClick={() => void exportLibraries(selectedExportIds)}
+                >
+                  <Upload size={14} />
+                  {t(selectedExportIds.length ? 'components.exportSelected' : 'components.exportAll')}
+                  {selectedExportIds.length > 0 && (
+                    <span className="count-badge">{selectedExportIds.length}</span>
+                  )}
+                </button>
+              </div>
+              {!model.projectRoot ? (
+                <p className="component-empty">{t('components.noProject')}</p>
+              ) : snapshot.loading ? (
+                <p className="component-message" role="status">
                   <LoaderCircle size={14} className="spin" />
                   {t('components.loading')}
                 </p>
-              )}
-              {!model.projectRoot ? (
-                <p className="component-empty">{t('components.noProject')}</p>
+              ) : !installed.length ? (
+                <div className="component-empty-state">
+                  <Package size={30} strokeWidth={1.2} />
+                  <p>{t('components.empty')}</p>
+                  <div>
+                    <button onClick={() => setTab('browse')}>{t('components.browse')}</button>
+                    <button onClick={() => setTab('import')}>{t('components.import')}</button>
+                  </div>
+                </div>
               ) : (
-                !snapshot.loading &&
-                snapshot.data &&
-                !snapshot.data.components.length && <p className="component-empty">{t('components.empty')}</p>
-              )}
-              <div className="component-installed-list">
-                {snapshot.data?.components.map((library) => (
-                  <article className="component-library" key={library.id}>
-                    <div className="component-library-heading">
-                      <h3>{library.name}</h3>
-                      <span>{library.version}</span>
-                      <small>{library.kind === 'arduino' ? 'Arduino' : 'C/C++'}</small>
-                      <button
-                        className="icon-button"
-                        disabled={blocked || !projectAvailable}
-                        title={t('components.remove')}
-                        aria-label={`${t('components.remove')} ${library.name}`}
-                        onClick={() => setRemove(library)}
+                <div className="component-catalog">
+                  <div
+                    className="component-results component-installed-results"
+                    aria-label={t('components.installed')}
+                  >
+                    {localLibraries.map((library) => (
+                      <div
+                        className={`component-installed-row${localLibrary?.id === library.id ? ' active' : ''}`}
+                        key={library.id}
                       >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                    <p className="component-origin">
-                      {t(`components.source.${library.source.type}`)} <code>{library.path}</code>
-                    </p>
-                    {dependencies(library.dependencies)}
-                    {remove?.id === library.id && (
-                      <div className="component-confirm" role="alert">
-                        <span>
-                          {t('components.removeConfirm')} {library.name}
-                        </span>
-                        <button disabled={blocked} onClick={() => setRemove(undefined)}>
-                          {t('action.cancel')}
-                        </button>
+                        <input
+                          type="checkbox"
+                          aria-label={`${t('components.selectExport')} ${library.name}`}
+                          checked={exportIds.has(library.id)}
+                          onChange={(event) =>
+                            setExportIds((current) => {
+                              const next = new Set(current);
+                              if (event.target.checked) next.add(library.id);
+                              else next.delete(library.id);
+                              return next;
+                            })
+                          }
+                        />
                         <button
-                          disabled={blocked}
-                          onClick={() => run('components.remove', () => model.remove(library.id))}
+                          aria-pressed={localLibrary?.id === library.id}
+                          onClick={() => {
+                            setLocalSelected(library.id);
+                            setRemove(undefined);
+                          }}
                         >
-                          {t('components.remove')}
+                          <strong>{library.name}</strong>
+                          <small>{library.kind === 'arduino' ? 'Arduino' : 'C/C++'}</small>
+                          <span>{library.version}</span>
                         </button>
                       </div>
+                    ))}
+                    {!localLibraries.length && <p className="component-empty">{t('components.noResults')}</p>}
+                  </div>
+                  <section className="component-detail">
+                    {localLibrary && (
+                      <>
+                        <div className="component-detail-title">
+                          <Package size={24} strokeWidth={1.3} />
+                          <div>
+                            <h3>{localLibrary.name}</h3>
+                            <span>{localLibrary.version || 'C/C++'}</span>
+                          </div>
+                          <span className="component-installed-badge">
+                            <Check size={12} />
+                            {t('components.installed')}
+                          </span>
+                        </div>
+                        <dl className="component-facts">
+                          <div>
+                            <dt>{t('components.source')}</dt>
+                            <dd>{t(`components.source.${localLibrary.source.type}`)}</dd>
+                          </div>
+                          <div>
+                            <dt>{t('components.path')}</dt>
+                            <dd>
+                              <code>{localLibrary.path}</code>
+                            </dd>
+                          </div>
+                        </dl>
+                        {dependencies(localLibrary.dependencies)}
+                        {!!localLibrary.includes.length && (
+                          <div className="component-detail-section">
+                            <h4>{t('components.includeDirectories')}</h4>
+                            {localLibrary.includes.map((directory) => (
+                              <code key={directory}>{directory}</code>
+                            ))}
+                          </div>
+                        )}
+                        <div className="component-detail-section">
+                          <h4>
+                            {t('components.sourceFiles')} <span>{localLibrary.sources.length}</span>
+                          </h4>
+                          <div className="component-source-list">
+                            {localLibrary.sources.map((source) => (
+                              <code key={source}>{source}</code>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="component-detail-actions">
+                          <button
+                            disabled={blocked || !projectAvailable}
+                            onClick={() => void exportLibraries([localLibrary.id])}
+                          >
+                            <Upload size={14} />
+                            {t('components.export')}
+                          </button>
+                          <button
+                            className="component-remove"
+                            disabled={blocked || !projectAvailable}
+                            onClick={() => setRemove(localLibrary)}
+                          >
+                            <Trash2 size={14} />
+                            {t('components.remove')}
+                          </button>
+                        </div>
+                        {remove?.id === localLibrary.id && (
+                          <div className="component-confirm" role="alert">
+                            <span>
+                              {t('components.removeConfirm')} {localLibrary.name}
+                            </span>
+                            <button disabled={blocked} onClick={() => setRemove(undefined)}>
+                              {t('action.cancel')}
+                            </button>
+                            <button
+                              className="danger"
+                              disabled={blocked}
+                              onClick={() => run('components.remove', () => model.remove(localLibrary.id))}
+                            >
+                              {t('components.remove')}
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
-                  </article>
-                ))}
-              </div>
+                  </section>
+                </div>
+              )}
               {!!snapshot.data?.provided.length && (
                 <details className="component-provided">
                   <summary>
-                    {t('components.provided')} ({snapshot.data.provided.length})
+                    {t('components.provided')} <span>{snapshot.data.provided.length}</span>
                   </summary>
                   {snapshot.data.provided.map((library) => (
                     <div key={library.path}>
@@ -270,33 +404,39 @@ export default function ComponentLibrariesDialog({
                   void model.search();
                 }}
               >
-                <input
-                  aria-label={t('components.searchPlaceholder')}
-                  placeholder={t('components.searchPlaceholder')}
-                  value={snapshot.query}
-                  maxLength={200}
-                  disabled={!!snapshot.operation}
-                  onChange={(event) => {
-                    model.setQuery(event.target.value);
-                    setSelected('');
-                  }}
-                />
+                <div className="component-filter">
+                  <Search size={14} />
+                  <input
+                    aria-label={t('components.searchPlaceholder')}
+                    placeholder={t('components.searchPlaceholder')}
+                    value={snapshot.query}
+                    maxLength={200}
+                    disabled={!!snapshot.operation}
+                    onChange={(event) => {
+                      model.setQuery(event.target.value);
+                      setSelected('');
+                    }}
+                  />
+                </div>
                 <button
                   type="submit"
                   className="primary"
                   disabled={blocked || snapshot.searching || !snapshot.query.trim()}
                 >
-                  {snapshot.searching ? <LoaderCircle size={14} className="spin" /> : <Search size={14} />}
+                  {snapshot.searching ? <LoaderCircle size={14} className="spin" /> : <Search size={14} />}{' '}
                   {t('components.search')}
                 </button>
               </form>
               {snapshot.searching && (
-                <p role="status" className="component-message">
+                <p className="component-message" role="status">
                   {t('components.loading')}
                 </p>
               )}
               {!snapshot.search && !snapshot.searching && (
-                <p className="component-empty">{t('components.searchIdle')}</p>
+                <div className="component-empty-state">
+                  <Search size={30} strokeWidth={1.2} />
+                  <p>{t('components.searchIdle')}</p>
+                </div>
               )}
               {snapshot.search && !snapshot.search.entries.length && (
                 <p className="component-empty">{t('components.noResults')}</p>
@@ -307,8 +447,8 @@ export default function ComponentLibrariesDialog({
                     {snapshot.search.entries.map((library) => (
                       <button
                         key={library.name}
-                        className={selected === library.name ? 'active' : ''}
-                        aria-pressed={selected === library.name}
+                        className={selectedLibrary?.name === library.name ? 'active' : ''}
+                        aria-pressed={selectedLibrary?.name === library.name}
                         onClick={() => {
                           setSelected(library.name);
                           setVersion(library.latestVersion);
@@ -316,20 +456,33 @@ export default function ComponentLibrariesDialog({
                       >
                         <strong>{library.name}</strong>
                         <small>{library.author}</small>
-                        <span>{library.latestVersion}</span>
+                        <span>
+                          {installed.some((item) => item.name.toLowerCase() === library.name.toLowerCase())
+                            ? t('components.installed')
+                            : library.latestVersion}
+                        </span>
                       </button>
                     ))}
                   </div>
                   <section className="component-detail">
-                    {selectedLibrary ? (
+                    {selectedLibrary && (
                       <>
-                        <h3>{selectedLibrary.name}</h3>
-                        {selectedLibrary.author && (
-                          <p>
-                            {t('components.author')}: {selectedLibrary.author}
-                          </p>
+                        <div className="component-detail-title">
+                          <Package size={24} strokeWidth={1.3} />
+                          <div>
+                            <h3>{selectedLibrary.name}</h3>
+                            {selectedLibrary.author && <span>{selectedLibrary.author}</span>}
+                          </div>
+                          {installedLibrary && (
+                            <span className="component-installed-badge">
+                              <Check size={12} />
+                              {installedLibrary.version}
+                            </span>
+                          )}
+                        </div>
+                        {selectedLibrary.description && (
+                          <p className="component-description">{selectedLibrary.description}</p>
                         )}
-                        {selectedLibrary.description && <p>{selectedLibrary.description}</p>}
                         <label>
                           {t('components.version')}
                           <ModernSelect
@@ -353,21 +506,32 @@ export default function ComponentLibrariesDialog({
                         {!projectAvailable && (
                           <p className="component-message">{t('components.noProject')}</p>
                         )}
-                        <button
-                          className="primary"
-                          disabled={blocked || !projectAvailable || !selectedVersion}
-                          onClick={() =>
-                            run('components.install', () =>
-                              model.install(selectedLibrary.name, selectedVersion),
-                            )
-                          }
-                        >
-                          <Download size={14} />
-                          {t('components.install')}
-                        </button>
+                        <div className="component-detail-actions">
+                          {installedLibrary ? (
+                            <button
+                              onClick={() => {
+                                setLocalSelected(installedLibrary.id);
+                                setTab('installed');
+                              }}
+                            >
+                              {t('components.manageInstalled')}
+                            </button>
+                          ) : (
+                            <button
+                              className="primary"
+                              disabled={blocked || !projectAvailable || !selectedVersion}
+                              onClick={() =>
+                                run('components.install', () =>
+                                  model.install(selectedLibrary.name, selectedVersion),
+                                )
+                              }
+                            >
+                              <Download size={14} />
+                              {t('components.install')}
+                            </button>
+                          )}
+                        </div>
                       </>
-                    ) : (
-                      <p className="component-empty">{t('components.selectLibrary')}</p>
                     )}
                   </section>
                 </div>
@@ -383,6 +547,8 @@ export default function ComponentLibrariesDialog({
                 run('components.importAction', () => model.import(importPath.trim(), importKind));
               }}
             >
+              <Package size={32} strokeWidth={1.2} />
+              <h3>{t('components.import')}</h3>
               {!model.projectRoot && <p className="component-message">{t('components.noProject')}</p>}
               <label>
                 {t('components.source')}
@@ -397,46 +563,46 @@ export default function ComponentLibrariesDialog({
               </label>
               <label>
                 {t('components.path')}
-                <input
-                  value={importPath}
-                  disabled={blocked || !projectAvailable}
-                  spellCheck={false}
-                  onChange={(event) => setImportPath(event.target.value)}
-                />
+                <div className="component-import-path">
+                  <input
+                    value={importPath}
+                    disabled={blocked || !projectAvailable}
+                    spellCheck={false}
+                    onChange={(event) => setImportPath(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={blocked || !projectAvailable}
+                    onClick={() => void browseHost(importKind)}
+                    aria-label={t(
+                      importKind === 'directory' ? 'components.pickDirectory' : 'components.pickArchive',
+                    )}
+                  >
+                    <FolderOpen size={15} />
+                  </button>
+                </div>
               </label>
               <div className="component-import-actions">
-                <button
-                  type="button"
-                  disabled={blocked || !projectAvailable}
-                  onClick={() => void browseHost('directory')}
-                >
-                  <FolderOpen size={14} />
-                  {t('components.pickDirectory')}
-                </button>
-                <button
-                  type="button"
-                  disabled={blocked || !projectAvailable}
-                  onClick={() => void browseHost('archive')}
-                >
-                  <Package size={14} />
-                  {t('components.pickArchive')}
-                </button>
                 <button
                   type="submit"
                   className="primary"
                   disabled={blocked || !projectAvailable || !importPath.trim()}
                 >
+                  <Download size={14} />
                   {t('components.importAction')}
                 </button>
               </div>
             </form>
           )}
-          {(snapshot.installation || snapshot.operation) && (
-            <section className="component-install-output">
-              <InstallationOutput installation={snapshot.installation} pending={!!snapshot.operation} />
-            </section>
-          )}
         </div>
+        {(snapshot.installation || (snapshot.operation && snapshot.operation !== 'export')) && (
+          <details className="component-install-output" open={!!snapshot.operation}>
+            <summary>
+              {t(snapshot.operation ? 'components.operationProgress' : 'settings.installOutput')}
+            </summary>
+            <InstallationOutput installation={snapshot.installation} pending={!!snapshot.operation} />
+          </details>
+        )}
       </section>
     </div>
   );

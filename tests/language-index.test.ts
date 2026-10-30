@@ -79,6 +79,77 @@ test('incremental index reparses changed buffers and removes deleted sources', (
   assert.equal(index.definitions('driver', 'main.c').length, 0);
 });
 
+test('incremental discovery preserves previous batches and named lookup does not flatten the workspace', () => {
+  const index = new WorkspaceLanguageIndex();
+  index.upsert([{ path: 'one.c', content: 'int first(void) { return 1; }' }]);
+  index.upsert([{ path: 'two.c', content: '#include "one.h"\nint second(void) { return 2; }' }]);
+  index.snapshot = () => {
+    throw Error('full snapshot on interactive lookup');
+  };
+  for (let attempt = 0; attempt < 1000; attempt++)
+    assert.deepEqual(index.definitions('missing', 'one.c'), []);
+  assert.equal(index.definitions('first', 'two.c')[0].path, 'one.c');
+  assert.equal(index.includesForPath('two.c')[0].specifier, 'one.h');
+  index.upsert([{ path: 'one.c', content: 'int replaced(void) { return 3; }' }]);
+  assert.equal(index.definitions('first', 'two.c').length, 0);
+  assert.equal(index.definitions('second', 'one.c').length, 1);
+  index.update([]);
+  assert.equal(index.definitions('second', 'two.c').length, 0);
+});
+
+test('compiler-discovered inc fragments participate in definitions and references', () => {
+  const index = new WorkspaceLanguageIndex();
+  index.upsert([{ path: 'sdk/detail.inc', content: '#define DETAIL_VALUE 1\nstatic void detail(void) {}' }]);
+  assert.equal(index.definitions('DETAIL_VALUE', 'main.c')[0].path, 'sdk/detail.inc');
+  assert.equal(index.references('DETAIL_VALUE').length, 1);
+});
+
+test('reference indexing yields, cancels without publishing partial data, and reuses unchanged files', async () => {
+  const index = new WorkspaceLanguageIndex(),
+    content = 'void work(void) {}\r\n' + 'work(); /* work(); */ "work";\r\n'.repeat(3000);
+  index.update([
+    { path: 'a.c', content },
+    { path: 'b.c', content },
+  ]);
+  let cancelled = false,
+    yields = 0;
+  assert.deepEqual(
+    await index.referencesAsync('work', {
+      cancelled: () => cancelled,
+      yieldControl: async () => {
+        yields++;
+        cancelled = true;
+      },
+    }),
+    [],
+  );
+  assert.equal(yields, 1);
+  cancelled = false;
+  yields = 0;
+  const first = await index.referencesAsync('work', {
+    yieldControl: async () => {
+      yields++;
+    },
+  });
+  assert.equal(first.length, 6002);
+  assert.ok(yields >= 2);
+  assert.deepEqual(first[1], { path: 'a.c', line: 2, column: 1, endLine: 2, endColumn: 5 });
+  yields = 0;
+  assert.deepEqual(
+    await index.referencesAsync('work', {
+      yieldControl: async () => {
+        yields++;
+      },
+    }),
+    first,
+  );
+  assert.equal(yields, 0);
+  first[0].line = 999;
+  assert.equal(index.references('work')[0].line, 1, 'callers cannot corrupt cached offsets');
+  index.upsert([{ path: 'a.c', content: 'void renamed(void) {}' }]);
+  assert.equal((await index.referencesAsync('work')).length, 3001);
+});
+
 test('saved index persists to the project cache and never trusts edited cache contents', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'blode-language-index-'));
   let files = [{ path: 'main.c', language: 'c', content: 'void disk_function(void) {}' }];

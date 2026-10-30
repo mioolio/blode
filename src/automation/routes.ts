@@ -1,9 +1,9 @@
 import * as z from 'zod';
 import type { CoreApi, LogEvent } from '../shared/contracts';
-import { configSchema } from '../core/config';
+import { configSchema } from '../core/config-schema';
 import { RpcError } from './protocol';
 import { workbenchRouteSchemas } from './workbench-routes';
-import { workspaceAssetRequestSchema } from '../core/workspace-assets';
+import { workspaceAssetRequestSchema } from '../core/workspace-asset-schema';
 
 const empty = z.object({}).strict();
 const port = z.string().min(1).max(256).optional();
@@ -21,7 +21,14 @@ export const routeSchemas = {
   'file.write': z.object({ path: filePath, content: z.string().max(1_000_000) }).strict(),
   'config.set': z.object({ config: configSchema }).strict(),
   'build.entry.set': z.object({ path: filePath }).strict(),
-  'build.run': empty,
+  'build.run': z
+    .object({
+      targetId: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/)
+        .optional(),
+    })
+    .strict(),
   'flash.run': z.object({ confirm: z.literal(true) }).strict(),
   'device.probe': z.object({ port, config: configSchema.optional() }).strict(),
   'toolchain.install': z.object({ confirm: z.literal(true) }).strict(),
@@ -126,7 +133,7 @@ export async function dispatch(
       return null;
     }
     case 'build.run':
-      return api.build();
+      return api.build(routeSchemas['build.run'].parse(input ?? {}).targetId);
     case 'flash.run':
       await api.flash();
       return null;

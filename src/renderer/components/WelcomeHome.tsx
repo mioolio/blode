@@ -12,7 +12,7 @@ export function WelcomeHome({ studio }: { studio: Studio }) {
     openRecentProject,
     removeRecentProject,
     returnToProject,
-    setCloseProjectPending,
+    requestCloseProject,
   } = studio;
   const recent = state?.recentProjects ?? (state?.recentProject ? [state.recentProject] : []);
   return (
@@ -34,8 +34,8 @@ export function WelcomeHome({ studio }: { studio: Studio }) {
             <ArrowRight size={14} />
             {t('welcome.returnToProject')}
           </button>
-          <button onClick={() => setCloseProjectPending(true)} disabled={!!busy}>
-            {t('project.saveClose')}
+          <button onClick={requestCloseProject} disabled={!!busy}>
+            {t('project.close')}
           </button>
         </div>
       )}

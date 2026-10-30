@@ -1,4 +1,5 @@
 import type { AiAssistanceApi } from './ai';
+import type { ModelServiceApi } from './model-service';
 import type { CollaborationApi } from './collaboration';
 import type { WorkbenchApi } from './workbench';
 import type { GitApi } from './git';
@@ -7,6 +8,7 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { GeneralExtensionsApi } from './general-extensions';
 import type { ComponentLibrariesApi } from './components';
 import { APP_CLOSE_REQUEST_CHANNEL, type DesktopLifecycleApi } from './desktop-lifecycle';
 import type { RuntimePluginsApi } from './plugins';
@@ -16,6 +18,8 @@ export function createWorkbenchBridge(
   call: (method: string, args: unknown[]) => Promise<unknown>,
   subscribe: <T>(channel: string, callback: (event: T) => void) => () => void,
 ): AiAssistanceApi &
+  GeneralExtensionsApi &
+  ModelServiceApi &
   CollaborationApi &
   WorkbenchApi &
   GitApi &
@@ -29,7 +33,22 @@ export function createWorkbenchBridge(
   TerminalApi {
   const invoke = call as <T>(method: string, args: unknown[]) => Promise<T>;
   return {
+    generalExtensionState: () => invoke('generalExtensionState', []),
+    generalExtensionReview: (request) => invoke('generalExtensionReview', [request]),
+    generalExtensionInstall: (request) => invoke('generalExtensionInstall', [request]),
+    generalExtensionEnable: (request) => invoke('generalExtensionEnable', [request]),
+    generalExtensionDisable: (request) => invoke('generalExtensionDisable', [request]),
+    generalExtensionRemove: (request) => invoke('generalExtensionRemove', [request]),
+    generalExtensionConfigure: (request) => invoke('generalExtensionConfigure', [request]),
+    generalExtensionExport: (request) => invoke('generalExtensionExport', [request]),
+    generalExtensionPackageSave: (id) => invoke('generalExtensionPackageSave', [id]),
+    generalExtensionViewDocument: (request) => invoke('generalExtensionViewDocument', [request]),
+    generalExtensionViewUrl: (request) => invoke('generalExtensionViewUrl', [request]),
+    generalExtensionOpenView: (request) => invoke('generalExtensionOpenView', [request]),
+    generalExtensionContext: (request) => invoke('generalExtensionContext', [request]),
     componentsState: () => invoke('componentsState', []),
+    componentsExport: (request) => invoke('componentsExport', [request]),
+    componentsPackageSave: (id) => invoke('componentsPackageSave', [id]),
     componentsSearch: (query) => invoke('componentsSearch', [query]),
     componentsInstall: (request) => invoke('componentsInstall', [request]),
     componentsImport: (request) => invoke('componentsImport', [request]),
@@ -50,10 +69,17 @@ export function createWorkbenchBridge(
     runtimePluginContext: (id) => invoke('runtimePluginContext', [id]),
     runtimePluginConfigure: (id, value) => invoke('runtimePluginConfigure', [id, value]),
     languageIndex: () => invoke('languageIndex', []),
+    languageNavigate: (request) => invoke('languageNavigate', [request]),
+    languageCancel: (request) => invoke('languageCancel', [request]),
+    languageOpenExternal: (request) => invoke('languageOpenExternal', [request]),
     gitStatus: () => invoke('gitStatus', []),
     gitDiff: (input) => invoke('gitDiff', [input]),
     gitAction: (input) => invoke('gitAction', [input]),
     toolVersionsState: () => invoke('toolVersionsState', []),
+    toolVersionDownload: (request) => invoke('toolVersionDownload', [request]),
+    toolVersionImport: (request) => invoke('toolVersionImport', [request]),
+    toolVersionPackageSave: (id) => invoke('toolVersionPackageSave', [id]),
+    toolVersionCancel: () => invoke('toolVersionCancel', []),
     toolVersionInstall: (input) => invoke('toolVersionInstall', [input]),
     toolVersionSelect: (input) => invoke('toolVersionSelect', [input]),
     hostBrowse: (path) => invoke('hostBrowse', path ? [path] : []),
@@ -62,14 +88,21 @@ export function createWorkbenchBridge(
     projectPackagePreview: () => invoke('projectPackagePreview', []),
     projectPackageExport: (input) => invoke('projectPackageExport', [input]),
     projectPackageSave: (id) => invoke('projectPackageSave', [id]),
+    terminalSessions: () => invoke('terminalSessions', []),
     terminalState: (cursor) => invoke('terminalState', cursor ? [cursor] : []),
     terminalOpen: (size) => invoke('terminalOpen', size ? [size] : []),
     terminalWrite: (request) => invoke('terminalWrite', [request]),
     terminalResize: (request) => invoke('terminalResize', [request]),
-    terminalClose: () => invoke('terminalClose', []),
+    terminalClose: (target) => invoke('terminalClose', target ? [target] : []),
     terminalRun: (input) => invoke('terminalRun', [input]),
-    terminalStop: () => invoke('terminalStop', []),
+    terminalStop: (target) => invoke('terminalStop', target ? [target] : []),
     aiAssistanceState: () => invoke('aiAssistanceState', []),
+    modelServiceState: () => invoke('modelServiceState', []),
+    modelServiceConfigure: (request) => invoke('modelServiceConfigure', [request]),
+    modelServiceTest: () => invoke('modelServiceTest', []),
+    aiChatStart: (request) => invoke('aiChatStart', [request]),
+    aiChatState: (request) => invoke('aiChatState', [request]),
+    aiChatCancel: (request) => invoke('aiChatCancel', [request]),
     aiAssistanceConfigure: (config) => invoke('aiAssistanceConfigure', [config]),
     aiPredictionRequest: (context) => invoke('aiPredictionRequest', [context]),
     aiPredictionCancel: (request) => invoke('aiPredictionCancel', [request]),

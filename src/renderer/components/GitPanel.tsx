@@ -1,11 +1,12 @@
 import { ModernSelect } from './ModernSelect';
 import { useEffect, useRef, useState } from 'react';
-import { Check, Download, GitBranch, Minus, Plus, RefreshCw, Save, Upload, X } from 'lucide-react';
+import { Check, Copy, Download, GitBranch, Minus, Plus, RefreshCw, Save, Upload, X } from 'lucide-react';
 import type { GitActionRequest, GitApi, GitFileStatus } from '../../shared/git';
 import { useI18n } from '../i18n';
 import { cacheGitStatus, useGitStatus } from '../workspace/useGitStatus';
 import './git-panel.css';
 import type { Studio } from '../workspace/useStudio';
+import { GitDiff } from './GitDiff';
 
 /** Native and browser workbenches operate on the target host's Git repository. */
 export function GitPanel({ studio }: { studio: Studio }) {
@@ -32,6 +33,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
   const [diff, setDiff] = useState(''),
     [selected, setSelected] = useState('');
   const diffRevision = useRef(0);
+  const [diffLoading, setDiffLoading] = useState(false);
   const [output, setOutput] = useState('');
   const git = window.blode as typeof window.blode & Partial<GitApi>;
   const explain = (error: unknown) =>
@@ -41,6 +43,12 @@ export function GitPanel({ studio }: { studio: Studio }) {
         '',
       ),
     );
+  useEffect(() => {
+    diffRevision.current++;
+    setDiff('');
+    setSelected('');
+    setDiffLoading(false);
+  }, [root, state?.repositoryRoot]);
   useEffect(() => {
     const show = () => {
       setOpen(true);
@@ -121,7 +129,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
       diffRevision.current++;
       setDiff('');
       setSelected('');
-      setNotice(t('git.completed'));
+      setDiffLoading(false);
       if (request.action === 'commit') setMessage('');
       if (request.action === 'createBranch') setNewBranch('');
       if (request.action === 'removeRepository') setRemoveTarget(null);
@@ -135,8 +143,9 @@ export function GitPanel({ studio }: { studio: Studio }) {
   };
   const inspect = async (file: GitFileStatus, staged: boolean) => {
     const revision = ++diffRevision.current;
-    setSelected(`${file.path}${staged ? ' · index' : ''}`);
+    setSelected(`${file.path}${staged ? ` · ${t('git.staged')}` : ''}`);
     setDiff('');
+    setDiffLoading(true);
     try {
       if (!git.gitDiff) throw new Error('git.bridgeUnavailable');
       const text = await git.gitDiff({ path: file.path, staged });
@@ -146,12 +155,20 @@ export function GitPanel({ studio }: { studio: Studio }) {
         setNotice(explain(error));
         setFailed(true);
       }
+    } finally {
+      if (revision === diffRevision.current) setDiffLoading(false);
     }
   };
   if (!open) return null;
   const files = state?.files ?? [],
     unstaged = files.filter((file) => file.unstaged),
     staged = files.filter((file) => file.staged);
+  const commitDisabled =
+    busy ||
+    !message.trim() ||
+    !staged.length ||
+    !!state?.outsideStaged ||
+    files.some((file) => file.conflicted);
   const chooseRemote = (value: string) => {
     setRemote(value);
     const found = state?.remotes.find((item) => item.name === value);
@@ -179,7 +196,10 @@ export function GitPanel({ studio }: { studio: Studio }) {
       {items.length ? (
         <div className="git-change-files">
           {items.map((file) => (
-            <div className="git-change-row" key={file.path}>
+            <div
+              className={`git-change-row${selected === `${file.path}${indexed ? ` · ${t('git.staged')}` : ''}` ? ' selected' : ''}`}
+              key={file.path}
+            >
               <button className="git-file" onClick={() => void inspect(file, indexed)} title={file.path}>
                 <span className={`git-file-code code-${file.code}`}>{file.code}</span>
                 <span>{file.path}</span>
@@ -203,7 +223,6 @@ export function GitPanel({ studio }: { studio: Studio }) {
   );
   const management = (
     <div className="git-form git-management">
-      <p>{t(`git.mode.${state?.mode ?? 'disabled'}`)}</p>
       <label>
         {t('git.managementMode')}
         <ModernSelect
@@ -375,7 +394,7 @@ export function GitPanel({ studio }: { studio: Studio }) {
                 </button>
               ))}
             </nav>
-            <div className="git-content">
+            <div className={`git-content${tab === 'changes' ? ' git-content-changes' : ''}`}>
               {tab === 'management' && management}
               {tab === 'changes' && (
                 <>
@@ -388,35 +407,56 @@ export function GitPanel({ studio }: { studio: Studio }) {
                     <div className="git-change-list">
                       {group(unstaged, false)}
                       {group(staged, true)}
-                      <label>
-                        {t('git.commitMessage')}
-                        <textarea
-                          rows={3}
-                          value={message}
-                          disabled={busy}
-                          onChange={(event) => setMessage(event.target.value)}
-                        />
-                      </label>
-                      <button
-                        className="primary"
-                        disabled={
-                          busy ||
-                          !message.trim() ||
-                          !staged.length ||
-                          !!state.outsideStaged ||
-                          files.some((file) => file.conflicted)
-                        }
-                        onClick={() => void act({ action: 'commit', message, confirm: true })}
-                      >
-                        <Check size={14} />
-                        {t('git.commit')}
-                      </button>
                     </div>
                     <section className="git-diff">
-                      <h3>{selected || t('git.diff')}</h3>
-                      <pre>{diff || t('git.selectDiff')}</pre>
+                      <header className="git-diff-heading">
+                        <h3>{selected || t('git.diff')}</h3>
+                        <button
+                          className="icon-button"
+                          disabled={!diff}
+                          onClick={() => void studio.copy(diff)}
+                          title={t('action.copy')}
+                          aria-label={t('action.copy')}
+                        >
+                          <Copy size={13} />
+                        </button>
+                      </header>
+                      {diff ? (
+                        <GitDiff value={diff} />
+                      ) : (
+                        <div className="git-diff-empty">
+                          {t(diffLoading ? 'editor.loading' : 'git.selectDiff')}
+                        </div>
+                      )}
                     </section>
                   </div>
+                  <footer className="git-commit">
+                    {' '}
+                    <label>
+                      {t('git.commitMessage')}
+                      <textarea
+                        placeholder={t('git.commitMessage')}
+                        rows={2}
+                        value={message}
+                        disabled={busy}
+                        onChange={(event) => setMessage(event.target.value)}
+                        onKeyDown={(event) => {
+                          if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !commitDisabled) {
+                            event.preventDefault();
+                            void act({ action: 'commit', message, confirm: true });
+                          }
+                        }}
+                      />
+                    </label>
+                    <button
+                      className="primary"
+                      disabled={commitDisabled}
+                      onClick={() => void act({ action: 'commit', message, confirm: true })}
+                    >
+                      <Check size={14} />
+                      {t('git.commit')} <span className="count-badge">{staged.length}</span>
+                    </button>
+                  </footer>
                 </>
               )}
               {tab === 'branches' && (
@@ -455,7 +495,6 @@ export function GitPanel({ studio }: { studio: Studio }) {
                     <Plus size={14} />
                     {t('git.createBranch')}
                   </button>
-                  <p className="subtle-note">{t('git.branchNote')}</p>
                 </div>
               )}
               {tab === 'remotes' && (

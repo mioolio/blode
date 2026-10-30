@@ -1,11 +1,15 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronRight, Minus, Square, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { supportsLayout } from '../workspace/capabilities';
 import { RELEASE_VERSION } from '../../shared/version';
+import { useI18n } from '../i18n';
+import { useExtensionMenus } from '../extensions/ShellAppearance';
 
 interface MenuAction {
   label: string;
+  literal?: boolean;
   run?: () => void;
   shortcut?: string;
   disabled?: boolean;
@@ -30,6 +34,7 @@ function MenuPopup({
   onChoose,
   onClose,
   onSibling,
+  anchor,
 }: {
   id: string;
   label: string;
@@ -38,10 +43,31 @@ function MenuPopup({
   onChoose(): void;
   onClose(): void;
   onSibling?: (direction: number) => void;
+  anchor?: HTMLElement;
 }) {
   const [submenu, setSubmenu] = useState<string | null>(null);
   const popup = useRef<HTMLDivElement>(null);
   const parents = useRef(new Map<string, HTMLButtonElement>());
+  const [position, setPosition] = useState<{ left: number; top: number }>();
+  useLayoutEffect(() => {
+    if (!anchor || !popup.current) return;
+    const place = () => {
+      if (!popup.current) return;
+      const rect = anchor.getBoundingClientRect(),
+        menu = popup.current.getBoundingClientRect();
+      const left =
+        rect.right + menu.width + 8 <= window.innerWidth
+          ? rect.right - 2
+          : Math.max(6, rect.left - menu.width + 2);
+      setPosition({
+        left: Math.min(left, Math.max(6, window.innerWidth - menu.width - 6)),
+        top: Math.max(6, Math.min(rect.top - 5, window.innerHeight - menu.height - 6)),
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [anchor]);
   const openSubmenu = (key: string, childId: string, focus = false) => {
     setSubmenu(key);
     if (focus)
@@ -84,13 +110,15 @@ function MenuPopup({
       onSibling?.(1);
     }
   };
-  return (
+  const content = (
     <div
       className={`ide-menu-popup${onSibling ? '' : ' ide-submenu-popup'}`}
       id={id}
       role="menu"
       aria-label={label}
       ref={popup}
+      data-studio-menu="true"
+      style={anchor ? { position: 'fixed', ...position } : undefined}
       onKeyDown={navigate}
     >
       {items.map((item, index) => {
@@ -100,9 +128,8 @@ function MenuPopup({
         return (
           <div
             className="ide-menu-entry"
-            key={item.label}
+            key={`${item.label}-${index}`}
             onPointerEnter={() => (item.children ? openSubmenu(item.label, childId) : setSubmenu(null))}
-            onPointerLeave={() => item.children && setSubmenu(null)}
           >
             <button
               className="ide-menu-item"
@@ -117,6 +144,15 @@ function MenuPopup({
                 else parents.current.delete(item.label);
               }}
               onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (item.children) openSubmenu(item.label, childId, true);
+                  else {
+                    onChoose();
+                    item.run?.();
+                  }
+                }
                 if (item.children && event.key === 'ArrowRight') {
                   event.preventDefault();
                   event.stopPropagation();
@@ -132,7 +168,7 @@ function MenuPopup({
                 }
               }}
             >
-              <span>{t(item.label)}</span>
+              <span>{item.literal ? item.label : t(item.label)}</span>
               {item.children ? (
                 <ChevronRight size={12} aria-hidden="true" />
               ) : (
@@ -142,8 +178,9 @@ function MenuPopup({
             {item.children && expanded && (
               <MenuPopup
                 id={childId}
-                label={t(item.label)}
+                label={item.literal ? item.label : t(item.label)}
                 items={item.children}
+                anchor={parents.current.get(item.label)}
                 t={t}
                 onChoose={onChoose}
                 onClose={() => {
@@ -157,10 +194,13 @@ function MenuPopup({
       })}
     </div>
   );
+  return anchor ? createPortal(content, document.body) : content;
 }
 
 /** Standard desktop menus. Enabled items dispatch implemented workspace actions. */
 export function StudioHeader({ studio }: { studio: Studio }) {
+  const { locale } = useI18n();
+  const extensionMenus = useExtensionMenus(locale);
   const {
     t,
     state,
@@ -204,7 +244,7 @@ export function StudioHeader({ studio }: { studio: Studio }) {
           disabled: unavailable,
         },
         { label: 'welcome.home', run: studio.goHome, disabled: !!busy },
-        { label: 'project.saveClose', run: () => studio.setCloseProjectPending(true), disabled: unavailable },
+        { label: 'project.close', run: studio.requestCloseProject, disabled: unavailable },
         separator,
         {
           label: 'menu.preferences',
@@ -263,16 +303,8 @@ export function StudioHeader({ studio }: { studio: Studio }) {
       items: [
         { label: 'runtime.views', run: () => window.dispatchEvent(new CustomEvent('blode:runtime-views')) },
         { label: 'workspace.code', run: () => setView('code') },
-        {
-          label: 'workspace.layout',
-          run: () => setView('layout'),
-          disabled: !workspaceOpen || !supportsLayout(studio.board),
-        },
         { label: 'workspace.ai', run: () => setView('ai') },
-        {
-          label: 'workspace.hardwareSimulation',
-          run: () => void studio.perform('workspace.hardwareSimulation', () => window.blode.openDebugger()),
-        },
+        { label: 'ai.chat.title', run: () => window.dispatchEvent(new CustomEvent('blode:ai-open')) },
         {
           label: 'git.title',
           run: () => window.dispatchEvent(new CustomEvent('blode:git')),
@@ -302,7 +334,7 @@ export function StudioHeader({ studio }: { studio: Studio }) {
     },
     {
       id: 'run',
-      label: 'menu.run',
+      label: 'menu.generate',
       items: [
         {
           label: 'buildSettings.title',
@@ -329,12 +361,24 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         },
         separator,
         {
-          label: studio.validatesFirmware ? 'action.validateFirmware' : 'action.build',
-          run: build,
+          label:
+            !state?.build.targets?.length && studio.validatesFirmware
+              ? 'action.validateFirmware'
+              : 'action.build',
+          run: state?.build.targets && state.build.targets.length > 1 ? undefined : () => void build(),
+          children:
+            state?.build.targets && state.build.targets.length > 1
+              ? state.build.targets.map((target) => ({
+                  label: target.name,
+                  literal: true,
+                  run: () => void build(target.id),
+                }))
+              : undefined,
           shortcut: 'shortcut.build',
           disabled:
             unavailable ||
-            (!studio.isAuto &&
+            (!state?.build.targets?.length &&
+              !studio.isAuto &&
               !studio.board?.capabilities.some(
                 (capability) => capability === 'compile' || capability === 'flash',
               )),
@@ -342,7 +386,28 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         {
           label: 'action.flash',
           run: flash,
-          disabled: unavailable || !studio.board?.capabilities.includes('flash'),
+          disabled:
+            unavailable ||
+            !(
+              state?.buildTarget
+                ? state.boards.find((board) => board.id === state.buildTarget!.config.boardId)
+                : studio.board
+            )?.capabilities.includes('flash'),
+        },
+      ],
+    },
+    {
+      id: 'debug',
+      label: 'menu.debug',
+      items: [
+        {
+          label: 'workspace.hardwareSimulation',
+          run: () => void studio.perform('workspace.hardwareSimulation', () => window.blode.openDebugger()),
+        },
+        {
+          label: 'workspace.layout',
+          run: () => setView('layout'),
+          disabled: !workspaceOpen || !supportsLayout(studio.board),
         },
       ],
     },
@@ -357,19 +422,45 @@ export function StudioHeader({ studio }: { studio: Studio }) {
         { label: 'console.warnings', run: () => setTab('warnings') },
       ],
     },
+    {
+      id: 'extensions',
+      label: 'menu.extensions',
+      items: [
+        { label: 'extensions.manage', run: () => window.dispatchEvent(new CustomEvent('blode:extensions')) },
+        ...extensionMenus.items.map((item) => ({ label: item.label, literal: true, run: item.run })),
+      ],
+    },
     { id: 'help', label: 'menu.help', items: [{ label: 'help.automation', run: () => setView('ai') }] },
   ];
 
   useEffect(() => {
-    const closeOutside = (event: PointerEvent) => {
-      if (!menuRoot.current?.contains(event.target as Node)) setOpened(null);
+    const selectBuild = () => {
+      setOpened('run');
+      requestAnimationFrame(() => {
+        const item = document
+          .getElementById(`${menuId}-run`)
+          ?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]');
+        item?.click();
+        requestAnimationFrame(() =>
+          document.querySelector<HTMLButtonElement>('.ide-submenu-popup [role="menuitem"]')?.focus(),
+        );
+      });
     };
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        !menuRoot.current?.contains(event.target as Node) &&
+        !(event.target as Element).closest?.('[data-studio-menu]')
+      )
+        setOpened(null);
+    };
+    window.addEventListener('blode:build-select', selectBuild);
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
       if (!event.defaultPrevented && (event.key === 'Escape' || event.key === 'Tab')) setOpened(null);
     };
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape);
     return () => {
+      window.removeEventListener('blode:build-select', selectBuild);
       document.removeEventListener('pointerdown', closeOutside);
       document.removeEventListener('keydown', closeOnEscape);
     };
@@ -417,13 +508,16 @@ export function StudioHeader({ studio }: { studio: Studio }) {
                 }
               }}
             >
-              {t(menu.label)}
+              {extensionMenus.overrides[menu.id]?.icon && (
+                <span aria-hidden="true">{extensionMenus.overrides[menu.id].icon}</span>
+              )}
+              {extensionMenus.overrides[menu.id]?.label ?? t(menu.label)}
             </button>
             {opened === menu.id && (
               <MenuPopup
                 key={menu.id}
                 id={`${menuId}-${menu.id}`}
-                label={t(menu.label)}
+                label={extensionMenus.overrides[menu.id]?.label ?? t(menu.label)}
                 items={menu.items}
                 t={t}
                 onChoose={() => setOpened(null)}

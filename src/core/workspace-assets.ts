@@ -3,7 +3,8 @@ import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
-import * as z from 'zod';
+import { workspaceAssetRequestSchema } from './workspace-asset-schema';
+export { workspaceAssetRequestSchema } from './workspace-asset-schema';
 import { safeWorkspacePath } from './workspace';
 import {
   assetKind,
@@ -12,12 +13,6 @@ import {
   type WorkspaceAssetRequest,
 } from '../shared/assets';
 
-export const workspaceAssetRequestSchema = z
-  .object({
-    expectedProjectRoot: z.string().max(4096),
-    path: z.string().min(1).max(1024),
-  })
-  .strict();
 const headers = {
   'cache-control': 'no-store',
   'x-content-type-options': 'nosniff',

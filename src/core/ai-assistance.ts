@@ -22,16 +22,21 @@ interface Options {
   builtins?: () => Promise<LanguageCompletions[] | undefined>;
 }
 type StoredState = Omit<AiAssistanceState, 'builtins'>;
+export interface PredictionEngine {
+  handles(): Promise<boolean>;
+  complete(request: AiPredictionRequest, signal: AbortSignal): Promise<string>;
+}
 const initial = (): StoredState => ({
   revision: 0,
   predictionEnabled: false,
+  predictionDelayMs: 750,
   useBuiltins: true,
   entries: [],
 });
 const MAX_ACTIVE = 32;
 const TTL = 60_000;
 
-/** External AI supplies predictions; this service never connects to a model or stores credentials. */
+/** Shared completion catalog and versioned ghost text, supplied by external tools or a host engine. */
 export class AiAssistance implements AiAssistanceApi {
   private config = initial();
   private readonly configFile: string;
@@ -40,12 +45,27 @@ export class AiAssistance implements AiAssistanceApi {
   private sequence = 0;
   private requests = new Map<string, AiPredictionRequest>();
   private suggestions = new Map<string, AiPredictionSuggestion>();
+  private failures = new Map<string, string>();
   private readonly now: () => number;
+  private engine?: PredictionEngine;
+  private generationControllers = new Map<string, AbortController>();
+  private handledRequests = new Set<string>();
 
   constructor(private readonly options: Options) {
     this.configFile = path.join(options.dataRoot, 'ai-assistance.json');
     this.now = options.now ?? Date.now;
     this.ready = this.restore();
+  }
+  setPredictionEngine(engine: PredictionEngine) {
+    this.engine = engine;
+  }
+  private forgetPrediction(id: string) {
+    this.generationControllers.get(id)?.abort();
+    this.generationControllers.delete(id);
+    this.handledRequests.delete(id);
+    this.requests.delete(id);
+    this.suggestions.delete(id);
+    this.failures.delete(id);
   }
   private async restore() {
     try {
@@ -79,6 +99,7 @@ export class AiAssistance implements AiAssistanceApi {
       const next: StoredState = {
         revision: this.config.revision + 1,
         predictionEnabled: request.predictionEnabled ?? this.config.predictionEnabled,
+        predictionDelayMs: request.predictionDelayMs ?? this.config.predictionDelayMs,
         useBuiltins: request.resetCatalog ? true : (request.useBuiltins ?? this.config.useBuiltins),
         entries: request.resetCatalog ? [] : (request.entries ?? this.config.entries),
       };
@@ -100,8 +121,7 @@ export class AiAssistance implements AiAssistanceApi {
       }
       this.config = next;
       if (!next.predictionEnabled) {
-        this.requests.clear();
-        this.suggestions.clear();
+        for (const [id, request] of this.requests) if (!request.manual) this.forgetPrediction(id);
       }
       this.emit('status.aiAssistanceChanged');
       return this.aiAssistanceState();
@@ -112,8 +132,7 @@ export class AiAssistance implements AiAssistanceApi {
   private prune() {
     for (const [id, request] of this.requests) {
       if (Date.parse(request.expiresAt) <= this.now()) {
-        this.requests.delete(id);
-        this.suggestions.delete(id);
+        this.forgetPrediction(id);
       }
     }
   }
@@ -123,7 +142,7 @@ export class AiAssistance implements AiAssistanceApi {
     const request = this.requests.get(id);
     const root = await this.options.projectRoot();
     if (
-      !this.config.predictionEnabled ||
+      (!this.config.predictionEnabled && !request?.manual) ||
       !request ||
       this.requests.get(id) !== request ||
       request.projectRoot !== root
@@ -134,20 +153,21 @@ export class AiAssistance implements AiAssistanceApi {
   async aiPredictionRequest(input: AiPredictionContext): Promise<AiPredictionRequest | null> {
     const context = aiParameterSchemas['ai.prediction.request'].parse(input);
     await this.ready;
-    if (!this.config.predictionEnabled) return null;
+    const allowed = () => this.config.predictionEnabled || context.manual === true;
+    if (!allowed()) return null;
+    const handled = await this.engine?.handles();
+    if (!allowed() || context.projectRoot !== (await this.options.projectRoot())) return null;
     if (context.projectRoot !== (await this.options.projectRoot()))
       throw new Error('error.aiPredictionStale');
-    if (!this.config.predictionEnabled) return null;
+    if (!allowed()) return null;
     this.prune();
     for (const [id, request] of this.requests)
       if (request.editorId === context.editorId) {
-        this.requests.delete(id);
-        this.suggestions.delete(id);
+        this.forgetPrediction(id);
       }
     if (this.requests.size >= MAX_ACTIVE) {
       const oldest = this.requests.keys().next().value!;
-      this.requests.delete(oldest);
-      this.suggestions.delete(oldest);
+      this.forgetPrediction(oldest);
     }
     const request: AiPredictionRequest = {
       ...context,
@@ -157,6 +177,44 @@ export class AiAssistance implements AiAssistanceApi {
       expiresAt: new Date(this.now() + TTL).toISOString(),
     };
     this.requests.set(request.id, request);
+    if (handled && this.engine) {
+      const controller = new AbortController();
+      this.generationControllers.set(request.id, controller);
+      this.handledRequests.add(request.id);
+      const timeout = AbortSignal.timeout(15000);
+      void this.engine
+        .complete(structuredClone(request), AbortSignal.any([controller.signal, timeout]))
+        .then(async (text) => {
+          if (text) await this.aiPredictionSubmit({ requestId: request.id, text });
+          else {
+            await this.current(request.id);
+            if (this.requests.get(request.id) !== request || controller.signal.aborted) return;
+            this.suggestions.set(request.id, {
+              requestId: request.id,
+              text: '',
+              createdAt: new Date(this.now()).toISOString(),
+            });
+            this.emit(`status.aiPredictionReady ${request.id}`);
+          }
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted || this.requests.get(request.id) !== request) return;
+          const message = error instanceof Error ? error.message : '';
+          this.failures.set(
+            request.id,
+            timeout.aborted
+              ? 'error.aiPredictionTimeout'
+              : /^error\.[A-Za-z0-9]+$/.test(message)
+                ? message
+                : 'error.aiPredictionUnavailable',
+          );
+          this.emit(`status.aiPredictionFailed ${request.id}`);
+        })
+        .finally(() => {
+          if (this.generationControllers.get(request.id) === controller)
+            this.generationControllers.delete(request.id);
+        });
+    }
     this.emit(`status.aiPredictionRequested ${request.id}`);
     return structuredClone(request);
   }
@@ -164,8 +222,7 @@ export class AiAssistance implements AiAssistanceApi {
     const request = aiParameterSchemas['ai.prediction.cancel'].parse(input);
     for (const [id, current] of this.requests)
       if (current.editorId === request.editorId && (!request.requestId || id === request.requestId)) {
-        this.requests.delete(id);
-        this.suggestions.delete(id);
+        this.forgetPrediction(id);
       }
   }
   async aiPredictionPoll(input: { after?: number } = {}) {
@@ -175,19 +232,22 @@ export class AiAssistance implements AiAssistanceApi {
     const root = await this.options.projectRoot();
     return {
       cursor: this.sequence,
-      requests: this.config.predictionEnabled
-        ? structuredClone(
-            [...this.requests.values()].filter(
-              (item) => item.sequence > after && item.projectRoot === root && !this.suggestions.has(item.id),
-            ),
-          )
-        : [],
+      requests: structuredClone(
+        [...this.requests.values()].filter(
+          (item) =>
+            item.sequence > after &&
+            (this.config.predictionEnabled || item.manual === true) &&
+            item.projectRoot === root &&
+            !this.suggestions.has(item.id) &&
+            !this.handledRequests.has(item.id),
+        ),
+      ),
     };
   }
   async aiPredictionSubmit(input: { requestId: string; text: string }): Promise<AiPredictionSuggestion> {
     const submission = aiParameterSchemas['ai.prediction.submit'].parse(input);
-    await this.current(submission.requestId);
-    if (!this.config.predictionEnabled || !this.requests.has(submission.requestId))
+    const active = await this.current(submission.requestId);
+    if ((!this.config.predictionEnabled && !active.manual) || !this.requests.has(submission.requestId))
       throw new Error('error.aiPredictionStale');
     const previous = this.suggestions.get(submission.requestId);
     if (previous && previous.text !== submission.text) throw new Error('error.aiPredictionStale');
@@ -203,6 +263,8 @@ export class AiAssistance implements AiAssistanceApi {
     } catch {
       return null;
     }
+    const failure = this.failures.get(requestId);
+    if (failure) throw new Error(failure);
     return structuredClone(this.suggestions.get(requestId) ?? null);
   }
 }

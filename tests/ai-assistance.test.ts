@@ -34,6 +34,7 @@ test('prediction starts disabled and creates no request or model connection', ()
   fixture(async (service) => {
     const state = await service.aiAssistanceState();
     assert.equal(state.predictionEnabled, false);
+    assert.equal(state.predictionDelayMs, 750);
     assert.equal(state.useBuiltins, true);
     assert.deepEqual(state.entries, []);
     assert.equal(await service.aiPredictionRequest(context()), null);
@@ -191,6 +192,79 @@ test('catalog overrides, suppressions and member entries remain declarative', ()
   assert.equal(packs[0]?.members?.[0]?.owner, 'Board');
   assert.deepEqual(resolveCompletionCatalog(packs, [], false), []);
 });
+
+test('prediction delay persists, migrates old preferences and validates bounds', () =>
+  fixture(async (service, directory) => {
+    for (const value of [99, 10001, 750.5])
+      await assert.rejects(service.aiAssistanceConfigure({ revision: 0, predictionDelayMs: value }));
+    const saved = await service.aiAssistanceConfigure({ revision: 0, predictionDelayMs: 1250 });
+    assert.equal(saved.predictionDelayMs, 1250);
+    const restored = new AiAssistance({ dataRoot: directory, projectRoot: () => 'C:/projects/demo' });
+    assert.equal((await restored.aiAssistanceState()).predictionDelayMs, 1250);
+    await fs.writeFile(
+      path.join(directory, 'ai-assistance.json'),
+      JSON.stringify({ revision: 8, predictionEnabled: true }),
+    );
+    const legacy = new AiAssistance({ dataRoot: directory, projectRoot: () => 'C:/projects/demo' });
+    assert.equal((await legacy.aiAssistanceState()).predictionDelayMs, 750);
+  }));
+
+test('only an explicit manual action requests once while automatic completion is off', () =>
+  fixture(async (service) => {
+    assert.equal(await service.aiPredictionRequest(context()), null);
+    assert.equal(await service.aiPredictionRequest(context({ manual: false })), null);
+    const request = (await service.aiPredictionRequest(
+      context({ manual: true, prefix: '//这是什么', suffix: '' }),
+    ))!;
+    assert.equal(request.manual, true);
+    assert.deepEqual(
+      (await service.aiPredictionPoll()).requests.map((item) => item.id),
+      [request.id],
+    );
+    await service.aiPredictionSubmit({ requestId: request.id, text: '：这是中文注释。' });
+    assert.equal((await service.aiPredictionRead({ requestId: request.id }))?.text, '：这是中文注释。');
+    assert.equal((await service.aiAssistanceState()).predictionEnabled, false);
+    await service.aiAssistanceConfigure({ revision: 0, predictionEnabled: false, predictionDelayMs: 1000 });
+    assert.equal((await service.aiPredictionRead({ requestId: request.id }))?.text, '：这是中文注释。');
+    await service.aiPredictionCancel({ editorId: request.editorId, requestId: request.id });
+    assert.equal(await service.aiPredictionRead({ requestId: request.id }), null);
+    assert.equal(await service.aiPredictionRequest(context()), null);
+  }));
+
+test('automatic prediction accepts Chinese comments, one character, strings, whitespace and empty files', () =>
+  fixture(async (service) => {
+    await service.aiAssistanceConfigure({ revision: 0, predictionEnabled: true });
+    for (const [index, prefix] of ['//这是什么', '中', 'x', '"你好', ' ', '\n', ''].entries()) {
+      const request = await service.aiPredictionRequest(
+        context({ path: index % 2 ? 'notes.txt' : 'main.c', prefix, suffix: '', modelVersion: index + 1 }),
+      );
+      assert.ok(request, JSON.stringify(prefix));
+      assert.equal(request.prefix, prefix);
+    }
+  }));
+
+test('host prediction failures and empty responses are observable instead of silent', () =>
+  fixture(async (service) => {
+    let answer: string | Error = new Error('error.aiKeyMissing');
+    service.setPredictionEngine({
+      handles: async () => true,
+      complete: async () => {
+        if (answer instanceof Error) throw answer;
+        return answer;
+      },
+    });
+    const failed = (await service.aiPredictionRequest(context({ manual: true })))!;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await assert.rejects(service.aiPredictionRead({ requestId: failed.id }), /aiKeyMissing/);
+    answer = '';
+    const empty = (await service.aiPredictionRequest(context({ manual: true, modelVersion: 2 })))!;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal((await service.aiPredictionRead({ requestId: empty.id }))?.text, '');
+    answer = new Error('secret implementation detail');
+    const unknown = (await service.aiPredictionRequest(context({ manual: true, modelVersion: 3 })))!;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await assert.rejects(service.aiPredictionRead({ requestId: unknown.id }), /aiPredictionUnavailable/);
+  }));
 
 test('a cancellation during asynchronous project lookup cannot resurrect a suggestion', () =>
   fixture(async (_unused, directory) => {

@@ -65,6 +65,19 @@ export interface ComponentRemoveRequest {
   expectedProjectRoot: string;
   confirm: true;
 }
+export interface ComponentExportRequest {
+  expectedProjectRoot: string;
+  ids?: string[];
+  confirm: true;
+}
+export interface ComponentPackageResult {
+  id: string;
+  name: string;
+  size: number;
+  sha256: string;
+  componentCount: number;
+  dependencies: string[];
+}
 
 /** File hashes protect edited or externally replaced libraries from removal. */
 export interface ManagedComponentLibrary extends ComponentLibrary {
@@ -77,6 +90,8 @@ export interface ComponentManifest {
 }
 
 export interface ComponentLibrariesApi {
+  componentsExport(request: ComponentExportRequest): Promise<ComponentPackageResult>;
+  componentsPackageSave(id: string): Promise<boolean>;
   componentsState(): Promise<ComponentLibrariesState>;
   componentsSearch(query: string): Promise<ComponentSearchResult>;
   componentsInstall(request: ComponentInstallRequest): Promise<ComponentLibrariesState>;

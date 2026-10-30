@@ -4,6 +4,30 @@
   overflow: auto;
   scrollbar-gutter: stable;
 }
+.resource-view-resources {
+  display: grid;
+  grid-template-columns: minmax(290px, 1fr) minmax(300px, 1fr);
+  align-content: start;
+  padding: 14px 18px;
+  gap: 18px 28px;
+}
+.console-resource-view.resource-view-resources .inspector-section {
+  padding: 0;
+  min-width: 0;
+}
+.console-resource-view.resource-view-resources .memory-section {
+  order: 0;
+}
+.console-resource-view.resource-view-resources .project-usage {
+  order: 1;
+  border-left: 1px solid var(--border);
+  padding-left: 28px;
+}
+.console-resource-view.resource-view-resources .project-usage:only-child {
+  grid-column: 1 / -1;
+  border-left: 0;
+  padding-left: 0;
+}
 .console-resource-view .inspector-section {
   border: 0;
   padding: 12px 16px;
@@ -45,7 +69,7 @@
   grid-column: 1 / -1;
 }
 .console-resource-view .memory-section > .section-heading {
-  justify-content: flex-end;
+  justify-content: space-between;
 }
 .console-resource-view .memory-meter {
   margin: 0;
@@ -54,6 +78,17 @@
   flex-direction: row;
   flex-wrap: wrap;
   gap: 4px 12px;
+}
+@media (max-width: 1040px) {
+  .resource-view-resources {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .console-resource-view.resource-view-resources .project-usage {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: 16px 0 0;
+  }
 }
 @media (max-width: 640px) {
   .console-resource-view .memory-section {

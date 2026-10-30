@@ -1,0 +1,14 @@
+{
+  "title": "外观",
+  "subtitle": "选择工作台样式",
+  "menu.appearance": "外观",
+  "settings.preset": "样式",
+  "preset.default": "跟随应用",
+  "preset.glass": "玻璃与背景",
+  "preset.apple": "简洁浅色",
+  "apply": "应用",
+  "applied": "已应用",
+  "preview": "打开底部预览",
+  "window": "打开外观窗口",
+  "menu.file": "文件"
+}

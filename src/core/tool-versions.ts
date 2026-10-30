@@ -7,6 +7,7 @@ import type { RuntimeHost } from '../../extensions/runtime';
 import { GnuArmToolchain, gnuRelease } from '../../extensions/boards/STM32F103C8T6/tools/gnu';
 import { toolVersionSchemas } from './tool-version-schemas';
 import { discoverInstalledBuildTools } from './installed-tools';
+import { readToolPackages } from './tool-package-store';
 
 const GNU_VERSIONS = ['15.2.1-1.1', '14.2.1-1.1', '13.3.1-1.1'];
 const CLI_VERSIONS = ['1.3.1', '1.2.2'];
@@ -46,7 +47,10 @@ export function arduinoCliAsset(version: string, platform: NodeJS.Platform, arch
 }
 
 /** Side-by-side host tools. Selecting a version returns explicit existing compiler/store paths. */
-export class ToolVersions implements ToolVersionsApi {
+export class ToolVersions implements Pick<
+  ToolVersionsApi,
+  'toolVersionsState' | 'toolVersionInstall' | 'toolVersionSelect'
+> {
   private readonly root: string;
   private readonly platform: NodeJS.Platform;
   private readonly arch: string;
@@ -133,9 +137,18 @@ export class ToolVersions implements ToolVersionsApi {
     });
     return entries;
   }
+  catalog() {
+    return this.entries();
+  }
   async toolVersionsState(): Promise<ToolVersionsState> {
     const [entries, installedTools] = await Promise.all([this.entries(), this.installedTools()]);
-    return { platform: this.platform, arch: this.arch, entries, installedTools };
+    return {
+      platform: this.platform,
+      arch: this.arch,
+      entries,
+      installedTools,
+      archives: await readToolPackages(this.options.dataRoot),
+    };
   }
   private async installedTools() {
     return discoverInstalledBuildTools({

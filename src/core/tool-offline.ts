@@ -1,0 +1,628 @@
+import { promises as fs, createReadStream } from 'node:fs';
+import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
+import * as z from 'zod';
+import { ToolVersions, arduinoCliAsset } from './tool-versions';
+import { gnuRelease } from '../../extensions/boards/STM32F103C8T6/tools/gnu';
+import { writeZip, type ZipEntry, type FileZipEntry } from './zip';
+import { repairInstalledToolIntegrity } from './tool-integrity';
+import type { ToolPackageResult, ToolVersionEntry, ToolVersionsState } from '../shared/tool-versions';
+import type { ProjectConfig, InstallationProgress } from '../shared/contracts';
+import type { RuntimeHost } from '../../extensions/runtime';
+
+const MANIFEST = 'blode-tool-package.json',
+  MAX_TOTAL = 1_500_000_000,
+  MAX_FILE = 500_000_000;
+const safe = (value: string) =>
+  !!value &&
+  !/[\\<>:"|?*\0-\x1f]/.test(value) &&
+  !value
+    .split('/')
+    .some(
+      (part) =>
+        !part ||
+        part === '.' ||
+        part === '..' ||
+        /[. ]$/.test(part) ||
+        /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part),
+    );
+const recordSchema = z
+  .object({
+    path: z.string().max(512).refine(safe),
+    url: z.string().url().max(2048),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    size: z.number().int().min(0).max(MAX_FILE),
+    role: z.enum(['metadata', 'index', 'archive']),
+    destination: z.string().max(512).refine(safe).optional(),
+  })
+  .strict();
+const schema = z
+  .object({
+    format: z.literal('blode-tool-package'),
+    version: z.literal(1),
+    toolId: z.string().max(128),
+    platform: z.string().max(32),
+    arch: z.string().max(32),
+    files: z.array(recordSchema).min(1).max(128),
+  })
+  .strict();
+type Manifest = z.infer<typeof schema>;
+type Record = z.infer<typeof recordSchema>;
+export interface OfflineToolOptions {
+  root: string;
+  dataRoot: string;
+  config: () => ProjectConfig | Promise<ProjectConfig>;
+  runner: RuntimeHost['runCommand'];
+  fetcher?: typeof fetch;
+  signal?: AbortSignal;
+  onLine?: (line: string) => void;
+  onProgress?: (progress: InstallationProgress) => void;
+  platform?: NodeJS.Platform;
+  arch?: string;
+  env?: NodeJS.ProcessEnv;
+}
+const digest = async (file: string, signal?: AbortSignal) => {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(file, { signal })) hash.update(chunk);
+  return hash.digest('hex');
+};
+const inside = (root: string, target: string) => {
+  const rel = path.relative(root, target);
+  return rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel);
+};
+export class OfflineTools {
+  private extractedBytes = 0;
+  private extractedCount = 0;
+  private operation: 'download' | 'install' = 'download';
+  private artifacts = new Map<string, { path: string; name: string }>();
+  constructor(private readonly options: OfflineToolOptions) {}
+  private get platform() {
+    return this.options.platform ?? process.platform;
+  }
+  private get arch() {
+    return this.options.arch ?? process.arch;
+  }
+  private progress(
+    tool: string,
+    phase: InstallationProgress['phase'],
+    receivedBytes?: number,
+    totalBytes?: number,
+  ) {
+    this.options.onProgress?.({ tool, phase, receivedBytes, totalBytes, operation: this.operation });
+  }
+  private async response(url: string) {
+    const signal = this.options.signal
+      ? AbortSignal.any([this.options.signal, AbortSignal.timeout(600000)])
+      : AbortSignal.timeout(600000);
+    const response = await (this.options.fetcher ?? fetch)(url, {
+      signal,
+      headers: { 'User-Agent': 'Blode-Studio' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response;
+  }
+  private async writeResponse(response: Response, file: string, tool: string, total?: number) {
+    if (!response.body) throw new Error('error.toolPackageChecksum');
+    let received = 0,
+      last = 0;
+    const hash = createHash('sha256'),
+      handle = await fs.open(file, 'wx');
+    try {
+      for await (const chunk of response.body) {
+        this.options.signal?.throwIfAborted();
+        received += chunk.byteLength;
+        if (received > MAX_FILE) throw new Error('error.toolPackageInvalid');
+        hash.update(chunk);
+        await handle.writeFile(chunk);
+        if (Date.now() - last > 250) {
+          this.progress(tool, 'downloading', received, total);
+          last = Date.now();
+        }
+      }
+    } finally {
+      await handle.close();
+    }
+    this.progress(tool, 'downloading', received, total);
+    return { size: received, sha256: hash.digest('hex') };
+  }
+  async download(request: { id: string; confirm: true }): Promise<ToolPackageResult> {
+    if (request.confirm !== true) throw new Error('error.invalidArguments');
+    const entry = (await new ToolVersions(this.options).catalog()).find((item) => item.id === request.id);
+    if (!entry?.installable) throw new Error('error.toolVersionUnsupported');
+    const directory = path.join(this.options.dataRoot, 'exports');
+    await fs.mkdir(directory, { recursive: true });
+    const stage = await fs.mkdtemp(path.join(directory, 'tool-download-'));
+    const records: Record[] = [];
+    let total = 0,
+      artifact = '';
+    const save = async (
+      url: string,
+      name: string,
+      role: Record['role'],
+      expected?: string,
+      size?: number,
+      destination?: string,
+    ) => {
+      const rel = `payload/${records.length}-${name.replace(/[^A-Za-z0-9_.-]/g, '_')}`,
+        file = path.join(stage, rel);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      const current = await this.writeResponse(
+        await this.response(url),
+        file,
+        `${entry.name} · ${name}`,
+        size,
+      );
+      if (
+        (expected && current.sha256 !== expected.toLowerCase()) ||
+        (size !== undefined && current.size !== size) ||
+        (role === 'metadata' && current.size > 8_000_000) ||
+        (role === 'index' && current.size > 40_000_000) ||
+        (total += current.size) > MAX_TOTAL
+      )
+        throw new Error('error.toolPackageChecksum');
+      const item = { path: rel, url, ...current, role, ...(destination ? { destination } : {}) };
+      records.push(item);
+      return { item, file };
+    };
+    const metadata = async (url: string, name: string, role: Record['role'] = 'metadata') => {
+      const saved = await save(url, name, role);
+      if (saved.item.size > 20_000_000) throw new Error('error.toolPackageInvalid');
+      return { value: JSON.parse(await fs.readFile(saved.file, 'utf8')), saved };
+    };
+    try {
+      this.progress(entry.name, 'starting');
+      if (entry.kind === 'gnu-arm' || entry.kind === 'arduino-cli') {
+        const release =
+          entry.kind === 'gnu-arm'
+            ? gnuRelease(entry.version, this.platform, this.arch)
+            : arduinoCliAsset(entry.version, this.platform, this.arch);
+        if (!release) throw new Error('error.toolVersionUnsupported');
+        const { value } = await metadata(release.metadataUrl, 'release.json');
+        const asset = value.assets?.find(
+          (item: any) => item.name === release.asset && item.browser_download_url === release.downloadUrl,
+        );
+        if (value.tag_name !== `v${entry.version}` || value.draft || value.prerelease || !asset)
+          throw new Error('error.toolVersionRelease');
+        let expected = /^sha256:([a-f0-9]{64})$/i.exec(asset.digest ?? '')?.[1];
+        if (!expected) {
+          const checksumName =
+            entry.kind === 'gnu-arm' ? `${release.asset}.sha` : `${entry.version}-checksums.txt`;
+          const checksum = value.assets?.find(
+            (item: any) =>
+              item.name === checksumName &&
+              item.browser_download_url ===
+                (entry.kind === 'gnu-arm'
+                  ? release.downloadUrl + '.sha'
+                  : `https://github.com/arduino/arduino-cli/releases/download/v${entry.version}/${checksumName}`),
+          );
+          if (!checksum) throw new Error('error.toolPackageChecksum');
+          const saved = await save(checksum.browser_download_url, checksumName, 'metadata');
+          const text = await fs.readFile(saved.file, 'utf8');
+          expected = text
+            .split(/\r?\n/)
+            .map((line) => /^([a-f0-9]{64})\s+\*?(.+)$/i.exec(line.trim()))
+            .find((match) => match?.[2] === release.asset)?.[1];
+        }
+        if (!expected) throw new Error('error.toolPackageChecksum');
+        await save(release.downloadUrl, release.asset, 'archive', expected, asset.size);
+      } else if (entry.kind === 'arduino-esp32') {
+        const esp = await metadata(
+          'https://espressif.github.io/arduino-esp32/package_esp32_index.json',
+          'package_esp32_index.json',
+          'index',
+        );
+        const arduino = await metadata(
+          'https://downloads.arduino.cc/packages/package_index.json',
+          'package_index.json',
+          'index',
+        );
+        const packages = [...(esp.value.packages ?? []), ...(arduino.value.packages ?? [])],
+          owner = packages.find((item) => item.name === 'esp32');
+        const core = owner?.platforms?.find(
+          (item: any) => item.architecture === 'esp32' && item.version === entry.version,
+        );
+        if (!core) throw new Error('error.toolVersionRelease');
+        const add = async (item: any, destination: string) => {
+          const checksum = /^SHA-256:([a-f0-9]{64})$/i.exec(item.checksum ?? '')?.[1];
+          if (!checksum || !/^https:\/\//.test(item.url)) throw new Error('error.toolPackageChecksum');
+          await save(item.url, item.archiveFileName, 'archive', checksum, Number(item.size), destination);
+        };
+        await add(core, `arduino-data/packages/esp32/hardware/esp32/${entry.version}`);
+        const hosts =
+          this.platform === 'win32'
+            ? ['x86_64-mingw32', 'i686-mingw32']
+            : this.arch === 'arm64'
+              ? ['aarch64-linux-gnu']
+              : ['x86_64-pc-linux-gnu', 'x86_64-linux-gnu'];
+        for (const dep of core.toolsDependencies ?? []) {
+          const tool = packages
+            .find((item) => item.name === dep.packager)
+            ?.tools?.find((item: any) => item.name === dep.name && item.version === dep.version);
+          const system = hosts
+            .map((host) => tool?.systems?.find((item: any) => item.host === host))
+            .find(Boolean);
+          if (!system) throw new Error('error.toolVersionUnsupported');
+          await add(system, `arduino-data/packages/${dep.packager}/tools/${dep.name}/${dep.version}`);
+        }
+      } else throw new Error('error.toolVersionUnsupported');
+      const manifest: Manifest = {
+        format: 'blode-tool-package',
+        version: 1,
+        toolId: entry.id,
+        platform: this.platform,
+        arch: this.arch,
+        files: records,
+      };
+      schema.parse(manifest);
+      const id = randomUUID(),
+        file = path.join(directory, id + '.zip'),
+        name = `blode-${entry.id.replace(':', '-')}-${this.platform}-${this.arch}.zip`;
+      artifact = file;
+      const entries: Array<ZipEntry | FileZipEntry> = [
+        { path: MANIFEST, data: Buffer.from(JSON.stringify(manifest, null, 2) + '\n') },
+        ...records.map((item) => ({ path: item.path, data: { file: path.join(stage, item.path) } })),
+      ];
+      this.progress(entry.name, 'verifying');
+      await writeZip(
+        file,
+        (async function* () {
+          yield* entries;
+        })(),
+        { signal: this.options.signal },
+      );
+      this.artifacts.set(id, { path: file, name });
+      const result = {
+        id,
+        name,
+        size: (await fs.stat(file)).size,
+        sha256: await digest(file, this.options.signal),
+        toolId: entry.id,
+        platform: this.platform,
+        arch: this.arch,
+      };
+      await fs.writeFile(path.join(directory, id + '.tool.json'), JSON.stringify(result));
+      this.progress(entry.name, 'completed');
+      return result;
+    } catch (error) {
+      if (artifact) {
+        await fs.unlink(artifact).catch(() => {});
+        await fs.unlink(artifact.replace(/\.zip$/, '.tool.json')).catch(() => {});
+      }
+      throw error;
+    } finally {
+      if (inside(directory, stage))
+        await fs.rm(stage, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
+  }
+  downloadFile(id: string) {
+    const file = this.artifacts.get(id);
+    if (!file) throw new Error('error.packageExpired');
+    return file;
+  }
+  private async preflight(archive: string, maxBytes = 4_000_000_000, maxEntries = 60000) {
+    const settings = { signal: this.options.signal, timeout: 300000, env: this.options.env };
+    const seen = new Map<string, string>();
+    let count = 0,
+      sizes = 0,
+      error = '';
+    const acceptName = (name: string) => {
+      if (!name || name === '.' || name === './') return;
+      if (++count > maxEntries || !safe(name.replace(/^\.\//, '').replace(/\/$/, '')))
+        error = 'error.toolPackageExtract';
+      const canonical = name.replace(/^\.\//, '').replace(/\/$/, '').toLowerCase();
+      const prior = seen.get(canonical);
+      if (prior && (!name.endsWith('/') || prior !== name)) error = 'error.toolPackageExtract';
+      if (count <= maxEntries) seen.set(canonical, name);
+    };
+    const acceptDetails = (line: string) => {
+      if (!line) return;
+      if (!/^[d-]/.test(line) || / -> | link to /.test(line)) error = 'error.toolPackageExtract';
+      const numbers = line
+        .split(/\s+/)
+        .slice(1, 6)
+        .filter((value) => /^\d+$/.test(value))
+        .map(Number);
+      sizes += Math.max(0, ...numbers);
+      if (sizes > maxBytes) error = 'error.toolPackageInvalid';
+    };
+    let receivedNames = false,
+      receivedDetails = false;
+    const listing = await this.options.runner('tar', ['-tf', archive], {
+      ...settings,
+      onLine: (line) => {
+        receivedNames = true;
+        acceptName(line);
+      },
+    });
+    if (!receivedNames) {
+      if (listing.output.length >= 1_999_000) throw new Error('error.toolPackageExtract');
+      listing.output.split(/\r?\n/).forEach(acceptName);
+    }
+    const verbose = await this.options.runner('tar', ['-tvf', archive], {
+      ...settings,
+      onLine: (line) => {
+        receivedDetails = true;
+        acceptDetails(line);
+      },
+    });
+    if (!receivedDetails) {
+      if (verbose.output.length >= 1_999_000) throw new Error('error.toolPackageExtract');
+      verbose.output.split(/\r?\n/).forEach(acceptDetails);
+    }
+    if (listing.code || verbose.code) throw new Error('error.toolPackageExtract');
+    if (error) throw new Error(error);
+    return { size: sizes, count };
+  }
+  private async extract(
+    archive: string,
+    destination: string,
+    maxBytes = 4_000_000_000,
+    maxEntries = 60000,
+    charge = true,
+  ) {
+    const estimate = await this.preflight(archive, maxBytes, maxEntries);
+    if (charge) {
+      this.extractedBytes += estimate.size;
+      this.extractedCount += estimate.count;
+      if (this.extractedBytes > 4_000_000_000 || this.extractedCount > 60000)
+        throw new Error('error.toolPackageInvalid');
+    }
+    const settings = { signal: this.options.signal, timeout: 300000, env: this.options.env };
+    await fs.mkdir(destination, { recursive: true });
+    const extracted = await this.options.runner('tar', ['-xf', archive, '-C', destination], {
+      ...settings,
+      onLine: this.options.onLine,
+    });
+    if (extracted.code) throw new Error('error.toolPackageExtract');
+    let total = 0,
+      count = 0;
+    const verify = async (directory: string) => {
+      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+        if (++count > 60000 || entry.isSymbolicLink()) throw new Error('error.toolPackageExtract');
+        const file = path.join(directory, entry.name);
+        if (!inside(destination, file)) throw new Error('error.toolPackageExtract');
+        if (entry.isDirectory()) await verify(file);
+        else if (entry.isFile()) {
+          total += (await fs.stat(file)).size;
+          if (total > 4_000_000_000) throw new Error('error.toolPackageInvalid');
+        } else throw new Error('error.toolPackageExtract');
+      }
+    };
+    await verify(destination);
+  }
+  async install(request: { path: string; confirm: true }): Promise<ToolVersionsState> {
+    this.operation = 'install';
+    this.extractedBytes = 0;
+    this.extractedCount = 0;
+    if (request.confirm !== true || !path.isAbsolute(request.path)) throw new Error('error.invalidArguments');
+    const directory = path.join(this.options.root, 'offline-imports');
+    await fs.mkdir(directory, { recursive: true });
+    const stage = await fs.mkdtemp(path.join(directory, 'package-'));
+    try {
+      const stat = await fs.lstat(request.path);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_TOTAL + 1_000_000)
+        throw new Error('error.toolPackageInvalid');
+      this.progress('offline-tool', 'extracting');
+      const unpack = path.join(stage, 'package');
+      await this.extract(request.path, unpack, MAX_TOTAL + 1_000_000, 512, false);
+      const manifestFile = path.join(unpack, MANIFEST);
+      if ((await fs.stat(manifestFile)).size > 1_000_000) throw new Error('error.toolPackageInvalid');
+      const text = await fs.readFile(manifestFile, 'utf8');
+      let manifest: Manifest;
+      try {
+        manifest = schema.parse(JSON.parse(text));
+      } catch {
+        throw new Error('error.toolPackageInvalid');
+      }
+      if (manifest.platform !== this.platform || manifest.arch !== this.arch)
+        throw new Error('error.toolPackagePlatform');
+      const tools = new ToolVersions(this.options),
+        entry = (await tools.catalog()).find((item) => item.id === manifest.toolId);
+      if (!entry?.installable) throw new Error('error.toolVersionUnsupported');
+      this.progress(entry.name, 'verifying');
+      if (
+        new Set(manifest.files.map((item) => item.url)).size !== manifest.files.length ||
+        new Set(manifest.files.map((item) => item.path.toLowerCase())).size !== manifest.files.length
+      )
+        throw new Error('error.toolPackageInvalid');
+      let outerCount = 0;
+      const countOuter = async (directory: string) => {
+        for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+          const file = path.join(directory, entry.name);
+          if (entry.isDirectory()) await countOuter(file);
+          else {
+            outerCount++;
+            if (
+              file !== manifestFile &&
+              !manifest.files.some((item) => path.join(unpack, item.path) === file)
+            )
+              throw new Error('error.toolPackageInvalid');
+          }
+        }
+      };
+      await countOuter(unpack);
+      if (outerCount !== manifest.files.length + 1) throw new Error('error.toolPackageIncomplete');
+      let total = 0;
+      for (const item of manifest.files) {
+        this.options.signal?.throwIfAborted();
+        const file = path.join(unpack, item.path),
+          info = await fs.lstat(file);
+        total += info.size;
+        if (
+          !info.isFile() ||
+          info.isSymbolicLink() ||
+          (item.role === 'metadata' && info.size > 8_000_000) ||
+          (item.role === 'index' && info.size > 40_000_000) ||
+          total > MAX_TOTAL ||
+          info.size !== item.size ||
+          (await digest(file, this.options.signal)) !== item.sha256
+        )
+          throw new Error('error.toolPackageChecksum');
+        if (item.role === 'archive') await this.preflight(file);
+      }
+      const toolRoot = path.join(stage, 'tools');
+      if (entry.kind === 'arduino-esp32') await this.installEsp(entry, manifest, unpack, toolRoot);
+      else {
+        const fetcher: typeof fetch = async (input) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          const item = manifest.files.find((item) => item.url === url);
+          if (!item) throw new Error('error.toolPackageIncomplete');
+          return new Response(
+            Readable.toWeb(createReadStream(path.join(unpack, item.path))) as ReadableStream,
+            { status: 200, headers: { 'content-length': String(item.size) } },
+          );
+        };
+        await new ToolVersions({
+          ...this.options,
+          root: toolRoot,
+          fetcher,
+          onProgress: (progress) =>
+            this.options.onProgress?.({
+              ...progress,
+              operation: 'install',
+              phase: progress.phase === 'downloading' ? 'verifying' : progress.phase,
+            }),
+        }).toolVersionInstall({ id: entry.id, confirm: true });
+      }
+      const source = path.join(toolRoot, 'versions', entry.kind, entry.version),
+        destination = path.join(this.options.root, 'versions', entry.kind, entry.version);
+      await repairInstalledToolIntegrity(source, stage, this.options.runner, this.options.signal);
+      await fs.mkdir(path.dirname(destination), { recursive: true });
+      if ((await tools.catalog()).find((item) => item.id === entry.id)?.installed)
+        return tools.toolVersionsState();
+      if (!inside(await fs.realpath(this.options.root), await fs.realpath(path.dirname(destination))))
+        throw new Error('error.toolPackageExtract');
+      const backup = path.join(stage, 'previous');
+      const exists = await fs.lstat(destination).catch(() => null);
+      if (exists?.isSymbolicLink()) throw new Error('error.toolPackageExtract');
+      if (exists) await fs.rename(destination, backup);
+      try {
+        this.options.signal?.throwIfAborted();
+        await fs.rename(source, destination);
+      } catch (error) {
+        if (exists) await fs.rename(backup, destination);
+        throw error;
+      }
+      this.progress(entry.name, 'completed');
+      return tools.toolVersionsState();
+    } finally {
+      if (inside(directory, stage))
+        await fs.rm(stage, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
+  }
+  private async installEsp(entry: ToolVersionEntry, manifest: Manifest, unpack: string, toolRoot: string) {
+    const directory = path.join(toolRoot, 'versions', entry.kind, entry.version);
+    const packages: any[] = [];
+    for (const url of [
+      'https://espressif.github.io/arduino-esp32/package_esp32_index.json',
+      'https://downloads.arduino.cc/packages/package_index.json',
+    ]) {
+      const index = manifest.files.find((item) => item.role === 'index' && item.url === url);
+      if (!index) throw new Error('error.toolPackageIncomplete');
+      const value = JSON.parse(await fs.readFile(path.join(unpack, index.path), 'utf8'));
+      packages.push(...(value.packages ?? []));
+    }
+    const platform = packages
+      .find((item) => item.name === 'esp32')
+      ?.platforms?.find((item: any) => item.architecture === 'esp32' && item.version === entry.version);
+    if (!platform) throw new Error('error.toolPackageIncomplete');
+    const required = [
+      { value: platform, destination: `arduino-data/packages/esp32/hardware/esp32/${entry.version}` },
+    ];
+    const hosts =
+      this.platform === 'win32'
+        ? ['x86_64-mingw32', 'i686-mingw32']
+        : this.arch === 'arm64'
+          ? ['aarch64-linux-gnu']
+          : ['x86_64-pc-linux-gnu', 'x86_64-linux-gnu'];
+    for (const dep of platform.toolsDependencies ?? []) {
+      const tool = packages
+        .find((item) => item.name === dep.packager)
+        ?.tools?.find((item: any) => item.name === dep.name && item.version === dep.version);
+      const system = hosts
+        .map((host) => tool?.systems?.find((item: any) => item.host === host))
+        .find(Boolean);
+      if (!system) throw new Error('error.toolPackageIncomplete');
+      required.push({
+        value: system,
+        destination: `arduino-data/packages/${dep.packager}/tools/${dep.name}/${dep.version}`,
+      });
+    }
+    const archives = manifest.files.filter((item) => item.role === 'archive');
+    if (
+      archives.length !== required.length ||
+      required.some(
+        ({ value, destination }) =>
+          !archives.some(
+            (item) =>
+              item.url === value.url &&
+              item.destination === destination &&
+              item.size === Number(value.size) &&
+              `SHA-256:${item.sha256}`.toLowerCase() === String(value.checksum).toLowerCase(),
+          ),
+      )
+    )
+      throw new Error('error.toolPackageIncomplete');
+    for (const item of manifest.files) {
+      if (item.role === 'archive') {
+        if (
+          !item.destination ||
+          !/^arduino-data\/packages\/[A-Za-z0-9_-]+\/(?:hardware|tools)\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.+-]+$/.test(
+            item.destination,
+          )
+        )
+          throw new Error('error.toolPackageInvalid');
+        const extract = path.join(
+          toolRoot,
+          'extract-' + createHash('sha256').update(item.path).digest('hex').slice(0, 8),
+        );
+        await this.extract(path.join(unpack, item.path), extract);
+        const files = await fs.readdir(extract, { withFileTypes: true });
+        const root =
+          files.length === 1 && files[0].isDirectory() ? path.join(extract, files[0].name) : extract;
+        const target = path.join(directory, item.destination);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.rename(root, target);
+      } else if (item.role === 'index') {
+        await fs.mkdir(path.join(directory, 'arduino-data'), { recursive: true });
+        const name = item.url.includes('espressif') ? 'package_esp32_index.json' : 'package_index.json';
+        await fs.copyFile(path.join(unpack, item.path), path.join(directory, 'arduino-data', name));
+      }
+    }
+    if (
+      !(
+        await fs
+          .stat(
+            path.join(
+              directory,
+              'arduino-data',
+              'packages',
+              'esp32',
+              'hardware',
+              'esp32',
+              entry.version,
+              'platform.txt',
+            ),
+          )
+          .catch(() => null)
+      )?.isFile()
+    )
+      throw new Error('error.toolPackageIncomplete');
+    const installedDirectory = path.join(this.options.root, 'versions', entry.kind, entry.version);
+    await fs.writeFile(
+      path.join(directory, 'arduino-cli.yaml'),
+      JSON.stringify({
+        directories: {
+          data: path.join(installedDirectory, 'arduino-data'),
+          downloads: path.join(installedDirectory, 'downloads'),
+          user: path.join(installedDirectory, 'libraries'),
+        },
+      }),
+    );
+    await fs.writeFile(
+      path.join(directory, 'installed.json'),
+      JSON.stringify({ version: entry.version, installedAt: new Date().toISOString(), offline: true }),
+    );
+  }
+}

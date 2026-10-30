@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FileAudio, FileVideo, Image, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import type { WorkspaceAssetPreview } from '../../shared/assets';
 import { useI18n } from '../i18n';
 import { bytes } from '../utils';
 import { assetDuration, assetHexRows, stopAssetMedia } from './assetPreviewModel';
+import { anchoredImageZoom, fittedImageScale } from './imageViewport';
 import './asset-preview.css';
 
 export function AssetPreview({
@@ -74,10 +75,15 @@ export function AssetPreviewSurface({
   const { t, locale } = useI18n();
   const [scale, setScale] = useState<number | null>(null);
   const [imageSize, setImageSize] = useState<{ width: number; height: number }>();
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
   const [duration, setDuration] = useState('');
   const [failed, setFailed] = useState(false);
   const media = useRef<HTMLMediaElement | null>(null);
   const picture = useRef<HTMLImageElement | null>(null);
+  const viewport = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ id: number; x: number; y: number; pan: { x: number; y: number } } | null>(null);
   const mediaRef = useCallback(
     (element: HTMLMediaElement | null) => {
       if (media.current && media.current !== element) stopAssetMedia(media.current);
@@ -96,11 +102,48 @@ export function AssetPreviewSurface({
     : new Date(asset.modifiedAt).toLocaleString(locale);
   const image = asset.kind === 'image';
   const Icon = image ? Image : asset.kind === 'video' ? FileVideo : FileAudio;
-  const resize = (factor: number) =>
-    setScale((value) => {
-      const fitted = imageSize && picture.current ? picture.current.width / imageSize.width : 1;
-      return Math.max(0.01, Math.min(8, (value ?? fitted) * factor));
-    });
+  const actualScale = scale ?? (imageSize ? fittedImageScale(imageSize, viewportSize) : 1);
+  const view = useRef({ scale: actualScale, pan });
+  view.current = { scale: actualScale, pan };
+  const zoom = (next: number, anchor = { x: 0, y: 0 }) => {
+    const result = anchoredImageZoom(view.current.scale, next, view.current.pan, anchor);
+    view.current = result;
+    setScale(result.scale);
+    setPan(result.pan);
+  };
+  const reset = (next: number | null) => {
+    setScale(next);
+    setPan({ x: 0, y: 0 });
+  };
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element || !image) return;
+    const measure = () => setViewportSize({ width: element.clientWidth, height: element.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [image, failed]);
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element || !image || !imageSize) return;
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const bounds = element.getBoundingClientRect();
+      const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1;
+      const factor = Math.exp(-Math.max(-350, Math.min(350, event.deltaY * units)) * 0.002);
+      const current = view.current;
+      const next = anchoredImageZoom(current.scale, current.scale * factor, current.pan, {
+        x: event.clientX - bounds.left - bounds.width / 2,
+        y: event.clientY - bounds.top - bounds.height / 2,
+      });
+      view.current = next;
+      setScale(next.scale);
+      setPan(next.pan);
+    };
+    element.addEventListener('wheel', wheel, { passive: false });
+    return () => element.removeEventListener('wheel', wheel);
+  }, [image, imageSize, failed]);
   const hexRows = useMemo(() => assetHexRows(asset.hex ?? ''), [asset.hex]);
   return (
     <section className="asset-preview" aria-label={t('asset.preview')}>
@@ -116,7 +159,7 @@ export function AssetPreviewSurface({
                 disabled={!imageSize}
                 title={t('asset.zoomOut')}
                 aria-label={t('asset.zoomOut')}
-                onClick={() => resize(0.8)}
+                onClick={() => zoom(actualScale * 0.8)}
               >
                 <ZoomOut size={14} />
               </button>
@@ -125,19 +168,19 @@ export function AssetPreviewSurface({
                 title={t('asset.actualSize')}
                 aria-label={t('asset.actualSize')}
                 aria-pressed={scale === 1}
-                onClick={() => setScale(1)}
+                onClick={() => reset(1)}
               >
-                {scale === null ? '100%' : `${Math.round(scale * 100)}%`}
+                {`${Math.round(actualScale * 100)}%`}
               </button>
               <button
                 disabled={!imageSize}
                 title={t('asset.zoomIn')}
                 aria-label={t('asset.zoomIn')}
-                onClick={() => resize(1.25)}
+                onClick={() => zoom(actualScale * 1.25)}
               >
                 <ZoomIn size={14} />
               </button>
-              <button aria-pressed={scale === null} onClick={() => setScale(null)}>
+              <button aria-pressed={scale === null} onClick={() => reset(null)}>
                 {t('asset.fit')}
               </button>
             </>
@@ -155,14 +198,72 @@ export function AssetPreviewSurface({
           </div>
         </div>
       ) : image ? (
-        <div className={`asset-image-scroll ${scale === null ? 'is-fit' : ''}`}>
+        <div
+          className={`asset-image-scroll${scale === null ? ' is-fit' : ''}${dragging ? ' is-dragging' : ''}`}
+          ref={viewport}
+          tabIndex={0}
+          onDoubleClick={() => reset(null)}
+          onKeyDown={(event) => {
+            if (event.key === '+' || event.key === '=') {
+              event.preventDefault();
+              zoom(actualScale * 1.25);
+            }
+            if (event.key === '-') {
+              event.preventDefault();
+              zoom(actualScale * 0.8);
+            }
+            if (event.key === '0') {
+              event.preventDefault();
+              reset(null);
+            }
+          }}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || !imageSize) return;
+            event.preventDefault();
+            event.currentTarget.focus({ preventScroll: true });
+            event.currentTarget.setPointerCapture(event.pointerId);
+            drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, pan: view.current.pan };
+            setScale(view.current.scale);
+            setDragging(true);
+          }}
+          onPointerMove={(event) => {
+            const current = drag.current;
+            if (!current || current.id !== event.pointerId) return;
+            setPan({
+              x: current.pan.x + event.clientX - current.x,
+              y: current.pan.y + event.clientY - current.y,
+            });
+          }}
+          onPointerUp={(event) => {
+            if (drag.current?.id !== event.pointerId) return;
+            drag.current = null;
+            setDragging(false);
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onLostPointerCapture={() => {
+            drag.current = null;
+            setDragging(false);
+          }}
+          onPointerCancel={() => {
+            drag.current = null;
+            setDragging(false);
+          }}
+        >
           <img
             ref={picture}
             className="asset-image"
             src={asset.url}
             alt={name}
             draggable={false}
-            style={scale === null || !imageSize ? undefined : { width: imageSize.width * scale }}
+            style={
+              imageSize
+                ? {
+                    width: imageSize.width * actualScale,
+                    height: imageSize.height * actualScale,
+                    transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px)`,
+                  }
+                : undefined
+            }
             onLoad={(event) =>
               setImageSize({
                 width: event.currentTarget.naturalWidth,

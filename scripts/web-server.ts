@@ -9,6 +9,7 @@ import { RecentLogs } from '../src/core/recent-logs';
 import { FirmwareStore } from '../src/core/firmware';
 import { RuntimeDebugger } from '../src/core/runtime-debugger';
 import { createWebDebugger } from '../src/core/web-debugger';
+import { resolveBuildDebugSymbols } from '../src/core/build-debug-symbols';
 import { AiAssistance } from '../src/core/ai-assistance';
 import { CollaborationService } from '../src/core/collaboration';
 import { createAssistanceRoutes } from '../src/core/assistance-routes';
@@ -16,6 +17,7 @@ import { UiCommands } from '../src/core/ui-commands';
 import { createWorkbenchAutomation } from '../src/core/workbench-automation';
 import { protectSharedWorkspace } from '../src/core/shared-workspace';
 import { createHostServices } from '../src/core/host-services';
+import { generalExtensionPanelKey } from '../src/shared/general-extensions';
 import type { LogEvent } from '../src/shared/contracts';
 import { RELEASE_VERSION } from '../src/shared/version';
 
@@ -102,6 +104,7 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
     (message) => emit({ kind: 'status', level: 'info', message, time: new Date().toISOString() }),
     () => core?.runtimePlugins,
     () => core?.currentConfig(),
+    (config) => resolveBuildDebugSymbols(core, config),
   );
   core = await createCore({
     openRuntimeView: async (pluginId, view) => {
@@ -136,6 +139,11 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
   // Browser peers cannot claim the trusted local client's global undo permission.
   const assistance = createAssistanceRoutes(ai, collaboration, ui, false);
   const services = createHostServices({
+    extensionExamplesRoot: path.join(appRoot, 'extensions', 'plugins'),
+    openExtensionPanel: async (id, view) => {
+      await ui.command({ action: 'console', tab: generalExtensionPanelKey(id, view.id) });
+    },
+    ai,
     runtimeDebugger: () => hardware,
     core,
     collaboration,

@@ -212,6 +212,7 @@ test('Monaco uses the module catalog without leaking global Arduino/C entries, w
       registerDefinitionProvider: disposable,
       registerDeclarationProvider: disposable,
       registerLinkProvider: disposable,
+      registerReferenceProvider: disposable,
     },
   } as any;
   setCompletionCatalog({

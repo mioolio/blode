@@ -11,17 +11,27 @@ const execute = promisify(execFile);
 const root = fileURLToPath(new URL('..', import.meta.url));
 
 /** Walk only an explicit renderer/staging tree; never follow a link into host data. */
-export async function* releaseFiles(directory: string, prefix: string): AsyncGenerator<ZipEntry> {
+export async function* releaseFiles(
+  directory: string,
+  prefix: string,
+  plugin = false,
+): AsyncGenerator<ZipEntry> {
   const info = await fs.lstat(directory);
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Unsafe release directory: ${directory}`);
   for (const entry of (await fs.readdir(directory, { withFileTypes: true })).sort((a, b) =>
     a.name.localeCompare(b.name),
   )) {
     if (entry.name.endsWith('.map')) continue;
+    if (
+      plugin &&
+      (['.uel', '.vscode', '.git', '.tools', 'node_modules'].includes(entry.name) ||
+        /^\.env(?:\.|$)/i.test(entry.name))
+    )
+      continue;
     const file = path.join(directory, entry.name);
     const relative = `${prefix}/${entry.name}`;
     if (entry.isSymbolicLink()) throw new Error(`Release cannot contain symbolic links: ${relative}`);
-    if (entry.isDirectory()) yield* releaseFiles(file, relative);
+    if (entry.isDirectory()) yield* releaseFiles(file, relative, plugin);
     else if (entry.isFile()) {
       const stat = await fs.stat(file);
       if (stat.size > 100_000_000) throw new Error(`Unexpected large release file: ${relative}`);
@@ -132,6 +142,7 @@ The archive contains release-manifest.json with the SHA-256 and byte size of eve
       for (const name of ['package.json', 'package-lock.json', 'README.md'])
         yield { path: name, data: await fs.readFile(path.join(staging, name)) };
       yield* releaseFiles(path.join(root, 'docs'), 'docs');
+      yield* releaseFiles(path.join(root, 'extensions', 'plugins'), 'extensions/plugins', true);
       for (const name of ['CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md']) {
         const file = path.join(root, name);
         if ((await fs.lstat(file).catch(() => null))?.isFile())

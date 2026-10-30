@@ -1,0 +1,154 @@
+:root {
+  font:
+    14px 'Segoe UI',
+    system-ui,
+    sans-serif;
+  color: #263343;
+  background: #f4f6fa;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 920px;
+  margin: auto;
+  padding: 34px;
+}
+h1 {
+  font-size: 25px;
+  margin: 0 0 8px;
+}
+header p {
+  margin: 0;
+  color: #718096;
+}
+header {
+  margin-bottom: 26px;
+}
+.presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid #d9e0ea;
+  border-radius: 12px;
+  padding: 14px 14px 18px;
+  cursor: pointer;
+  color: inherit;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+.preset:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 18px #24324b0d;
+}
+.preset.selected {
+  border-color: #347fea;
+  box-shadow: 0 0 0 2px #347fea24;
+}
+.sample {
+  display: flex;
+  width: 100%;
+  height: 112px;
+  background: #dfe6f0;
+  border-radius: 7px;
+  overflow: hidden;
+  padding: 10px;
+  gap: 5px;
+}
+.sample-sidebar {
+  width: 25%;
+  background: #c1cddd;
+  border-radius: 3px;
+}
+.sample-editor {
+  flex: 1;
+  background: #f6f9fd;
+  border-radius: 3px;
+}
+.glass .sample {
+  background: linear-gradient(120deg, #b8dad9, #d3ceec, #bac9dd);
+}
+.glass .sample-sidebar {
+  background: #ffffff88;
+}
+.glass .sample-editor {
+  background: #ffffffb8;
+}
+.apple .sample {
+  background: #e9ebef;
+}
+.apple .sample-sidebar {
+  background: #d9dde4;
+}
+.apple .sample-editor {
+  background: #fff;
+}
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 28px;
+  min-height: 35px;
+  color: #718096;
+}
+footer button {
+  border: 0;
+  background: #e4ecf8;
+  color: #266fcf;
+  padding: 9px 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.compact {
+  padding: 14px;
+}
+.compact header {
+  margin-bottom: 12px;
+}
+.compact h1 {
+  font-size: 15px;
+}
+.compact .sample {
+  height: 55px;
+}
+.compact .preset {
+  padding: 8px;
+  gap: 7px;
+}
+.compact footer {
+  margin-top: 12px;
+}
+@media (max-width: 520px) {
+  main {
+    padding: 22px;
+  }
+  .presets {
+    gap: 8px;
+  }
+  .sample {
+    height: 80px;
+  }
+  .preset {
+    padding: 8px;
+    gap: 10px;
+  }
+  strong {
+    font-size: 12px;
+  }
+  footer {
+    flex-wrap: wrap;
+  }
+}

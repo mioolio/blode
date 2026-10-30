@@ -14,6 +14,9 @@
 | `extensions/runtime-registry.ts`       | 具体平台 runtime 工厂的可信静态注册                               |
 | `extensions/plugins.ts`                | API v2 原生插件的 SDK 和模块契约                                  |
 | `src/core/runtime-plugins.ts`          | 动态插件声明、包授权、编译及设备／调试路由                        |
+| `src/core/general-extensions/`         | 通用扩展安装、权限、指纹授权、独立视图与 ZIP 分享                 |
+| `src/renderer/extensions/`             | 扩展管理、隔离页面桥与可恢复的外观贡献                            |
+| `extensions/plugins/Personalization/`  | 自包含通用扩展示例，供源码及二进制宿主安装                        |
 | `src/shared/runtime-views.ts`          | 声明式视图注册，供窗口与底部面板使用                              |
 | `src/shared/workspace-surfaces.ts`     | 文件、工具、底部页与面板的统一同步标识和校验                      |
 | `src/core/shared-tab-authority.ts`     | 跨端关闭事务、成员确认、版本记录和状态回放                        |

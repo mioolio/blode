@@ -1,0 +1,14 @@
+{
+  "title": "Appearance",
+  "subtitle": "Choose a workspace style",
+  "menu.appearance": "Appearance",
+  "settings.preset": "Style",
+  "preset.default": "Follow application",
+  "preset.glass": "Glass and wallpaper",
+  "preset.apple": "Clean light",
+  "apply": "Apply",
+  "applied": "Applied",
+  "preview": "Open bottom preview",
+  "window": "Open appearance window",
+  "menu.file": "File"
+}

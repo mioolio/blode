@@ -52,6 +52,8 @@ import { InstallationTracker } from './installation';
 import { SnapshotCache } from './snapshot-cache';
 import { analyzeCSourceRules, validateProjectLanguageRules } from '../../extensions/completions/rules';
 import { RuntimePlugins } from './runtime-plugins';
+import { BuildTargets, type BuildEvidenceRecord } from './build-targets';
+import { captureBuildDebugSymbols } from './build-debug-symbols';
 import type { RuntimeViewContribution } from '../shared/plugins';
 import {
   analyzeModuleLanguageRules,
@@ -91,6 +93,7 @@ export interface CoreOptions {
   openRuntimeView?: (pluginId: string, view: RuntimeViewContribution) => Promise<void>;
 }
 export interface CoreService extends CoreApi {
+  buildEvidenceState(): Promise<{ success: boolean; stale: boolean; records?: BuildEvidenceRecord[] }>;
   readonly runtimePlugins: RuntimePlugins;
   currentProjectRoot(): string;
   currentConfig(): ProjectConfig;
@@ -331,6 +334,11 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     closeSerial,
   };
   const builtinRuntimes = (options.createRuntimes ?? createPlatformRuntimes)(host);
+  const buildTargets = new BuildTargets(
+    host,
+    runtimePlugins,
+    options.createRuntimes ?? createPlatformRuntimes,
+  );
   const runtimes = [...builtinRuntimes, ...runtimePlugins.attach(host, builtinRuntimes)];
   const runtimeById = new Map(runtimes.map((runtime) => [runtime.id, runtime]));
   if (runtimeById.size !== runtimes.length) throw new Error('error.invalidPlatformRegistry');
@@ -620,6 +628,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         result: lastBuild,
         sourceFingerprint: builtFingerprint,
         artifactHashes,
+        debugSymbols: await captureBuildDebugSymbols(projectRoot, lastBuild, config.boardId),
       });
   };
   const restoreSuccessfulBuild = async () => {
@@ -652,6 +661,23 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     runtimePlugins,
     currentProjectRoot: () => projectRoot,
     currentConfig: () => structuredClone(config),
+    buildEvidenceState: () =>
+      withLock(async () => ({
+        success: lastBuild?.success === true,
+        stale: await isBuildStale(),
+        records: projectRoot
+          ? [
+              {
+                root: projectRoot,
+                buildDirectory: '.blode/build',
+                success: lastBuild?.success === true,
+                stale: await isBuildStale(),
+                timestamp: lastBuild?.timestamp,
+              },
+              ...(await buildTargets.evidence(projectRoot, config, projectBuild)),
+            ]
+          : [],
+      })),
     languageConfiguration: () => runtimePlugins.languages(config.boardId, projectBuild.cStandard ?? 'c17'),
     async workspaceSnapshot(fresh = false) {
       if (fresh) resourceCache.invalidate();
@@ -732,6 +758,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         drivers: driverStatuses,
         lastBuild: lastBuild ? structuredClone(lastBuild) : null,
         buildStale,
+        ...(await buildTargets.snapshot(projectRoot, config, projectBuild)),
         pipe: { endpoint: '', tokenFile: '' },
         web: { endpoint: '', tokenFile: '', allowExternal: false },
       };
@@ -867,9 +894,13 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         emit('status.buildEntrySet', 'success', 'status');
       });
     },
-    async build() {
+    async build(targetId) {
       return withLock(async () => {
         requireWorkspace();
+        if (projectBuild.targets?.length)
+          return buildTargets.build(projectRoot, config, projectBuild, targetId);
+        if (targetId) throw new Error('error.invalidBuildTarget');
+        await buildTargets.useDefault(projectRoot);
         if (config.boardId === 'auto') {
           const candidates = (
             await Promise.all(runtimes.map((runtime) => runtime.projectConfig?.(config, projectBuild)))
@@ -993,6 +1024,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         await pendingDeviceScan;
         requireHardware();
         requireWorkspace();
+        if (await buildTargets.flash(projectRoot, config, projectBuild)) return;
         if (config.boardId === 'auto') throw new Error('error.detectBoardFirst');
         getBoardAdapter(config.boardId).validateConfig(config);
         if (!lastBuild?.success || !builtFingerprint || builtFingerprint !== (await currentFingerprint()))
@@ -1100,6 +1132,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         getBoardAdapter(nextConfig.boardId).validateConfig(nextConfig);
         await closeSerial();
         stopWatching();
+        await buildTargets.clear();
         projectRoot = resolved;
         assets.reset();
         config = nextConfig;
@@ -1123,12 +1156,14 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       clearTimeout(deviceRefreshTimer);
       stopWatching();
       await serial.close();
+      await buildTargets.clear();
       await runtimePlugins.close();
     },
     async closeProject() {
       return withLock(async () => {
         await closeSerial();
         stopWatching();
+        await buildTargets.clear();
         projectRoot = '';
         assets.reset();
         projectBuild = {};

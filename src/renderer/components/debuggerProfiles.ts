@@ -1,5 +1,42 @@
 import { getDebuggerProfile, type DebuggerProfile } from '../../shared/debugger-profiles';
-import type { DebuggerAction, DebuggerState, ProjectConfig } from '../../shared/contracts';
+import type { AppState, DebuggerAction, DebuggerState, ProjectConfig } from '../../shared/contracts';
+
+/** A build chooses the CPU profile; the workbench owns the current physical connection. */
+export function debuggerProjectConfig(state: AppState, current?: ProjectConfig | null): ProjectConfig | null {
+  const target =
+    state.buildTarget?.config ??
+    (state.config.boardId !== 'auto'
+      ? state.config
+      : (state.boards.find((board) => board.id === 'STM32F103C8T6')?.defaultConfig as
+          ProjectConfig | undefined));
+  if (!target) return null;
+  const selected = state.buildTarget
+    ? {
+        ...target,
+        port: state.config.port,
+        programmer: target.programmer
+          ? {
+              ...target.programmer,
+              serialNumber: state.config.programmer?.serialNumber ?? '',
+              frequencyKhz: state.config.programmer?.frequencyKhz ?? target.programmer.frequencyKhz,
+            }
+          : undefined,
+        runtime: { ...target.runtime, deviceId: state.config.runtime?.deviceId },
+        debugger: { ...target.debugger, ...state.config.debugger },
+      }
+    : target;
+  const next =
+    current && current.boardId === selected.boardId
+      ? { ...selected, programmer: current.programmer, debugger: current.debugger ?? selected.debugger }
+      : selected;
+  if (
+    state.connections?.probes.state === 'ready' &&
+    next.programmer?.serialNumber &&
+    !state.debugProbes.some((probe) => probe.serialNumber === next.programmer?.serialNumber)
+  )
+    return { ...next, programmer: { ...next.programmer, serialNumber: '' } };
+  return next;
+}
 
 export interface DebuggerPresentation {
   id: string;

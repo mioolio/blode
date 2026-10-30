@@ -7,7 +7,7 @@ const scope = window as Window & { blode?: DesktopApi; __blodeWeb?: boolean };
 
 if (!scope.blode) {
   scope.__blodeWeb = true;
-  const apiBase = window.location.port === '5173' ? `http://${window.location.hostname}:47821` : '';
+  const apiBase = import.meta.env.DEV ? `http://${window.location.hostname}:47821` : '';
   const token = new URLSearchParams(window.location.search).get('token') ?? '';
   // One transport owner per page, independent of shared localStorage user identity.
   const client = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
@@ -114,6 +114,9 @@ if (!scope.blode) {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
     },
+    componentsPackageSave: (id) => window.blode.projectPackageSave(id),
+    generalExtensionPackageSave: (id) => window.blode.projectPackageSave(id),
+    toolVersionPackageSave: (id) => window.blode.projectPackageSave(id),
     firmwareExport: async (format) => {
       const destination = await pickHostPath({
         kind: 'save',
@@ -197,7 +200,8 @@ if (!scope.blode) {
         expectedProjectRoot === undefined ? [config] : [config, expectedProjectRoot],
       ) as Promise<void>,
     setBuildEntry: (path) => call('setBuildEntry', [path]) as Promise<void>,
-    build: () => call('build', []) as ReturnType<DesktopApi['build']>,
+    build: (targetId) =>
+      call('build', targetId === undefined ? [] : [targetId]) as ReturnType<DesktopApi['build']>,
     flash: () => call('flash', []) as Promise<void>,
     probe: (port, config) => call('probe', [port, config]) as Promise<string>,
     installToolchain: () => call('installToolchain', []) as ReturnType<DesktopApi['installToolchain']>,

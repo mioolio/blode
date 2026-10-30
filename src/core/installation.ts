@@ -44,7 +44,8 @@ export class InstallationTracker {
           verifying: 'status.installVerifying',
           extracting: 'status.installExtracting',
           installing: 'status.installInstalling',
-          completed: 'status.installCompleted',
+          completed:
+            progress.operation === 'download' ? 'status.downloadCompleted' : 'status.installCompleted',
           failed: 'status.installFailed',
         }[progress.phase],
         time: new Date().toISOString(),
@@ -73,7 +74,10 @@ export class InstallationTracker {
     );
     try {
       const value = await action();
-      this.finish('completed', 'status.installCompleted');
+      this.finish(
+        'completed',
+        this.current?.operation === 'download' ? 'status.downloadCompleted' : 'status.installCompleted',
+      );
       return value;
     } catch (error) {
       this.finish('failed', error instanceof Error ? error.message : String(error));

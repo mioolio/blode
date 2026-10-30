@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { rm } from 'node:fs/promises';
+import { nodeLanguageAssetsPlugin } from './node-json-assets.mjs';
 
 const development =
   process.env.BLODE_BUILD_MODE === 'development' ||
@@ -10,20 +11,21 @@ const common = {
   target: 'node24',
   minifyWhitespace: true,
   minifySyntax: true,
-  minifyIdentifiers: !development,
+  minifyIdentifiers: true,
   // Preserve diagnostic function/class names even in the release bundle.
   keepNames: true,
   sourcemap: development ? 'linked' : false,
   sourcesContent: false,
   legalComments: 'eof',
   logLevel: 'info',
+  plugins: [nodeLanguageAssetsPlugin()],
 };
 await build({
   ...common,
   entryPoints: ['src/core/main.ts'],
   outfile: 'dist/main.cjs',
   format: 'cjs',
-  external: ['electron', 'serialport', 'node-pty'],
+  external: ['electron', 'serialport', 'node-pty', 'zod'],
 });
 await build({
   ...common,

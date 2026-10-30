@@ -74,7 +74,6 @@ export function Settings({
 }: Props) {
   const { t, locale, setLocale } = useI18n();
   const [desktop, setDesktop] = useState<DesktopLifecycleState>();
-  const [desktopPending, setDesktopPending] = useState(false);
   const [desktopError, setDesktopError] = useState('');
   const desktopRevision = useRef(0);
   useEffect(() => {
@@ -98,19 +97,6 @@ export function Settings({
       cancelled = true;
     };
   }, [isWeb, locale]);
-  const configureTray = async (closeToTray: boolean) => {
-    if (desktopPending) return;
-    desktopRevision.current++;
-    setDesktopPending(true);
-    setDesktopError('');
-    try {
-      setDesktop(await window.blode.desktopLifecycleConfigure({ closeToTray, locale }));
-    } catch (error) {
-      setDesktopError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setDesktopPending(false);
-    }
-  };
   const [active, setActive] = useState<PreferencesSection>(target?.section ?? 'general');
   const [visited, setVisited] = useState<ReadonlySet<PreferencesSection>>(
     () => new Set([target?.section ?? 'general']),
@@ -263,17 +249,6 @@ export function Settings({
               </ModernSelect>
             </label>
           </div>
-          {!isWeb && desktop && (
-            <label className="preferences-tray-option">
-              <input
-                type="checkbox"
-                checked={desktop.closeToTray}
-                disabled={desktopPending}
-                onChange={(event) => void configureTray(event.target.checked)}
-              />
-              {t('settings.closeToTray')}
-            </label>
-          )}
           {(desktopError || desktop?.error) && (
             <p className="preferences-option-error" role="alert">
               {t(desktopError || desktop!.error!)}

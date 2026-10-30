@@ -1,0 +1,130 @@
+{
+  "apiVersion": 1,
+  "kind": "extension",
+  "id": "Personalization",
+  "name": "Personalization",
+  "version": "1.0.0",
+  "vendor": "Blode Studio",
+  "description": "工作台外观与菜单个性化。",
+  "documentation": "docs/README.md",
+  "permissions": ["ui.appearance", "ui.menus", "ui.windows", "ui.panels", "settings"],
+  "locales": {
+    "zh-CN": "locales/zh-CN.json",
+    "en": "locales/en.json"
+  },
+  "settings": {
+    "defaults": "settings/defaults.json",
+    "fields": [
+      {
+        "id": "preset",
+        "label": "settings.preset",
+        "type": "select",
+        "default": "default",
+        "options": [
+          {
+            "value": "default",
+            "label": "preset.default"
+          },
+          {
+            "value": "glass",
+            "label": "preset.glass"
+          },
+          {
+            "value": "apple",
+            "label": "preset.apple"
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "menus": [
+      {
+        "id": "appearance",
+        "label": "外观",
+        "labelKey": "menu.appearance",
+        "icon": "◐",
+        "view": "appearance"
+      }
+    ],
+    "views": [
+      {
+        "id": "appearance",
+        "label": "外观",
+        "file": "ui/index.html",
+        "location": "window",
+        "width": 860,
+        "height": 640
+      },
+      {
+        "id": "preview",
+        "label": "外观预览",
+        "file": "ui/preview.html",
+        "location": "panel"
+      }
+    ],
+    "presetSetting": "preset",
+    "presets": [
+      {
+        "id": "default",
+        "label": "默认",
+        "appearance": {}
+      },
+      {
+        "id": "glass",
+        "label": "玻璃",
+        "appearance": {
+          "translucent": true,
+          "blur": 16,
+          "background": "assets/aurora.svg",
+          "variables": {
+            "--bg": "#e8edf4",
+            "--surface-1": "rgba(250,252,255,0.86)",
+            "--surface-2": "rgba(241,246,252,0.86)",
+            "--titlebar-a": "rgba(248,252,255,0.78)",
+            "--titlebar-b": "rgba(235,243,251,0.78)",
+            "--border": "rgba(162,178,199,0.35)",
+            "--text": "#263343",
+            "--text-strong": "#182333",
+            "--text-dim": "#56667b",
+            "--text-faint": "#7b899c",
+            "--radius": "10px",
+            "--radius-lg": "14px"
+          }
+        }
+      },
+      {
+        "id": "apple",
+        "label": "简洁浅色",
+        "appearance": {
+          "translucent": true,
+          "blur": 12,
+          "variables": {
+            "--bg": "#eef0f3",
+            "--surface-1": "#fafafa",
+            "--surface-2": "#f1f2f4",
+            "--surface-3": "#e8eaee",
+            "--surface-4": "#dfe2e8",
+            "--border": "#dce0e6",
+            "--text": "#282d36",
+            "--text-strong": "#161a22",
+            "--text-dim": "#626b78",
+            "--text-faint": "#9098a4",
+            "--accent": "#2678df",
+            "--titlebar-a": "#f5f6f8",
+            "--titlebar-b": "#e9edf2",
+            "--popover": "#fbfcfd",
+            "--radius": "10px",
+            "--radius-lg": "14px"
+          },
+          "menuOverrides": {
+            "file": {
+              "label": "menu.file",
+              "icon": "⌘"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

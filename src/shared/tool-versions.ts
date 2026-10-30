@@ -14,6 +14,7 @@ export interface ToolVersionEntry {
   note?: string;
 }
 export interface ToolVersionsState {
+  archives?: ToolPackageResult[];
   platform: string;
   arch: string;
   entries: ToolVersionEntry[];
@@ -31,7 +32,20 @@ export interface InstalledBuildTool {
   platforms: ('STM32F103C8T6' | 'Esp32_S3_CAM')[];
 }
 export interface ToolVersionsApi {
+  toolVersionDownload(request: { id: string; confirm: true }): Promise<ToolPackageResult>;
+  toolVersionImport(request: { path: string; confirm: true }): Promise<ToolVersionsState>;
+  toolVersionPackageSave(id: string): Promise<boolean>;
+  toolVersionCancel(): Promise<void>;
   toolVersionsState(): Promise<ToolVersionsState>;
   toolVersionInstall(request: { id: string; confirm: true }): Promise<ToolVersionsState>;
   toolVersionSelect(request: { id: string }): Promise<Partial<ProjectConfig['toolchain']>>;
+}
+export interface ToolPackageResult {
+  id: string;
+  name: string;
+  size: number;
+  sha256: string;
+  toolId: string;
+  platform: string;
+  arch: string;
 }

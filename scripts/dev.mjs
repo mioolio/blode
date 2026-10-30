@@ -6,6 +6,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { createDevelopmentServerIdentity } from './dev-server.ts';
 import { developmentRuntimeExecutables, ensureWindowsRuntimeIntegrity } from './windows-runtime.mjs';
 import {
   hasFatalStartupError,
@@ -13,7 +14,6 @@ import {
   classifyElectronExit,
   resolveDevelopmentSandbox,
   rememberSandboxCompatibility,
-  recoverStaleDevProcesses,
   recoverStaleElectron,
   stopProcessTree,
 } from './dev-runtime.mjs';
@@ -64,7 +64,6 @@ const stage = async (name, action) => {
   }
 };
 const electronExecutable = require('electron');
-const viteScript = path.join(path.dirname(require.resolve('vite/package.json')), 'bin/vite.js');
 // The OS releases this mutex even if the launcher is forcefully terminated.
 const identity = createHash('sha256').update(devUserData.toLowerCase()).digest('hex').slice(0, 20);
 const mutexPath =
@@ -73,6 +72,8 @@ const mutexPath =
     : path.join(logDirectory, `dev-${identity}.sock`);
 const mutex = net.createServer((socket) => socket.end());
 let vite;
+let rendererUrl;
+const viteIdentity = createDevelopmentServerIdentity();
 let electron;
 let stopping = false;
 let ownsSession = false;
@@ -125,7 +126,7 @@ const launch = async (args, softwareRendering = false, onReady) => {
     windowsHide: false,
     env: {
       ...environment,
-      ELECTRON_RENDERER_URL: 'http://127.0.0.1:5173',
+      ELECTRON_RENDERER_URL: rendererUrl,
       BLODE_DEV_USER_DATA: devUserData,
       BLODE_DEV_LOG: startupLog,
       BLODE_DEV_PARENT_PID: String(process.pid),
@@ -211,11 +212,9 @@ try {
   // a late-created server can never outlive a failed launch.
   const preparations = await Promise.allSettled([
     stage('Stale process recovery', () =>
-      recoverStaleDevProcesses(
+      recoverStaleElectron(
         electronExecutable,
         devUserData,
-        viteScript,
-        process.execPath,
         diagnoseOnly ? { stopProcessTree: async () => false } : {},
       ),
     ),
@@ -226,7 +225,8 @@ try {
         stage('Vite initialization', () =>
           createServer({
             ...(diagnoseOnly ? { cacheDir: path.join(logDirectory, 'vite-cache') } : {}),
-            server: { host: '127.0.0.1', port: diagnoseOnly ? 0 : 5173, strictPort: true },
+            plugins: [viteIdentity.plugin],
+            server: { host: '127.0.0.1', port: diagnoseOnly ? 0 : 5173, strictPort: false },
           }),
         ),
       )
@@ -241,10 +241,11 @@ try {
   const failedPreparation = preparations.find((result) => result.status === 'rejected');
   if (failedPreparation) throw failedPreparation.reason;
   await stage('Vite dependency preparation/listen', () => vite.listen());
+  rendererUrl = await stage('Vite ready check', () => viteIdentity.ready(vite));
   vite.printUrls();
   if (diagnoseOnly) {
     await stage('First HTML response (isolated cold dependency cache)', async () => {
-      const response = await fetch(vite.resolvedUrls.local[0], { signal: AbortSignal.timeout(30_000) });
+      const response = await fetch(rendererUrl, { signal: AbortSignal.timeout(30_000) });
       if (!response.ok) throw new Error(`Vite returned HTTP ${response.status}`);
       await response.text();
     });

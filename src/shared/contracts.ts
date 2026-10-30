@@ -1,5 +1,6 @@
 /** Public boundary shared by Electron IPC, named-pipe RPC and board plugins. */
 import type { AiAssistanceApi } from './ai';
+import type { ModelServiceApi } from './model-service';
 import type { CollaborationApi } from './collaboration';
 import type { WorkbenchApi } from './workbench';
 import type { GitApi } from './git';
@@ -8,6 +9,7 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { GeneralExtensionsApi } from './general-extensions';
 import type { ComponentLibrariesApi } from './components';
 import type { DesktopLifecycleApi } from './desktop-lifecycle';
 import type {
@@ -135,6 +137,8 @@ export interface DetectionScan {
   unavailablePlatforms: string[];
 }
 export interface ProjectBuildInputs {
+  targets?: BuildTarget[];
+  defaultTarget?: string;
   /** Host-derived component paths; not a be field or executable hook. */
   components?: {
     roots: string[];
@@ -150,6 +154,25 @@ export interface ProjectBuildInputs {
   entry?: string;
   sketch?: string;
   files?: string[];
+}
+export interface BuildTarget {
+  id: string;
+  name: string;
+  /** Directory relative to the workspace; '.' uses the workspace itself. */
+  root: string;
+  config?: Omit<Partial<ProjectConfig>, 'toolchain' | 'programmer'> & {
+    toolchain?: Partial<ProjectConfig['toolchain']>;
+    programmer?: Partial<NonNullable<ProjectConfig['programmer']>>;
+  };
+  build?: Omit<ProjectBuildInputs, 'targets' | 'defaultTarget' | 'components'>;
+}
+export interface ActiveBuildTarget {
+  id: string;
+  name: string;
+  root: string;
+  config: ProjectConfig;
+  buildDirectory: string;
+  stateFile: string;
 }
 export interface BoardDefinition {
   pluginId?: string;
@@ -230,6 +253,7 @@ export interface ReopenProjectResult {
   recent?: RecentProject;
 }
 export interface InstallationProgress {
+  operation?: 'download' | 'install';
   tool: string;
   phase: 'starting' | 'downloading' | 'verifying' | 'extracting' | 'installing' | 'completed' | 'failed';
   receivedBytes?: number;
@@ -270,10 +294,13 @@ export interface AppState {
   drivers: DriverStatus[];
   lastBuild: BuildResult | null;
   buildStale: boolean;
+  buildTarget?: ActiveBuildTarget;
+  targetBuilds?: { id: string; result: BuildResult | null; stale: boolean }[];
   pipe: { endpoint: string; tokenFile: string };
   web: { endpoint: string; tokenFile: string; allowExternal: boolean };
 }
 export interface LogEvent {
+  terminalId?: string;
   sequence?: number;
   kind: 'log' | 'serial' | 'status' | 'terminal';
   level: 'info' | 'success' | 'warning' | 'error';
@@ -298,7 +325,7 @@ export interface CoreApi {
   deleteEntry(path: string): Promise<void>;
   setBuildEntry(path: string): Promise<void>;
   saveConfig(config: ProjectConfig, expectedProjectRoot?: string): Promise<void>;
-  build(): Promise<BuildResult>;
+  build(targetId?: string): Promise<BuildResult>;
   flash(): Promise<void>;
   /** Optional config allows explicit board/probe selection before a workspace is open. */
   probe(port?: string, config?: ProjectConfig): Promise<string>;
@@ -368,7 +395,9 @@ export interface DebuggerStorage {
 export interface DesktopApi
   extends
     CoreApi,
+    GeneralExtensionsApi,
     AiAssistanceApi,
+    ModelServiceApi,
     CollaborationApi,
     WorkbenchApi,
     GitApi,

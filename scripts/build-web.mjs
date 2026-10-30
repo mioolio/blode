@@ -3,6 +3,7 @@ import { build as buildRenderer } from 'vite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { rm } from 'node:fs/promises';
+import { nodeLanguageAssetsPlugin } from './node-json-assets.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const result = await build({
@@ -20,6 +21,7 @@ const result = await build({
   legalComments: 'eof',
   metafile: true,
   logLevel: 'info',
+  plugins: [nodeLanguageAssetsPlugin()],
 });
 const forbiddenInput = Object.keys(result.metafile.inputs).find((file) =>
   /(?:^|[\\/])node_modules[\\/](?:electron|@electron)(?:[\\/]|$)|(?:^|[\\/])src[\\/]core[\\/](?:main|preload)\.ts$/.test(

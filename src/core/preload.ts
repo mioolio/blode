@@ -77,7 +77,7 @@ const bridge: DesktopApi = {
       ? call('saveConfig', config)
       : call('saveConfig', config, expectedProjectRoot),
   setBuildEntry: (path) => call('setBuildEntry', path),
-  build: () => call('build'),
+  build: (targetId) => call('build', ...(targetId === undefined ? [] : [targetId])),
   flash: () => call('flash'),
   probe: (port, config) => call('probe', port, config),
   installToolchain: () => call('installToolchain'),

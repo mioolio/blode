@@ -7,9 +7,9 @@ export function protectSharedWorkspace(core: CoreService, collaboration: Collabo
   core.saveFile = (file, content, expectedProjectRoot) =>
     collaboration.writeFile(expectedProjectRoot ?? core.currentProjectRoot(), file, content);
   const build = core.build.bind(core);
-  core.build = async () => {
+  core.build = async (targetId) => {
     await collaboration.flush();
-    return build();
+    return build(targetId);
   };
   const flash = core.flash.bind(core);
   core.flash = async () => {

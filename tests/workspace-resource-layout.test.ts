@@ -11,7 +11,7 @@ import type { CollaborationPeer } from '../src/shared/collaboration';
 import { workspaceConsoleTabs } from '../src/shared/workspace-surfaces';
 import { translate } from '../src/renderer/i18n';
 
-function fixture(tab: 'memory' | 'project'): Studio {
+function fixture(tab: 'resources' = 'resources'): Studio {
   const config = esp32S3Adapter.createConfig();
   return {
     t: (key: string) => key,
@@ -48,27 +48,29 @@ function fixture(tab: 'memory' | 'project'): Studio {
 }
 
 test('registered usage panels render their content without clear-log actions or compiler output', () => {
-  for (const tab of ['memory', 'project'] as const) {
+  for (const tab of ['resources'] as const) {
     const html = renderToStaticMarkup(createElement(ConsolePanel, { studio: fixture(tab) }));
     for (const registered of workspaceConsoleTabs) assert.match(html, new RegExp(`console\.${registered}`));
     assert.match(html, new RegExp(`console-resource-view resource-view-${tab}`));
-    assert.match(html, tab === 'memory' ? /memory-meter flash/ : /project-usage/);
+    assert.match(html, /memory-meter flash/);
+    assert.match(html, /project-usage/);
+    assert.doesNotMatch(html, /console\.memory|console\.project/);
     assert.doesNotMatch(html, /log-scroll|compiler-only-output|lucide-trash-2|console-empty/);
     assert.ok(html.includes(`aria-label="${translate('zh-CN', 'view.hideConsolePanel')}"`));
   }
 });
 
 test('project-only usage tabs disappear on the welcome page', () => {
-  const studio = fixture('memory');
+  const studio = fixture('resources');
   studio.state!.workspaceOpen = false;
   const html = renderToStaticMarkup(createElement(ConsolePanel, { studio }));
-  assert.doesNotMatch(html, /console\.memory|console\.project|console-resource-view/);
+  assert.doesNotMatch(html, /console\.resources|console-resource-view/);
   assert.match(html, /console\.output/);
   assert.match(html, /console\.serial/);
 });
 
 test('runtime selector follows the file tree as its own collapsible footer', () => {
-  const html = renderToStaticMarkup(createElement(ProjectExplorer, { studio: fixture('memory') }));
+  const html = renderToStaticMarkup(createElement(ProjectExplorer, { studio: fixture('resources') }));
   assert.ok(html.indexOf('class="runtime-selector"') > html.indexOf('class="file-tree explorer-tree"'));
   assert.match(html, /<details class="runtime-selector"><summary>/);
   assert.doesNotMatch(html, /runtime-support|runtime-modules/);

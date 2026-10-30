@@ -5,8 +5,7 @@ export const workspaceConsoleTabs = [
   'problems',
   'warnings',
   'terminal',
-  'memory',
-  'project',
+  'resources',
 ] as const;
 export type WorkspaceToolId = (typeof workspaceTools)[number];
 export type WorkspaceConsoleTabId = (typeof workspaceConsoleTabs)[number] | `plugin:${string}`;

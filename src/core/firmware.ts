@@ -139,15 +139,18 @@ export async function prepareBuildExport(
 ): Promise<BuildExport> {
   if (!root || !state.workspaceOpen || !state.lastBuild?.success || state.buildStale)
     throw new Error('firmware.buildRequired');
-  const saved = await loadBuildState(root);
+  const target = state.buildTarget;
+  if (target?.root && target.root !== '.') root = await safeWorkspacePath(root, target.root);
+  const saved = await loadBuildState(root, target?.stateFile);
   if (
     !saved ||
     saved.result.timestamp !== state.lastBuild.timestamp ||
     !(await artifactsMatch(root, saved.artifactHashes))
   )
     throw new Error('firmware.buildRequired');
-  const boardId = state.config.boardId;
-  const app = state.config.partitions.find((partition) => partition.type === 'app');
+  const config = target?.config ?? state.config;
+  const boardId = config.boardId;
+  const app = config.partitions.find((partition) => partition.type === 'app');
   const inputs: { file: string; address: number }[] = [];
   if (boardId === 'Esp32_S3_CAM') {
     const suffixes = ['.ino.bootloader.bin', '.ino.partitions.bin', '.ino.bin'];
@@ -169,10 +172,14 @@ export async function prepareBuildExport(
   }
   const normalized = normalizeSegments(segments),
     merged = mergeSegments(normalized);
-  const name = (state.config.name || 'firmware').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
+  const name = (target?.name || config.name || 'firmware').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
   if (format === 'elf') {
     if (boardId !== 'STM32F103C8T6') throw new Error('firmware.elfUnavailable');
-    const elfPath = await safeWorkspacePath(root, '.blode/build/firmware.elf', { internal: true });
+    const elfPath = await safeWorkspacePath(
+      root,
+      `${target?.buildDirectory ?? '.blode/build'}/firmware.elf`,
+      { internal: true },
+    );
     const info = await fs.lstat(elfPath).catch(() => null);
     if (!info?.isFile() || info.isSymbolicLink() || info.size > MAX_FIRMWARE_BYTES)
       throw new Error('firmware.elfUnavailable');

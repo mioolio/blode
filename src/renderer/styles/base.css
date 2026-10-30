@@ -389,6 +389,10 @@ kbd {
   color: var(--text);
 }
 .ide-menu-popup {
+  max-height: calc(100dvh - 62px);
+  max-width: calc(100vw - 12px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   position: absolute;
   top: calc(100% - 4px);
   left: 0;

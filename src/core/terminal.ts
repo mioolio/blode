@@ -56,6 +56,10 @@ export class HostTerminal {
       chunks: this.chunks.filter((chunk) => reset || chunk.sequence > (cursor.after ?? 0)),
     });
   }
+  summary() {
+    const { lines: _lines, ...summary } = this.value;
+    return structuredClone(summary);
+  }
   private changed() {
     if (this.notifyTimer) return;
     this.notifyTimer = setTimeout(() => {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { DOMParser } from '../../extensions/boards/STM32F103C8T6/compiler/vendor/xml.cjs';
 import { writeZip, type ZipEntry } from './zip';
+import { readBuildDependencies, type BuildEvidenceStatus } from './build-dependencies';
 import type { ProjectPackagePlan, ProjectPackageResult, PackageWarning } from '../shared/project-package';
 
 const skipped = new Set([
@@ -18,8 +19,9 @@ const skipped = new Set([
   'release',
 ]);
 const privateEntry = (name: string) =>
-  /^(?:\.env(?:\..*)?|\.npmrc|\.pypirc|\.netrc|\.ssh|\.aws|\.gnupg)$/i.test(name) &&
-  !/^\.env\.(?:example|sample|template)$/i.test(name);
+  /^(?:\.env(?:\..*)?|\.npmrc|\.pypirc|\.netrc|\.ssh|\.aws|\.gnupg|model-credentials|model-service\.json|.*\.credential)$/i.test(
+    name,
+  ) && !/^\.env\.(?:example|sample|template)$/i.test(name);
 const textExtensions = new Set([
   '.c',
   '.cpp',
@@ -40,6 +42,8 @@ const textExtensions = new Set([
 ]);
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const slash = (value: string) => value.replaceAll('\\', '/');
+const isTextFile = (file: string) =>
+  textExtensions.has(path.extname(file).toLowerCase()) || /^Makefile$/i.test(path.basename(file));
 const inside = (root: string, file: string) => {
   const relative = path.relative(root, file);
   return (
@@ -57,7 +61,10 @@ interface Scanned {
 }
 
 /** Snapshot the original files, collect declared dependencies and rewrite only the exported copy. */
-export async function collectProjectPackage(projectRoot: string): Promise<Scanned> {
+export async function collectProjectPackage(
+  projectRoot: string,
+  options: { toolchainRoots?: string[]; privateRoots?: string[]; buildEvidence?: BuildEvidenceStatus } = {},
+): Promise<Scanned> {
   if (!projectRoot) throw new Error('error.noWorkspace');
   const root = await fs.realpath(projectRoot);
   const paths = new Map<string, string>(),
@@ -68,6 +75,30 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
   const canonical = (value: string) => aliases.get(key(value)) ?? value;
   const warnings: PackageWarning[] = [];
   const includes: string[] = [];
+  const evidence = await readBuildDependencies(root, options.buildEvidence);
+  const canonicalRoots = async (values: string[]) =>
+    Promise.all(
+      values
+        .filter(Boolean)
+        .map(async (value) => fs.realpath(path.resolve(value)).catch(() => path.resolve(value))),
+    );
+  const toolRoots = (
+    await canonicalRoots([
+      ...(options.toolchainRoots ?? []),
+      ...(options.buildEvidence?.records?.flatMap((record) => record.toolchainRoots ?? []) ?? []),
+    ])
+  ).filter((directory) => directory !== root);
+  const privateRoots = (await canonicalRoots(options.privateRoots ?? [])).filter(
+    (directory) => directory !== root,
+  );
+  const suppliedByTool = (file: string) =>
+    toolRoots.some((directory) => inside(directory, file)) &&
+    (!inside(root, file) ||
+      slash(path.relative(root, file))
+        .split('/')
+        .some((part) => skipped.has(part)));
+  const supplied = new Set<string>(),
+    detectedTools = new Set<string>();
   const queued: string[] = [];
   let total = 0;
   const externalRoot = (directory: string) => {
@@ -95,6 +126,19 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
       return;
     }
     aliases.set(key(file), real);
+    if (
+      privateRoots.some((directory) => inside(directory, real)) ||
+      real.split(path.sep).some((part) => privateEntry(part))
+    ) {
+      warnings.push({ file: '', reference: path.basename(real), reason: 'private-dependency' });
+      return;
+    }
+    if (suppliedByTool(real)) {
+      supplied.add(slash(real));
+      const core = /\/packages\/([^/]+)\/hardware\/([^/]+)\/([^/]+)/.exec(slash(real));
+      detectedTools.add(core ? `arduino-core:${core[1]}:${core[2]}@${core[3]}` : 'platform-toolchain');
+      return;
+    }
     if (paths.has(real)) return;
     const stat = await fs.stat(real);
     if (!stat.isFile()) return;
@@ -110,9 +154,15 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
   const walk = async (directory: string, depth = 0) => {
     if (depth > 24) throw new Error('error.packageTooLarge');
     const real = await fs.realpath(directory);
+    if (privateRoots.some((directory) => inside(directory, real))) return;
     aliases.set(key(directory), real);
     if (visited.has(real)) return;
     visited.add(real);
+    if (suppliedByTool(real)) {
+      includes.push(real);
+      detectedTools.add('platform-toolchain');
+      return;
+    }
     for (const entry of await fs.readdir(real, { withFileTypes: true })) {
       if (skipped.has(entry.name) || privateEntry(entry.name)) continue;
       const full = path.join(real, entry.name);
@@ -125,6 +175,20 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
     }
   };
   await walk(root);
+  warnings.push(...evidence.warnings);
+  includes.push(...evidence.includeDirectories);
+  for (const dependency of evidence.files) {
+    if (suppliedByTool(dependency)) {
+      supplied.add(slash(dependency));
+      const core = /\/packages\/([^/]+)\/hardware\/([^/]+)\/([^/]+)/.exec(slash(dependency));
+      if (core) detectedTools.add(`arduino-core:${core[1]}:${core[2]}@${core[3]}`);
+      else detectedTools.add('platform-toolchain');
+      continue;
+    }
+    if (!inside(root, dependency)) externalRoot(path.dirname(dependency));
+    if (/\.(?:h|hpp|hh|hxx)$/i.test(dependency)) includes.push(path.dirname(dependency));
+    await add(dependency);
+  }
   // Explicit Keil metadata supplies source and include directories even when they live outside the project.
   for (const [file, bytes] of [...content])
     if (file.toLowerCase().endsWith('.uvprojx')) {
@@ -168,37 +232,55 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
           }
         }
     }
-  const marker = content.get(path.join(root, 'be'));
-  let descriptor: Record<string, any> | undefined;
-  if (marker) {
-    try {
-      descriptor = JSON.parse(marker.toString('utf8'));
-    } catch {
-      throw new Error('error.invalidProjectDescriptor');
-    }
-  }
-  if (descriptor?.build) {
-    for (const reference of [
-      descriptor.build.entry,
-      descriptor.build.sketch,
-      ...(Array.isArray(descriptor.build.files) ? descriptor.build.files : []),
-    ].filter((value) => typeof value === 'string')) {
-      const logical = path.resolve(root, reference);
-      const target = await fs.realpath(logical).catch(() => logical);
-      aliases.set(key(logical), target);
-      const stat = await fs.stat(target).catch(() => null);
-      if (!stat) {
-        warnings.push({ file: 'be', reference, reason: 'missing' });
-        continue;
+  const descriptors = new Map<string, Record<string, any>>();
+  for (const [file, bytes] of content)
+    if (path.basename(file) === 'be') {
+      try {
+        const descriptor = JSON.parse(bytes.toString('utf8'));
+        if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)) throw new Error();
+        descriptors.set(file, descriptor);
+      } catch {
+        throw new Error('error.invalidProjectDescriptor');
       }
-      if (stat.isDirectory()) {
-        externalRoot(target);
-        await walk(target);
-      } else await add(target);
     }
-  }
+  const declaredBuilds = [...descriptors].flatMap(([file, descriptor]) => [
+    { file, base: path.dirname(file), build: descriptor.build },
+    ...(Array.isArray(descriptor.build?.targets)
+      ? descriptor.build.targets.map((target: any) => ({
+          file,
+          base: path.resolve(path.dirname(file), target.root),
+          build: target.build,
+        }))
+      : []),
+  ]);
+  for (const { file, base, build } of declaredBuilds)
+    if (build) {
+      if (!inside(root, base)) throw new Error('error.invalidProjectDescriptor');
+      for (const reference of [
+        build.entry,
+        build.sketch,
+        ...(Array.isArray(build.files) ? build.files : []),
+      ].filter((value) => typeof value === 'string')) {
+        const logical = path.resolve(base, reference);
+        const target = await fs.realpath(logical).catch(() => logical);
+        aliases.set(key(logical), target);
+        const stat = await fs.stat(target).catch(() => null);
+        if (!stat) {
+          warnings.push({ file: mapped(file), reference, reason: 'missing' });
+          continue;
+        }
+        if (stat.isDirectory()) {
+          externalRoot(target);
+          await walk(target);
+        } else await add(target);
+      }
+    }
   const resolveInclude = async (file: string, reference: string) => {
     const raw = reference.replaceAll('\\', path.sep);
+    const actual = evidence.dependenciesByFile
+      .get(key(file))
+      ?.filter((dependency) => key(slash(dependency)).endsWith(key('/' + slash(raw))));
+    if (actual?.length === 1) return await fs.realpath(actual[0]).catch(() => null);
     for (const candidate of [
       path.resolve(path.dirname(file), raw),
       ...includes.map((dir) => path.resolve(dir, raw)),
@@ -208,16 +290,35 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
     }
     return null;
   };
+  const macroIncludes = new Map<string, Map<string, string>>();
   for (let index = 0; index < queued.length; index++) {
     const file = queued[index],
       bytes = content.get(file)!;
-    if (!textExtensions.has(path.extname(file).toLowerCase()) || bytes.length > 2_000_000) continue;
-    for (const match of bytes.toString('utf8').matchAll(/^\s*#\s*include\s+([A-Za-z_]\w*)/gm))
-      warnings.push({ file: mapped(file), reference: match[1], reason: 'macro-include' });
+    if (!isTextFile(file) || bytes.length > 2_000_000) continue;
+    const source = bytes.toString('utf8');
+    const definitions = [...source.matchAll(/^\s*#\s*(?:define|undef)\s+([A-Za-z_]\w*)\b/gm)];
+    const constants = new Map(
+      [...source.matchAll(/^\s*#\s*define\s+([A-Za-z_]\w*)\s+["<]([^"<>\r\n]+)[">]\s*(?:\/\/[^\r\n]*)?$/gm)]
+        .filter((match) => definitions.filter((definition) => definition[1] === match[1]).length === 1)
+        .map((match) => [match[1], match[2]]),
+    );
+    for (const match of source.matchAll(/^\s*#\s*include\s+([A-Za-z_]\w*)/gm)) {
+      const reference = constants.get(match[1]),
+        target = reference ? await resolveInclude(file, reference) : null;
+      if (target) {
+        await add(target);
+        const macros = macroIncludes.get(file) ?? new Map<string, string>();
+        macros.set(match[1], target);
+        macroIncludes.set(file, macros);
+      } else warnings.push({ file: mapped(file), reference: match[1], reason: 'macro-include' });
+    }
     for (const match of bytes.toString('utf8').matchAll(/^\s*#\s*include\s*(["<])([^"<>\r\n]+)[">]/gm)) {
       const target = await resolveInclude(file, match[2]);
       if (target) await add(target);
-      else if (match[1] === '"' || /[\\/]/.test(match[2]))
+      else if (
+        ![...supplied].some((file) => file.endsWith('/' + slash(match[2]))) &&
+        (match[1] === '"' || /[\\/]/.test(match[2]))
+      )
         warnings.push({ file: mapped(file), reference: match[2], reason: 'missing-include' });
     }
   }
@@ -226,8 +327,14 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
   const relative = (from: string, target: string) =>
     path.posix.relative(path.posix.dirname(paths.get(from)!), target) || '.';
   for (const [file, bytes] of content) {
-    if (!textExtensions.has(path.extname(file).toLowerCase()) || bytes.length > 2_000_000) continue;
+    if (!isTextFile(file) || bytes.length > 2_000_000) continue;
     let text = bytes.toString('utf8');
+    for (const [name, target] of macroIncludes.get(file) ?? [])
+      if (paths.has(target))
+        text = text.replace(
+          new RegExp('(^\\s*#\\s*include\\s+)' + name + '\\b', 'gm'),
+          (_all, prefix: string) => prefix + '"' + relative(file, paths.get(target)!) + '"',
+        );
     const matches = [...text.matchAll(/(^\s*#\s*include\s*)["<]([^"<>\r\n]+)[">]/gm)];
     for (const match of matches.reverse()) {
       const target = await resolveInclude(file, match[2]);
@@ -265,6 +372,27 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
         },
       );
     }
+    if (/(?:CMakeLists\.txt|\.cmake|Makefile|\.mk)$/i.test(file)) {
+      const cmake = /(?:CMakeLists\.txt|\.cmake)$/i.test(file);
+      const prefix = cmake ? '${CMAKE_CURRENT_LIST_DIR}/' : '$(BLODE_PACKAGE_DIR)/';
+      const replacements = new Map<string, string>();
+      for (const [source, destination] of [...directories, ...paths])
+        for (const spelling of new Set([source, slash(source), source.replaceAll('\\', '\\\\')]))
+          replacements.set(spelling, prefix + relative(file, destination));
+      let changed = false;
+      for (const [source, destination] of [...replacements].sort(([a], [b]) => b.length - a.length)) {
+        const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(
+          new RegExp('(^|[\\s"\'(=;])' + escaped + '(?=$|[\\s"\');])', 'gm'),
+          (_all, before: string) => {
+            changed = true;
+            return before + destination;
+          },
+        );
+      }
+      if (changed && !cmake)
+        text = 'BLODE_PACKAGE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))\n' + text;
+    }
     if (
       /(?:CMakeLists\.txt|\.cmake|Makefile|\.mk)$/i.test(file) &&
       /(?:[A-Za-z]:[\\/]|\/home\/|\/opt\/)/.test(text)
@@ -276,7 +404,7 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
       });
     content.set(file, Buffer.from(text));
   }
-  const toolRequirements: string[] = [];
+  const toolRequirements: string[] = [...detectedTools];
   const recordToolPath = (value: string, label: string) => {
     const version = /[\\/]versions[\\/](gnu-arm|arduino-cli|arduino-esp32)[\\/]([^\\/]+)/.exec(value);
     toolRequirements.push(version ? `${version[1]}:${version[2]}` : `custom:${label}`);
@@ -295,51 +423,80 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
       if (path.isAbsolute(location) || path.win32.isAbsolute(location)) delete choice[field];
     }
   };
-  if (descriptor) {
-    if (descriptor.build)
-      for (const key of ['entry', 'sketch', 'files']) {
-        const rewrite = (reference: string) => {
-          const target = canonical(path.resolve(root, reference));
-          return (
-            paths.get(target) ??
-            (inside(root, target) ? slash(path.relative(root, target)) || '.' : directories.get(target)) ??
-            reference
+  const portableBuild = (build: Record<string, any> | undefined, base: string) => {
+    if (!build) return;
+    const baseDestination = inside(root, base) ? slash(path.relative(root, base)) : directories.get(base);
+    for (const field of ['entry', 'sketch', 'files']) {
+      const rewrite = (reference: string) => {
+        if (typeof reference !== 'string') return reference;
+        const target = canonical(path.resolve(base, reference));
+        const destination =
+          paths.get(target) ??
+          (inside(root, target) ? slash(path.relative(root, target)) || '.' : directories.get(target));
+        return destination !== undefined && baseDestination !== undefined
+          ? path.posix.relative(baseDestination || '.', destination) || '.'
+          : reference;
+      };
+      if (Array.isArray(build[field])) build[field] = build[field].map(rewrite);
+      else if (typeof build[field] === 'string') build[field] = rewrite(build[field]);
+    }
+    const settings = build.settings;
+    if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
+      portableCompilerChoice(settings.common, 'common');
+      for (const [platform, choices] of Object.entries(settings.platforms ?? {})) {
+        if (!choices || typeof choices !== 'object' || Array.isArray(choices)) continue;
+        for (const language of ['common', 'c', 'cpp'])
+          portableCompilerChoice(
+            (choices as Record<string, unknown>)[language],
+            `platforms.${platform}.${language}`,
           );
-        };
-        if (Array.isArray(descriptor.build[key])) descriptor.build[key] = descriptor.build[key].map(rewrite);
-        else if (typeof descriptor.build[key] === 'string')
-          descriptor.build[key] = rewrite(descriptor.build[key]);
       }
-    if (descriptor.toolchain)
-      for (const key of [
+    }
+  };
+  const portableConfig = (config: Record<string, any>, full = false) => {
+    if (config.toolchain)
+      for (const field of [
         'armCompilerDirectory',
         'stlinkDirectory',
         'arduinoCli',
         'python',
         'packageDirectory',
       ]) {
-        const value = descriptor.toolchain[key];
+        const value = config.toolchain[field];
         if (typeof value !== 'string' || !value) continue;
-        recordToolPath(value, key);
-        if (path.isAbsolute(value) || path.win32.isAbsolute(value)) delete descriptor.toolchain[key];
+        recordToolPath(value, field);
+        if (path.isAbsolute(value) || path.win32.isAbsolute(value)) delete config.toolchain[field];
       }
-    const settings = descriptor.build?.settings;
-    if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
-      portableCompilerChoice(settings.common, 'common');
-      for (const platform of ['STM32F103C8T6', 'Esp32_S3_CAM']) {
-        const choices = settings.platforms?.[platform];
-        if (!choices || typeof choices !== 'object' || Array.isArray(choices)) continue;
-        for (const language of ['common', 'c', 'cpp'])
-          portableCompilerChoice(choices[language], `platforms.${platform}.${language}`);
-      }
+    if (full || config.toolchain) {
+      config.toolchain ??= {};
+      config.toolchain.arduinoCli ??= '';
+      config.toolchain.python ??= '';
     }
-    // Required legacy string fields stay valid after machine-specific values are removed.
-    descriptor.toolchain ??= {};
-    descriptor.toolchain.arduinoCli ??= '';
-    descriptor.toolchain.python ??= '';
-    if (typeof descriptor.port === 'string') descriptor.port = '';
-    if (descriptor.programmer?.serialNumber) descriptor.programmer.serialNumber = '';
-    content.set(path.join(root, 'be'), Buffer.from(JSON.stringify(descriptor, null, 2) + '\n'));
+    if (typeof config.port === 'string') config.port = '';
+    if (config.runtime?.deviceId) delete config.runtime.deviceId;
+    if (config.programmer?.serialNumber) config.programmer.serialNumber = '';
+    if (config.debugger) {
+      for (const field of ['gdbPath', 'serverPath', 'scriptsPath']) {
+        const value = config.debugger[field];
+        if (typeof value === 'string' && (path.isAbsolute(value) || path.win32.isAbsolute(value))) {
+          recordToolPath(value, `debugger.${field}`);
+          delete config.debugger[field];
+        }
+      }
+      if (config.debugger.port) config.debugger.port = '';
+      if (config.debugger.serialNumber) config.debugger.serialNumber = '';
+    }
+  };
+  for (const [file, descriptor] of descriptors) {
+    const base = path.dirname(file);
+    portableBuild(descriptor.build, base);
+    portableConfig(descriptor, true);
+    for (const target of descriptor.build?.targets ?? []) {
+      const sourceRoot = path.resolve(base, target.root);
+      portableBuild(target.build, sourceRoot);
+      if (target.config) portableConfig(target.config);
+    }
+    content.set(file, Buffer.from(JSON.stringify(descriptor, null, 2) + '\n'));
   }
   const files = [...paths].map(([source, destination]) => ({
     source,
@@ -372,14 +529,38 @@ export class ProjectPackages {
       dataRoot: string;
       projectRoot: () => string;
       beforeExport?: () => Promise<void>;
+      toolchainRoots?: () => string[];
+      privateRoots?: () => string[];
+      buildEvidenceState?: () => Promise<BuildEvidenceStatus>;
     },
   ) {}
   async preview() {
-    return (await collectProjectPackage(this.options.projectRoot())).plan;
+    return (
+      await collectProjectPackage(this.options.projectRoot(), {
+        toolchainRoots: this.options.toolchainRoots?.(),
+        privateRoots: this.options.privateRoots?.(),
+        buildEvidence: await this.options.buildEvidenceState?.(),
+      })
+    ).plan;
   }
-  async export(options: { confirmExternal?: true; allowIncomplete?: true }): Promise<ProjectPackageResult> {
+  async export(options: {
+    confirmExternal?: true;
+    allowIncomplete?: true;
+    expectedProjectRoot?: string;
+  }): Promise<ProjectPackageResult> {
+    const projectRoot = this.options.projectRoot();
+    if (
+      options.expectedProjectRoot &&
+      path.resolve(options.expectedProjectRoot) !== path.resolve(projectRoot)
+    )
+      throw new Error('error.projectChanged');
     await this.options.beforeExport?.();
-    const scanned = await collectProjectPackage(this.options.projectRoot());
+    const scanned = await collectProjectPackage(projectRoot, {
+      toolchainRoots: this.options.toolchainRoots?.(),
+      privateRoots: this.options.privateRoots?.(),
+      buildEvidence: await this.options.buildEvidenceState?.(),
+    });
+    if (this.options.projectRoot() !== projectRoot) throw new Error('error.projectChanged');
     if (scanned.plan.externalCount && !options.confirmExternal)
       throw new Error('error.packageConfirmExternal');
     if (scanned.plan.warnings.length && !options.allowIncomplete) throw new Error('error.packageUnresolved');

@@ -8,6 +8,7 @@ import { HardwareDebugger } from '../src/core/hardware-debugger';
 import { getBoardAdapter } from '../extensions/registry';
 import { openUartGdbBridge } from '../extensions/boards/Esp32_S3_CAM/debugger/uart-gdb';
 import { FakeUart, rsp } from './helpers/uart-gdb-fake';
+import type { AutomaticDebugSymbolResolver } from '../src/core/build-debug-symbols';
 
 const childSource = `
 import net from 'node:net';
@@ -66,11 +67,11 @@ if(kind==='server') {
 }
 `;
 
-async function fixture(t: TestContext, mode: string) {
+async function fixture(t: TestContext, mode: string, automaticSymbols?: AutomaticDebugSymbolResolver) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'blode-debug-connect-'));
   const script = path.join(root, 'debug-tools.mjs');
   await fs.writeFile(script, childSource);
-  const debug = new HardwareDebugger(root, root);
+  const debug = new HardwareDebugger(root, root, undefined, automaticSymbols);
   const calls: { command: string; args: string[] }[] = [];
   const commands: string[] = [];
   const children: Promise<void>[] = [];
@@ -118,6 +119,60 @@ test('ESP USB-JTAG connects with blank serial through a real local server and MI
     f.calls[0].args.some((arg) => arg.startsWith('adapter serial')),
     false,
   );
+});
+
+test('native connect loads the current automatic ELF before attach and never revives a retired target ELF', async (t) => {
+  const elf = Buffer.alloc(84);
+  elf.write('7f454c46', 'hex');
+  elf[4] = elf[5] = 1;
+  elf.writeUInt16LE(94, 18);
+  let current: { id: string; name: string; bytes: Buffer } | null = {
+    id: 'camera-build-1',
+    name: 'camera.ino.elf',
+    bytes: elf,
+  };
+  const f = await fixture(t, 'success', async () => current);
+  await f.debug.connect(f.config);
+  assert.equal((await f.debug.state()).symbols, 'camera.ino.elf');
+  const symbolIndex = f.commands.findIndex((command) => command.startsWith('-file-exec-and-symbols '));
+  assert.ok(symbolIndex >= 0);
+  assert.ok(symbolIndex < f.commands.findIndex((command) => command.startsWith('-target-select')));
+  await f.debug.disconnect();
+  current = null;
+  const firstCount = f.commands.filter((command) => command.startsWith('-file-exec-and-symbols ')).length;
+  await f.debug.connect(f.config);
+  assert.equal((await f.debug.state()).symbols, '');
+  assert.equal(
+    f.commands.filter((command) => command.startsWith('-file-exec-and-symbols ')).length,
+    firstCount,
+  );
+  await f.debug.disconnect();
+  await f.debug.symbolsBytes(elf, 'manual.elf');
+  current = { id: 'camera-build-2', name: 'other.elf', bytes: elf };
+  await f.debug.connect(f.config);
+  assert.equal((await f.debug.state()).symbols, 'manual.elf');
+});
+
+test('cancelling a pending automatic ELF read cannot launch a debugger or restore the retired selection', async (t) => {
+  let started!: () => void, finish!: (value: any) => void;
+  const waiting = new Promise<void>((resolve) => (started = resolve)),
+    pending = new Promise<any>((resolve) => (finish = resolve));
+  const f = await fixture(t, 'success', async () => {
+    started();
+    return pending;
+  });
+  const connecting = f.debug.connect(f.config),
+    cancelled = assert.rejects(connecting, /operationCancelled/);
+  await waiting;
+  await f.debug.disconnect();
+  const bytes = Buffer.alloc(84);
+  bytes.write('7f454c46', 'hex');
+  bytes[4] = bytes[5] = 1;
+  bytes.writeUInt16LE(94, 18);
+  finish({ id: 'late-target', name: 'late.elf', bytes });
+  await cancelled;
+  assert.equal(f.calls.length, 0);
+  assert.equal((f.debug as any).symbols, '');
 });
 
 test('late target stop notifications refresh the same session instead of rejecting a valid connection', async (t) => {

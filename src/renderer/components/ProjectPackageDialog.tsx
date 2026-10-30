@@ -4,6 +4,7 @@ import type { ProjectPackagePlan, ProjectPackageResult } from '../../shared/proj
 import type { Studio } from '../workspace/useStudio';
 import { bytes } from '../utils';
 import './project-package-dialog.css';
+import { PackageList } from './PackageList';
 
 const fingerprint = (plan: ProjectPackagePlan) =>
   JSON.stringify({
@@ -98,6 +99,7 @@ export function ProjectPackageDialog({ studio }: { studio: Studio }) {
         return;
       }
       const archive = await window.blode.projectPackageExport({
+        expectedProjectRoot: plan.projectRoot,
         ...(external ? { confirmExternal: true as const } : {}),
         ...(incomplete ? { allowIncomplete: true as const } : {}),
       });
@@ -115,7 +117,7 @@ export function ProjectPackageDialog({ studio }: { studio: Studio }) {
   const externalFiles = plan?.files.filter((file) => file.external) ?? [];
   const ready = !!plan && (!plan.externalCount || external) && (!plan.warnings.length || incomplete);
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop package-backdrop">
       <section
         className="modal project-package-dialog"
         role="dialog"
@@ -147,7 +149,6 @@ export function ProjectPackageDialog({ studio }: { studio: Studio }) {
           </button>
         </header>
         <div className="package-content">
-          <p className="package-intro">{t('package.portableNote')}</p>
           {plan && (
             <>
               <div className="package-stats">
@@ -171,16 +172,19 @@ export function ProjectPackageDialog({ studio }: { studio: Studio }) {
               {externalFiles.length > 0 && (
                 <section className="package-section">
                   <h3>{t('package.externalFiles')}</h3>
-                  <div className="package-dependencies">
-                    {externalFiles.map((file) => (
-                      <div key={file.source}>
+                  <PackageList
+                    items={externalFiles}
+                    label={t('package.externalFiles')}
+                    className="package-dependencies"
+                    renderRow={(file) => (
+                      <>
                         <code title={file.source}>{file.source}</code>
                         <span aria-hidden="true">→</span>
-                        <code>{file.destination}</code>
+                        <code title={file.destination}>{file.destination}</code>
                         <small>{bytes(file.size)}</small>
-                      </div>
-                    ))}
-                  </div>
+                      </>
+                    )}
+                  />
                   <label className="package-consent">
                     <input
                       type="checkbox"
@@ -198,16 +202,19 @@ export function ProjectPackageDialog({ studio }: { studio: Studio }) {
                     <TriangleAlert size={15} />
                     {t('package.unresolved')}
                   </h3>
-                  <p>{t('package.unresolvedNote')}</p>
-                  <ul>
-                    {plan.warnings.map((warning, index) => (
-                      <li key={`${warning.file}:${warning.reference}:${index}`}>
+                  <PackageList
+                    items={plan.warnings}
+                    label={t('package.unresolved')}
+                    height={180}
+                    className="package-warning-list"
+                    renderRow={(warning) => (
+                      <>
                         <strong>{t(`package.reason.${warning.reason}`)}</strong>
-                        <code>{warning.reference}</code>
-                        {warning.file && <small>{warning.file}</small>}
-                      </li>
-                    ))}
-                  </ul>
+                        <code title={warning.reference}>{warning.reference}</code>
+                        {warning.file && <small title={warning.file}>{warning.file}</small>}
+                      </>
+                    )}
+                  />
                   <label className="package-consent">
                     <input
                       type="checkbox"

@@ -9,7 +9,12 @@ interface Parsed {
   symbols: LanguageSymbol[];
   includes: LanguageInclude[];
 }
-const sourceExtension = /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|ipp|ino)$/i;
+interface IndexedSource {
+  content: string;
+  parsed: Parsed;
+  references?: { positions: Map<string, number[]>; lines: number[] };
+}
+const sourceExtension = /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|inc|ipp|ino)$/i;
 const controls = new Set([
   'if',
   'for',
@@ -260,38 +265,67 @@ function parse(file: LanguageSource): Parsed {
 
 /** A file is reparsed only when its text changes; current buffers override disk. */
 export class WorkspaceLanguageIndex {
-  private files = new Map<string, { content: string; parsed: Parsed }>();
+  private files = new Map<string, IndexedSource>();
+  private names = new Map<string, LanguageSymbol[]>();
+  private aggregate?: { symbols: LanguageSymbol[]; includes: LanguageInclude[] };
   update(sources: readonly LanguageSource[]): number {
-    const live = new Set<string>();
+    const live = new Set(sources.map((source) => normalizeSourcePath(source.path)));
+    let changed = this.upsert(sources);
+    for (const path of this.files.keys())
+      if (!live.has(path)) {
+        this.removeNames(path, this.files.get(path)!);
+        this.files.delete(path);
+        changed++;
+      }
+    if (changed) this.aggregate = undefined;
+    return changed;
+  }
+  /** Merge a discovered batch without deleting source files from previous batches. */
+  upsert(sources: readonly LanguageSource[]): number {
     let changed = 0;
     for (const source of sources) {
       const path = normalizeSourcePath(source.path);
       if (!sourceExtension.test(path)) continue;
-      live.add(path);
       if (this.files.get(path)?.content === source.content) continue;
-      this.files.set(path, { content: source.content, parsed: parse({ ...source, path }) });
+      const next = { content: source.content, parsed: parse({ ...source, path }) },
+        previous = this.files.get(path);
+      if (previous) this.removeNames(path, previous);
+      this.files.set(path, next);
+      for (const symbol of next.parsed.symbols) {
+        const group = this.names.get(symbol.name);
+        if (group) group.push(symbol);
+        else this.names.set(symbol.name, [symbol]);
+      }
       changed++;
     }
-    for (const path of this.files.keys())
-      if (!live.has(path)) {
-        this.files.delete(path);
-        changed++;
-      }
+    if (changed) this.aggregate = undefined;
     return changed;
   }
+  private removeNames(path: string, file: IndexedSource): void {
+    for (const name of new Set(file.parsed.symbols.map((symbol) => symbol.name))) {
+      const remaining = this.names.get(name)!.filter((symbol) => symbol.path !== path);
+      if (remaining.length) this.names.set(name, remaining);
+      else this.names.delete(name);
+    }
+  }
+  includesForPath(path: string): readonly LanguageInclude[] {
+    return this.files.get(normalizeSourcePath(path))?.parsed.includes ?? [];
+  }
   snapshot(projectRoot = ''): LanguageIndexSnapshot {
+    this.aggregate ??= {
+      symbols: [...this.files.values()].flatMap((file) => file.parsed.symbols),
+      includes: [...this.files.values()].flatMap((file) => file.parsed.includes),
+    };
     return {
       version: 1,
       projectRoot,
       fileCount: this.files.size,
-      symbols: [...this.files.values()].flatMap((file) => file.parsed.symbols),
-      includes: [...this.files.values()].flatMap((file) => file.parsed.includes),
+      symbols: this.aggregate.symbols.slice(),
+      includes: this.aggregate.includes.slice(),
     };
   }
   definitions(name: string, from: string, declaration = false): LanguageSymbol[] {
-    const symbols = this.snapshot().symbols.filter(
-      (symbol) => symbol.name === name && (!symbol.local || symbol.path === from),
-    );
+    const symbols = (this.names.get(name) ?? []).filter((symbol) => !symbol.local || symbol.path === from);
     const preferred = symbols.filter((symbol) => (declaration ? !symbol.definition : symbol.definition));
     return (preferred.length ? preferred : symbols).sort(
       (a, b) =>
@@ -308,5 +342,74 @@ export class WorkspaceLanguageIndex {
   }
   source(path: string): string | undefined {
     return this.files.get(normalizeSourcePath(path))?.content;
+  }
+  private *referenceBatches(file: IndexedSource): Generator<void> {
+    const masked = maskTrivia(file.content),
+      lines = [0],
+      positions = new Map<string, number[]>();
+    for (let i = 0; i < masked.length; i++) if (masked[i] === '\n') lines.push(i + 1);
+    let visited = 0;
+    for (const match of masked.matchAll(/\b[A-Za-z_]\w*\b/g)) {
+      const word = match[0],
+        group = positions.get(word) ?? [];
+      if (group.length < 10000) group.push(match.index!);
+      positions.set(word, group);
+      if (++visited % 2048 === 0) yield;
+    }
+    file.references = { positions, lines };
+  }
+  private referenceLocations(
+    path: string,
+    file: IndexedSource,
+    name: string,
+    limit: number,
+  ): import('./language').SourceLocation[] {
+    const { positions, lines } = file.references!;
+    const result: import('./language').SourceLocation[] = [];
+    let line = 0;
+    for (const offset of (positions.get(name) ?? []).slice(0, limit)) {
+      while (line + 1 < lines.length && lines[line + 1] <= offset) line++;
+      const column = offset - lines[line] + 1;
+      result.push({ path, line: line + 1, column, endLine: line + 1, endColumn: column + name.length });
+    }
+    return result;
+  }
+  references(name: string): import('./language').SourceLocation[] {
+    if (!/^[A-Za-z_]\w*$/.test(name)) return [];
+    const result: import('./language').SourceLocation[] = [];
+    for (const [path, file] of this.files) {
+      if (!file.references) {
+        const batches = this.referenceBatches(file);
+        while (!batches.next().done) {
+          /* Synchronous callers share the same reusable index. */
+        }
+      }
+      result.push(...this.referenceLocations(path, file, name, 10000 - result.length));
+      if (result.length >= 10000) return result;
+    }
+    return result;
+  }
+  async referencesAsync(
+    name: string,
+    options: { cancelled?: () => boolean; yieldControl?: () => Promise<void> } = {},
+  ): Promise<import('./language').SourceLocation[]> {
+    if (!/^[A-Za-z_]\w*$/.test(name)) return [];
+    const result: import('./language').SourceLocation[] = [],
+      yieldControl = options.yieldControl ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+    let visited = 0;
+    for (const [path, file] of [...this.files]) {
+      if (options.cancelled?.()) return [];
+      if (!file.references) {
+        const batches = this.referenceBatches(file);
+        while (!batches.next().done) {
+          await yieldControl();
+          if (options.cancelled?.()) return [];
+        }
+      }
+      result.push(...this.referenceLocations(path, file, name, 10000 - result.length));
+      if (result.length >= 10000) return options.cancelled?.() ? [] : result;
+      if (++visited % 16 === 0) await yieldControl();
+    }
+    return options.cancelled?.() ? [] : result;
   }
 }

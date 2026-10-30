@@ -26,6 +26,56 @@
   border-block: 1px solid var(--border);
   margin-block: 18px;
 }
+.build-target-selector {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-block: 12px;
+}
+.build-target-selector label {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  flex: 1;
+  font-size: 12px;
+}
+.build-target-selector button {
+  min-height: 36px;
+}
+.build-target-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  border: 0;
+  padding: 10px 0;
+  margin: 0;
+}
+.build-target-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+.build-target-fields input {
+  min-width: 0;
+  width: 100%;
+}
+.build-target-selector + .build-settings-body,
+.build-target-fields + .build-settings-body {
+  margin-top: 8px;
+}
+.build-settings-modal .build-target-fields ~ .build-settings-body {
+  min-height: 150px;
+}
+@media (max-width: 680px) {
+  .build-target-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .build-target-selector label {
+    min-width: 120px;
+  }
+}
 .build-settings-nav {
   display: flex;
   flex-direction: column;

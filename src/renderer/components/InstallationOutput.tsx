@@ -50,7 +50,13 @@ export function InstallationOutput({
     total > 0;
   const percent = canMeasure ? Math.min(100, Math.max(0, (received / total) * 100)) : undefined;
   const logs = current?.logs.filter((entry) => !entry.progressOnly).slice(-250) ?? [];
-  const phaseLabel = phase ? t(phaseKeys[phase]) : t('settings.installIdle');
+  const phaseLabel = phase
+    ? t(
+        phase === 'completed' && current?.operation === 'download'
+          ? 'status.downloadCompleted'
+          : phaseKeys[phase],
+      )
+    : t('settings.installIdle');
   const status = running ? 'running' : (current?.status ?? 'idle');
 
   useEffect(() => {

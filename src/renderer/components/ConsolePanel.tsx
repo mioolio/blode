@@ -1,9 +1,17 @@
 import { ModernSelect } from './ModernSelect';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import {
   CircleAlert,
   CircleCheck,
-  FolderTree,
   Gauge,
   LoaderCircle,
   PlugZap,
@@ -21,6 +29,11 @@ import type { SerialOptions } from '../../shared/contracts';
 import { iconButton } from './IconButton';
 import { TerminalPanel } from './TerminalPanel';
 import { RuntimePluginView } from './RuntimePluginView';
+const GeneralExtensionView = lazy(() =>
+  import('../extensions/GeneralExtensionView').then((module) => ({ default: module.GeneralExtensionView })),
+);
+import { extensionLabel, useGeneralExtensions } from '../extensions/ShellAppearance';
+import { generalExtensionPanelKey } from '../../shared/general-extensions';
 import { registeredRuntimeViews } from '../../shared/runtime-views';
 import { workspaceConsoleTabs } from '../../shared/workspace-surfaces';
 import { MemoryUsage } from './MemoryUsage';
@@ -66,11 +79,20 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     (view) => view.location === 'panel',
   );
   const pluginView = pluginViews.find((view) => view.key === tab);
+  const extensions = useGeneralExtensions();
+  const extensionPanels = (extensions.data?.plugins ?? [])
+    .filter((plugin) => plugin.enabled)
+    .flatMap((plugin) =>
+      (plugin.manifest.ui.views ?? [])
+        .filter((view) => view.location === 'panel')
+        .map((view) => ({ key: generalExtensionPanelKey(plugin.id, view.id), plugin, view })),
+    );
+  const extensionPanel = extensionPanels.find((panel) => panel.key === tab);
   const memoryVisible = ![
     ...(studio.board?.runtimePlugin?.ui.hiddenCapabilities ?? []),
     ...(config?.runtime?.disabledCapabilities ?? []),
   ].includes('layout');
-  const resourceTab = tab === 'memory' || tab === 'project';
+  const resourceTab = tab === 'resources';
   useEffect(() => {
     const open = (event: Event) => {
       const key = (event as CustomEvent<string>).detail;
@@ -80,10 +102,21 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     return () => window.removeEventListener('blode:runtime-panel', open);
   }, [pluginViews.map((view) => view.key).join('|')]);
   useEffect(() => {
-    if (tab.startsWith('plugin:') && !pluginView) setTab('output');
-  }, [tab, !!pluginView]);
+    const open = (event: Event) => {
+      const key = (event as CustomEvent<string>).detail;
+      if (extensionPanels.some((panel) => panel.key === key)) {
+        studio.setConsolePanelVisible(true);
+        setTab(key as `plugin:${string}`);
+      }
+    };
+    window.addEventListener('blode:extension-panel', open);
+    return () => window.removeEventListener('blode:extension-panel', open);
+  }, [extensionPanels.map((panel) => panel.key).join('|')]);
   useEffect(() => {
-    if ((resourceTab && !state?.workspaceOpen) || (tab === 'memory' && !memoryVisible)) setTab('output');
+    if (tab.startsWith('plugin:') && !pluginView && !extensionPanel) setTab('output');
+  }, [tab, !!pluginView, !!extensionPanel]);
+  useEffect(() => {
+    if (resourceTab && !state?.workspaceOpen) setTab('output');
   }, [resourceTab, state?.workspaceOpen, memoryVisible, tab]);
   useEffect(() => {
     const strip = tabsRef.current;
@@ -142,12 +175,10 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     problems: CircleAlert,
     warnings: TriangleAlert,
     terminal: SquareTerminal,
-    memory: Gauge,
-    project: FolderTree,
+    resources: Gauge,
   };
   const tabs = workspaceConsoleTabs
-    .filter((id) => state?.workspaceOpen || (id !== 'memory' && id !== 'project'))
-    .filter((id) => id !== 'memory' || memoryVisible)
+    .filter((id) => state?.workspaceOpen || id !== 'resources')
     .map((id) => ({ id, icon: tabIcons[id] }));
   const emptyIcon =
     tab === 'serial' ? (
@@ -178,6 +209,15 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               {view.label}
             </button>
           ))}
+          {extensionPanels.map((panel) => (
+            <button
+              key={panel.key}
+              className={tab === panel.key ? 'active' : ''}
+              onClick={() => setTab(panel.key)}
+            >
+              {extensionLabel(panel.plugin, panel.view.label, panel.view.label, locale)}
+            </button>
+          ))}
         </div>
         <div className="console-tools">
           {busy && (
@@ -189,6 +229,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           {tab !== 'terminal' &&
             !resourceTab &&
             !pluginView &&
+            !extensionPanel &&
             iconButton(
               'action.clear',
               () =>
@@ -212,13 +253,20 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
             config={config}
             drafts={studio.drafts}
             stale={studio.stale || studio.dirty || studio.configDirty}
-            section={tab}
+            section={memoryVisible ? 'all' : 'project'}
           />
         </div>
       )}
       {pluginView && (
         <div className="console-plugin-view">
           <RuntimePluginView key={pluginView.key} id={pluginView.pluginId} kind={`view:${pluginView.id}`} />
+        </div>
+      )}
+      {extensionPanel && (
+        <div className="console-plugin-view">
+          <Suspense fallback={null}>
+            <GeneralExtensionView id={extensionPanel.plugin.id} view={extensionPanel.view.id} />
+          </Suspense>
         </div>
       )}
       {tab === 'serial' && (
@@ -368,7 +416,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           </div>
         </>
       )}
-      {tab !== 'terminal' && !resourceTab && !pluginView && (
+      {tab !== 'terminal' && !resourceTab && !pluginView && !extensionPanel && (
         <div
           className="log-scroll"
           ref={logRef}

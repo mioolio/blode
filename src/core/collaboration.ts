@@ -112,6 +112,11 @@ export function transformCollaborationChanges(
 
 /** One serialized authority for shared unsaved text, independent from renderer lifetimes. */
 export class CollaborationService {
+  private readonlySources?: (projectRoot: string) => readonly string[];
+  private readonlyViewable = new Set<string>();
+  setReadonlySources(provider: (projectRoot: string) => readonly string[]) {
+    this.readonlySources = provider;
+  }
   private projectRoot = '';
   private session = randomUUID();
   private files = new Map<string, string>();
@@ -167,7 +172,7 @@ export class CollaborationService {
       const openPaths = (peer.openPaths ?? (path ? [path] : [])).filter((entry) =>
         this.viewableFiles.has(entry),
       );
-      const text = !!path && this.files.has(path);
+      const text = !!path && (this.files.has(path) || this.readonlyViewable.has(path));
       const clearRange =
         !text && (peer.startLine !== 1 || peer.endLine !== 1 || !!peer.cursor || peer.editing);
       if (
@@ -200,6 +205,10 @@ export class CollaborationService {
       workspace.files.map((file) => [normalizeCollaborationPath(file.path), file.content]),
     );
     const viewable = new Set(openableFilePaths(workspace).map(normalizeCollaborationPath));
+    this.readonlyViewable = new Set(
+      (this.readonlySources?.(workspace.projectRoot) ?? []).map(normalizeCollaborationPath),
+    );
+    for (const file of this.readonlyViewable) viewable.add(file);
     if (workspace.projectRoot !== this.projectRoot) {
       this.projectRoot = workspace.projectRoot;
       this.session = randomUUID();
@@ -513,10 +522,14 @@ export class CollaborationService {
       const selectedPath =
         inactive || parsed.activeTool ? '' : parsed.path ? normalizeCollaborationPath(parsed.path) : '';
       // Desktop code stays private; resource previews carry no code coordinates.
-      let path = parsed.clientKind === 'desktop' && this.files.has(selectedPath) ? '' : selectedPath;
+      let path =
+        parsed.clientKind === 'desktop' &&
+        (this.files.has(selectedPath) || this.readonlyViewable.has(selectedPath))
+          ? ''
+          : selectedPath;
       if (path && !this.viewableFiles.has(path)) throw new Error('rpc.fileNotFound');
       if (path && !this.tabs.accepts({ kind: 'file', id: path }, parsed.tabRevision)) path = '';
-      const text = !!path && this.files.has(path);
+      const text = !!path && (this.files.has(path) || this.readonlyViewable.has(path));
       const openPaths = [
         ...new Set([
           ...(path ? [path] : []),
@@ -562,7 +575,7 @@ export class CollaborationService {
         startLine: text ? parsed.startLine : 1,
         endLine: text ? parsed.endLine : 1,
         ...(text && parsed.cursor ? { cursor: parsed.cursor } : {}),
-        editing: text && parsed.editing,
+        editing: this.files.has(path) && parsed.editing,
         seenAt: new Date(this.now()).toISOString(),
         openPaths,
         ...(parsed.openTools || parsed.activeTool || (inactive && existing?.openTools)
@@ -607,13 +620,14 @@ export class CollaborationService {
       return this.snapshot();
     });
   }
-  edit(input: CollaborationEditRequest, trustedLocal = true) {
+  edit(input: CollaborationEditRequest, trustedLocal = true, beforeApply?: () => void) {
     return this.exclusive(async (): Promise<CollaborationEditResult> => {
       this.requireWritable();
       const request = collaborationSchemas.edit.parse(input);
       if (request.changes.reduce((sum, change) => sum + change.text.length, 0) > MAX_TEXT)
         throw new Error('rpc.limitExceeded');
       await this.sync();
+      beforeApply?.();
       this.requireProject(request.projectRoot, request.session);
       this.actor(request.peerId, request.actorToken, trustedLocal);
       const doc = this.document(request.path);
