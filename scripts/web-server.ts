@@ -114,6 +114,7 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
     toolchainEnv: { ...process.env },
     onEvent: emit,
     hardwareBusy: () => hardware.active,
+    debuggerSerialPort: () => hardware.ownedSerialPort,
     createRuntimes: options.createRuntimes,
     refreshDevices: options.refreshDevices ?? true,
   });

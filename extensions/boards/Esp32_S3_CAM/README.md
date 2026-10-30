@@ -12,7 +12,7 @@
 | `constraints/` | 芯片、分区与操作约束说明                                             |
 | `ui/`          | 界面字段及扩展入口说明                                               |
 | `compiler/`    | `build-settings.ts` 编译配置与工具版本选择                           |
-| `debugger/`    | ESP32-S3 JTAG 调试能力与集成说明                                     |
+| `debugger/`    | USB-JTAG／烧录底座调试说明与 UART GDB 固件参考工程                   |
 | `layout/`      | `index.ts` 布局检查与 CSV；`partitions.ts` 默认分区                  |
 | `languages/`   | 本模块的语言规则与补全目录                                           |
 | `tools/`       | `toolchain.ts` Arduino CLI、Arduino-ESP32、Python/esptool 检测与安装 |
@@ -33,7 +33,7 @@ Arduino FQBN 为 esp32:esp32:esp32s3，Flash 配置支持 4/8/16/32 MiB。默认
 
 语言清单由本模块 `manifest.languages` 声明，C99/C11/C17/C23 分别位于 `languages/C/` 下，C++ 和 Arduino 位于 `languages/C++/`。`.c` 使用 C，`.ino`、`.cpp` 和 `.h` 使用 C++；不会修改或继承宿主默认的 C/Arduino 数据。工程索引、AI 自定义条目和显式工程规则仍可叠加。格式见[模块语言适配](../../../docs/MODULE-LANGUAGES.md)。
 
-调试复用宿主 ESP32-S3 USB-JTAG 后端，使用 Xtensa GDB 和 Espressif OpenOCD，支持执行控制、反汇编、寄存器、内存和批量硬件断点。尚未支持 Xtensa 指令修改；原生 USB 接线、驱动、安装和实机验证边界见[硬件调试](../../../docs/HARDWARE-DEBUGGING.md)。
+调试支持原生 USB-JTAG 与烧录底座 UART GDB。两者使用 Xtensa GDB，USB-JTAG 另需 Espressif OpenOCD；UART 方式要求应用固件包含 runtime stub。支持执行控制、反汇编、寄存器、内存和断点，尚未支持 Xtensa 指令修改。固件模板与既有 Arduino 工程迁移见[底座调试固件](debugger/firmware/uart-gdb/README.md)，连接、驱动和实机验证边界见[硬件调试](../../../docs/HARDWARE-DEBUGGING.md)。
 
 ## 独立模块分发
 

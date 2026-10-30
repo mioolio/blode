@@ -47,6 +47,10 @@ export interface ProjectConfig {
   };
   partitions: Partition[];
   debugger?: {
+    transport?: 'usb-jtag' | 'uart-gdb';
+    port?: string;
+    baudRate?: number;
+    stubMode?: 'runtime' | 'panic';
     gdbPath?: string;
     serverPath?: string;
     scriptsPath?: string;
@@ -320,6 +324,11 @@ export interface FirmwareExportResult {
   status: 'saved' | 'cancelled';
   path?: string;
 }
+export interface DebuggerSettingsRequest {
+  expectedProjectRoot: string;
+  expectedBoardId: string;
+  debugger: NonNullable<ProjectConfig['debugger']>;
+}
 export interface DebuggerState {
   profile?: import('./debugger-profiles').DebuggerProfile;
   sessionId?: string;
@@ -383,6 +392,7 @@ export interface DesktopApi
   firmwareFlash(request: FirmwareFlashRequest): Promise<void>;
   openDebugger(): Promise<void>;
   debuggerState(config?: ProjectConfig): Promise<DebuggerState>;
+  debuggerSaveSettings(request: DebuggerSettingsRequest): Promise<void>;
   debuggerSymbols(): Promise<string | null>;
   debuggerConnect(config: ProjectConfig): Promise<void>;
   debuggerAction(action: DebuggerAction): Promise<void>;

@@ -8,6 +8,7 @@
 
 ### 新增
 
+- ESP32-S3 烧录底座 UART GDB 调试入口；模块内提供 ESP-IDF v5.1.4 runtime stub 固件模板、ELF／BIN 构建说明及 Arduino 3.0.7 迁移方法。Windows + CH340 参考固件已通过实机断点、单步、暂停、内存读取与运行／暂停两种重连验证。
 - **运行 → 组件库**：查看工程依赖与平台内置库；显式搜索 Arduino 官方库索引，选择版本并解析递归依赖；从宿主目录或 ZIP 导入。
 - 工程组件保存在 `libraries/`、`components/` 与 `blode.components.json`，构建前由宿主派生源码及包含目录；移除前检查文件变更与依赖者。
 - `components.state/search/install/import/remove` JSON-RPC／MCP 接口；写操作要求 `expectedProjectRoot` 和 `confirm: true`。
@@ -39,6 +40,10 @@
 
 ### 修复
 
+- 独立调试窗口保存连接设置、连接前保存和刷新串口时的 `error.unauthorized`；调试设置通过专用接口校验当前工程与平台。
+- 修复原生弹窗内下拉列表被遮挡、点击选项误触底层按钮的问题，连接方式、串口与固件模式可正常选择。
+- 烧录底座调试与串口监视的端口交接、连接等待期间的取消，以及断开时的断点清理。
+- IDF 5.1.4 参考固件将 UART Ctrl+C 正确报告为 SIGINT；构建时生成经过源文件校验的组件副本，保留 panic 信号映射。关闭存在索引问题的任务枚举，寄存器与调用栈使用当前停止上下文，修复断点后重连异常。
 - Windows 连接 ESP32-S3 时单次检查原生 USB-JTAG 接口、设备状态与目标序列号，区分串口桥和 JTAG；取消连接终止预检，枚举不可用时保留 OpenOCD 诊断。
 - 补充原生 USB-JTAG 接线与驱动说明，记录本机仅连接 CH340 时的失败复现及待实机验收范围。
 - ESP32-S3 USB-JTAG 序列号留空时不再发送无效的显式设备选择；OpenOCD 自动选择，指定序列号时仍绑定对应设备。
@@ -58,7 +63,7 @@
 
 详细契约与兼容边界见[运行时插件开发指南](docs/RUNTIME-PLUGINS.md)。
 
-组件安装、可迁移目录、删除保护与平台范围见[组件库指南](docs/COMPONENT-LIBRARIES.md)。本轮不将模拟界面或协议验证记为实机 USB-JTAG 验收。
+组件安装、可迁移目录、删除保护与平台范围见[组件库指南](docs/COMPONENT-LIBRARIES.md)。UART 实机记录见[硬件调试](docs/HARDWARE-DEBUGGING.md#验证状态)；USB-JTAG、相机工程迁移及 Linux 仍待验收。
 
 ## 0.2.3.6 — 2026-10-29
 

@@ -16,9 +16,13 @@ import {
   debuggerPresentation,
   debuggerRegister,
   debuggerToolIdentity,
+  debuggerToolsAvailable,
+  debuggerCan,
 } from '../src/renderer/components/debuggerProfiles';
 import { DebuggerToolsPanel } from '../src/renderer/components/DebuggerToolsPanel';
 import { DebuggerErrorNotice } from '../src/renderer/components/DebuggerErrorNotice';
+import { DebuggerUartSettings } from '../src/renderer/components/DebuggerUartSettings';
+import { configSchema } from '../src/core/config';
 import { debuggerErrorSummary, debuggerDiagnosticLog } from '../src/shared/debugger-errors';
 import { getDebuggerProfile } from '../src/shared/debugger-profiles';
 import { getBoardAdapter } from '../extensions/registry';
@@ -309,7 +313,7 @@ test('USB-JTAG failure notice shows an actionable reason and keeps raw output in
   const html = renderToStaticMarkup(
     createElement(DebuggerErrorNotice, { message: openOcdFailure, transport: 'usb-jtag', onViewLog() {} }),
   );
-  assert.match(html, /无法打开 ESP32-S3 USB-JTAG/);
+  assert.match(html, /无法打开 USB-JTAG 设备/);
   assert.match(html, /查看调试日志/);
   assert.doesNotMatch(html, /Open On-Chip|Licensed|esp32s3\.cfg/);
   assert.equal((html.match(/role="alert"/g) ?? []).length, 1);
@@ -347,4 +351,77 @@ test('preflight RPC errors are localized while unrelated failures retain their a
   assert.ok(debuggerErrorSummary(long).endsWith('…'));
   assert.equal(debuggerDiagnosticLog([], [long, long]).length, 1);
   assert.equal(debuggerDiagnosticLog([], [long])[0], long.trim());
+});
+
+test('UART tools require only Xtensa GDB and transport changes invalidate checked results', () => {
+  const profile = debuggerPresentation('Esp32_S3_CAM', undefined, 'uart-gdb');
+  assert.ok(profile);
+  assert.equal(profile.transport, 'uart-gdb');
+  const html = renderToStaticMarkup(
+    createElement(DebuggerToolsPanel, { ...toolPanelProps, profile, tools: { gdb: true, server: false } }),
+  );
+  assert.equal((html.match(/class="debug-tool-row"/g) ?? []).length, 1);
+  assert.equal((html.match(/<input/g) ?? []).length, 1);
+  assert.match(html, /安装 Xtensa GDB/);
+  assert.doesNotMatch(html, /OpenOCD|serverPath|scriptsPath|st-util/);
+  assert.equal(debuggerToolsAvailable(profile, { gdb: true, server: false }), true);
+  assert.equal(debuggerToolsAvailable(profile, { gdb: false, server: true }), false);
+  const config = getBoardAdapter('Esp32_S3_CAM').createConfig();
+  assert.notEqual(
+    debuggerToolIdentity(config),
+    debuggerToolIdentity({ ...config, debugger: { transport: 'uart-gdb' } }),
+  );
+  assert.equal(debuggerPresentation('custom', 'Esp32_S3_CAM', 'uart-gdb')?.transport, 'uart-gdb');
+  assert.equal(debuggerPresentation('STM32F103C8T6', undefined, 'uart-gdb')?.transport, 'swd');
+});
+
+test('UART settings use host COM devices and do not expose a stale missing port', () => {
+  const html = renderToStaticMarkup(
+    createElement(DebuggerUartSettings, {
+      options: { port: 'COM99', transport: 'uart-gdb', stubMode: 'panic' },
+      ports: [{ path: 'COM3', manufacturer: 'CH340' }],
+      disabled: false,
+      onChange() {},
+      onRefresh() {},
+    }),
+  );
+  assert.match(html, /COM3/);
+  assert.doesNotMatch(html, /COM99/);
+  assert.match(html, /115200/);
+  assert.match(html, /崩溃现场（只读）/);
+  assert.doesNotMatch(html, /OpenOCD|ST-Link/);
+});
+
+test('panic inspection disables execution and breakpoints while preserving memory reads', () => {
+  const profile = {
+    ...getDebuggerProfile('Esp32_S3_CAM')!,
+    transport: 'uart-gdb' as const,
+    capabilities: { continue: false, pause: false, step: false, breakpoints: false, memoryRead: true },
+  };
+  for (const action of ['continue', 'pause', 'step', 'next', 'finish', 'breakpoints'] as const)
+    assert.equal(debuggerCan(profile, action), false);
+  assert.equal(debuggerCan(profile, 'memoryRead'), true);
+  assert.equal(debuggerCan(profile, 'disconnect'), true);
+  assert.equal(debuggerCan(getDebuggerProfile('Esp32_S3_CAM'), 'step'), true);
+});
+
+test('debugger UART config accepts portable serial settings and rejects malformed baud or modes', () => {
+  const config = getBoardAdapter('Esp32_S3_CAM').createConfig();
+  const debuggerOptions = {
+    transport: 'uart-gdb',
+    port: '/dev/ttyUSB0',
+    baudRate: 115200,
+    stubMode: 'runtime',
+  };
+  assert.deepEqual(configSchema.parse({ ...config, debugger: debuggerOptions }).debugger, debuggerOptions);
+  for (const changes of [
+    { baudRate: 0 },
+    { baudRate: 115200.5 },
+    { stubMode: 'unknown' },
+    { transport: 'serial' },
+  ])
+    assert.equal(
+      configSchema.safeParse({ ...config, debugger: { ...debuggerOptions, ...changes } }).success,
+      false,
+    );
 });

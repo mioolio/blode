@@ -17,6 +17,7 @@
 
 ### 本次内部更新
 
+- **烧录底座调试**：Windows 下已通过 ESP32-S3 + CH340 参考固件实机验证，覆盖断点、单步、内存读取及断开重连；提供固定 IDF 版本的参考工程和 Arduino 工程迁移步骤，见[硬件调试](docs/HARDWARE-DEBUGGING.md#烧录底座调试)。
 - **组件库**：运行菜单管理工程依赖；搜索 Arduino 库并选择版本，递归安装依赖，或从目标电脑文件夹／ZIP 导入。组件随工程保存，详见[组件库指南](docs/COMPONENT-LIBRARIES.md)。
 - **ESP32 修复**：调试允许留空 USB 序列号自动选择；编译选项追加到平台 `extra_flags`，保留 `-c` 等原有参数。
 - **ESP32-S3 硬件调试**：通过 USB-JTAG、Espressif OpenOCD 和 Xtensa GDB 查看寄存器、反汇编、调用栈与内存，支持暂停、单步及断点。
@@ -25,7 +26,7 @@
 - **工作台与扩展**：PowerShell 交互终端、插件独立窗口和底部面板、保存后退出与可选托盘、前后台协作状态同步。
 - **标准模块**：两个平台统一拆成 10 个职责目录；模块自行声明语言列表或固定语言，C 标准目录隔离；新增独立模块打包，供二进制宿主安装。
 
-ESP32-S3 调试与 Linux 适配尚待实机验收。功能范围、准备步骤及测试记录见[硬件调试指南](docs/HARDWARE-DEBUGGING.md)、[调试更新](docs/internal/debugger-editing.md)和[工作台更新](docs/internal/workbench-interaction.md)。本次仅更新源码，不生成新的发行包。
+ESP32-S3 UART 调试已验证 Windows 参考固件；USB-JTAG、现有相机工程迁移及 Linux 适配仍待实机验收。功能范围、准备步骤及测试记录见[硬件调试指南](docs/HARDWARE-DEBUGGING.md)、[调试更新](docs/internal/debugger-editing.md)和[工作台更新](docs/internal/workbench-interaction.md)。本次仅更新源码，不生成新的发行包。
 
 ## 快速开始
 
@@ -64,10 +65,10 @@ npm run web:start
 
 下表描述 `main` 中的内部预览实现。运行时名称对应明确的芯片范围。
 
-| 运行时          | 芯片              | 编译                                  | 烧录          | 硬件调试                                              |
-| --------------- | ----------------- | ------------------------------------- | ------------- | ----------------------------------------------------- |
-| `Esp32_S3_CAM`  | ESP32-S3          | Arduino CLI + Arduino-ESP32           | esptool／串口 | USB-JTAG + Espressif OpenOCD + Xtensa GDB；待实机验收 |
-| `STM32F103C8T6` | STM32F103C8／C8T6 | GNU Arm GCC 或已授权的 Arm Compiler 6 | ST-Link／SWD  | ST-Link + GDB；新增指令修改待实机验收                 |
+| 运行时          | 芯片              | 编译                                  | 烧录          | 硬件调试                                               |
+| --------------- | ----------------- | ------------------------------------- | ------------- | ------------------------------------------------------ |
+| `Esp32_S3_CAM`  | ESP32-S3          | Arduino CLI + Arduino-ESP32           | esptool／串口 | UART GDB：Windows 参考固件已验证；USB-JTAG：待实机验收 |
+| `STM32F103C8T6` | STM32F103C8／C8T6 | GNU Arm GCC 或已授权的 Arm Compiler 6 | ST-Link／SWD  | ST-Link + GDB；新增指令修改待实机验收                  |
 
 ESP32-S3 摄像头接线由工程配置。旧工程的 `esp32-s3`、`stm32` 标识在读取时迁移；其他 ESP32／STM32 型号由独立运行时包声明支持范围。详细能力与验证状态见[平台支持](docs/PLATFORM-SUPPORT.md)。
 

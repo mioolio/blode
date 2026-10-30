@@ -4,7 +4,14 @@ export interface DebuggerProfile {
   elfMachine: number;
   gdbName: string;
   serverName: string;
-  transport: 'swd' | 'usb-jtag';
+  transport: 'swd' | 'usb-jtag' | 'uart-gdb';
+  capabilities?: {
+    continue: boolean;
+    pause: boolean;
+    step: boolean;
+    breakpoints: boolean;
+    memoryRead: boolean;
+  };
   canPatchInstructions: boolean;
   canAssemble: boolean;
   registerNames: string[];
@@ -52,8 +59,25 @@ export const debuggerProfiles: Record<DebuggerProfile['id'], DebuggerProfile> = 
   },
 };
 
-export function getDebuggerProfile(boardId: string): DebuggerProfile | undefined {
-  return Object.hasOwn(debuggerProfiles, boardId)
+export function getDebuggerProfile(
+  boardId: string,
+  options?: { transport?: 'usb-jtag' | 'uart-gdb'; stubMode?: 'runtime' | 'panic' },
+): DebuggerProfile | undefined {
+  const profile = Object.hasOwn(debuggerProfiles, boardId)
     ? debuggerProfiles[boardId as DebuggerProfile['id']]
     : undefined;
+  if (profile?.architecture !== 'xtensa' || options?.transport !== 'uart-gdb') return profile;
+  const runtime = options.stubMode !== 'panic';
+  return {
+    ...profile,
+    transport: 'uart-gdb',
+    serverName: 'UART GDB Stub',
+    capabilities: {
+      continue: runtime,
+      pause: runtime,
+      step: runtime,
+      breakpoints: runtime,
+      memoryRead: true,
+    },
+  };
 }

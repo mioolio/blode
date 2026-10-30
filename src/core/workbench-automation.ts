@@ -130,7 +130,7 @@ export function createWorkbenchAutomation(options: Options) {
       core.runHardwareAction(async () => {
         await debug.symbolsFile(absolute(p.path));
       }),
-    'debugger.connect': (p) => core.runHardwareAction(() => debug.connect(p.config)),
+    'debugger.connect': (p) => core.runDebuggerConnect(p.config, () => debug.connect(p.config)),
     'debugger.action': (p) => debug.action(p.action),
     'debugger.breakpoint': (p) => debug.breakpoint(p.location, p.removeId),
     'debugger.memory': (p) => debug.memory(p.address, p.length),

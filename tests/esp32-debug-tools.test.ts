@@ -299,3 +299,28 @@ test('cancellation and unsupported platforms do not download or run a tool', asy
     await f.dispose();
   }
 });
+
+test('explicit debug tool selection downloads the requested tool without fetching the other publisher', async () => {
+  const f = await fixture();
+  try {
+    for (const tool of ['gdb', 'openocd'] as const) {
+      const urls: string[] = [];
+      await assert.rejects(
+        installEsp32DebugTools({
+          ...f.options,
+          tools: [tool],
+          fetcher: async (url) => {
+            urls.push(String(url));
+            throw new Error('fixture-download-stop');
+          },
+        }),
+        /fixture-download-stop/,
+      );
+      assert.equal(urls.length, 1);
+      assert.ok(urls[0].includes(tool === 'gdb' ? '/binutils-gdb/' : '/openocd-esp32/'));
+    }
+    await assert.rejects(installEsp32DebugTools({ ...f.options, tools: [] }), /invalidArguments/);
+  } finally {
+    await f.dispose();
+  }
+});

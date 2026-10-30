@@ -140,7 +140,7 @@ export function ModernSelect({
       close(true);
     } else if (event.key === 'Tab' && open) {
       event.preventDefault();
-      const boundary = trigger.current?.closest('[role="dialog"]') ?? document;
+      const boundary = trigger.current?.closest('dialog, [role="dialog"]') ?? document;
       const controls = [
         ...boundary.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, [tabindex]'),
       ].filter(
@@ -290,7 +290,9 @@ export function ModernSelect({
               )}
             </div>
           </div>,
-          document.body,
+          // Native modal dialogs make body siblings inert regardless of z-index.
+          // Keep the popup in its trigger's top-layer dialog so pointer/focus routing agrees.
+          trigger.current?.closest('dialog') ?? document.body,
         )}
     </span>
   );

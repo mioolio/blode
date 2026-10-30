@@ -6,7 +6,7 @@ import path from 'node:path';
 import { getBoardAdapter } from '../extensions/registry';
 import { HardwareDebugger } from '../src/core/hardware-debugger';
 import { debuggerServerArguments, debuggerSegmentKind } from '../src/core/debugger-target';
-import { debuggerProfiles } from '../src/shared/debugger-profiles';
+import { debuggerProfiles, getDebuggerProfile } from '../src/shared/debugger-profiles';
 import { parseConfig } from '../src/core/config';
 import { createWebDebugger } from '../src/core/web-debugger';
 import type { CoreService } from '../src/core/service';
@@ -14,6 +14,10 @@ import { GnuArmToolchain } from '../extensions/boards/STM32F103C8T6/tools/gnu';
 
 const esp = () => getBoardAdapter('Esp32_S3_CAM').createConfig();
 const arm = () => getBoardAdapter('STM32F103C8T6').createConfig();
+test('UART GDB uses its own serial bridge rather than an external debug server command', () => {
+  const profile = getDebuggerProfile('Esp32_S3_CAM', { transport: 'uart-gdb' })!;
+  assert.throws(() => debuggerServerArguments(profile, esp(), 45001, '/tools/scripts'), /invalidArguments/);
+});
 function elf(machine: number, address: number) {
   const bytes = Buffer.alloc(84);
   bytes.write('7f454c46', 'hex');
@@ -152,6 +156,65 @@ test('an active debugger pins its target when another client asks for a differen
   const result = await debug.state(arm());
   assert.equal(result.profile?.id, 'Esp32_S3_CAM');
   await debug.disconnect();
+});
+
+test('an idle target change clears the previous connection error through subsequent state polls', async (t) => {
+  const debug = new HardwareDebugger('.', '.');
+  t.mock.method(debug as any, 'tools', async () => ({ gdb: 'gdb', server: 'server', scripts: 'scripts' }));
+  const usb = esp();
+  const uart = { ...esp(), debugger: { transport: 'uart-gdb' as const, port: 'COM3' } };
+  const uartPanic = { ...uart, debugger: { ...uart.debugger, stubMode: 'panic' as const } };
+  const stm = arm();
+  const targets = [
+    usb,
+    uart,
+    { ...uart, debugger: { ...uart.debugger, port: 'COM4' } },
+    uartPanic,
+    { ...uartPanic, runtime: { deviceId: 'second-device' } },
+    usb,
+    { ...usb, debugger: { serialNumber: '123456' } },
+    stm,
+    { ...stm, programmer: { transport: 'stlink' as const, serialNumber: 'ABCD', frequencyKhz: 1800 } },
+  ];
+  await debug.state(targets[0]);
+  for (const target of targets.slice(1)) {
+    (debug as any).snapshot.connection = 'error';
+    (debug as any).snapshot.message = 'error.debuggerUsbJtagMissing';
+    for (const selection of [target, structuredClone(target), undefined]) {
+      const result = await debug.state(selection);
+      assert.equal(result.connection, 'disconnected');
+      assert.equal(result.message, '');
+    }
+  }
+});
+
+test('polling or changing tool settings for the same target preserves its actual connection error', async (t) => {
+  const debug = new HardwareDebugger('.', '.');
+  t.mock.method(debug as any, 'tools', async () => ({ gdb: 'gdb', server: 'server', scripts: 'scripts' }));
+  const config = { ...esp(), debugger: { transport: 'uart-gdb' as const, port: 'COM3' } };
+  await debug.state(config);
+  (debug as any).snapshot.connection = 'error';
+  (debug as any).snapshot.message = 'error.debuggerUartStubTimeout';
+  for (const selection of [
+    undefined,
+    structuredClone(config),
+    {
+      ...config,
+      port: 'COM9',
+      debugger: {
+        ...config.debugger,
+        port: 'com3',
+        stubMode: 'runtime' as const,
+        gdbPath: '/changed/gdb',
+        frequencyKhz: 15000,
+        serialNumber: 'unused-usb-serial',
+      },
+    },
+  ]) {
+    const result = await debug.state(selection);
+    assert.equal(result.connection, 'error');
+    assert.equal(result.message, 'error.debuggerUartStubTimeout');
+  }
 });
 
 test('ESP breakpoints explicitly use hardware slots and cannot trigger flash software patches', async (t) => {

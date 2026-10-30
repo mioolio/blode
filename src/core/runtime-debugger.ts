@@ -22,7 +22,16 @@ const debuggerStateSchema = z.object({
       elfMachine: z.number().int(),
       gdbName: text,
       serverName: text,
-      transport: z.enum(['swd', 'usb-jtag']),
+      transport: z.enum(['swd', 'usb-jtag', 'uart-gdb']),
+      capabilities: z
+        .object({
+          continue: z.boolean(),
+          pause: z.boolean(),
+          step: z.boolean(),
+          breakpoints: z.boolean(),
+          memoryRead: z.boolean(),
+        })
+        .optional(),
       canPatchInstructions: z.boolean(),
       canAssemble: z.boolean(),
       registerNames: z.array(text).max(128),

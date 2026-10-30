@@ -137,6 +137,7 @@ if (!scope.blode) {
     },
     debuggerState: (config) =>
       call('debuggerState', config ? [config] : []) as ReturnType<DesktopApi['debuggerState']>,
+    debuggerSaveSettings: (request) => call('debuggerSaveSettings', [request]) as Promise<void>,
     debuggerSymbols: async () => {
       const file = await pickHostPath({ kind: 'file', extensions: ['elf', 'axf'] });
       return file ? (call('debuggerSymbolsPath', [file]) as Promise<string>) : null;

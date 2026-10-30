@@ -10,8 +10,15 @@ import {
   instructionAssembly,
 } from './debuggerEditing';
 import { DebuggerRequests } from './debuggerRequests';
-import { debuggerPresentation, debuggerRegister, debuggerToolIdentity } from './debuggerProfiles';
+import {
+  debuggerPresentation,
+  debuggerRegister,
+  debuggerToolIdentity,
+  debuggerToolsAvailable,
+  debuggerCan,
+} from './debuggerProfiles';
 import { DebuggerToolsPanel } from './DebuggerToolsPanel';
+import { DebuggerUartSettings } from './DebuggerUartSettings';
 import { DebuggerErrorNotice } from './DebuggerErrorNotice';
 import { debuggerDiagnosticLog } from '../../shared/debugger-errors';
 import { getDebuggerProfile } from '../../shared/debugger-profiles';
@@ -77,6 +84,7 @@ export function HardwareDebuggerView() {
   const [checkingTools, setCheckingTools] = useState<string | null>(null);
   const busyRef = useRef(false);
   const [error, setError] = useState('');
+  const [settingsSaved, setSettingsSaved] = useState(false);
   const [localFailures, setLocalFailures] = useState<string[]>([]);
   const [location, setLocation] = useState('main');
   const [dialog, setDialog] = useState<'connection' | 'tools' | 'breakpoints' | null>(null);
@@ -106,8 +114,11 @@ export function HardwareDebuggerView() {
   const profile = debuggerPresentation(
     (connected || attaching ? debug?.profile?.id : undefined) ?? config?.boardId,
     plugin?.compiler.baseRuntime,
+    (connected || attaching ? debug?.profile?.transport : undefined) ?? config?.debugger?.transport,
   );
-  const usbJtag = profile?.id === 'Esp32_S3_CAM';
+  const esp32 = profile?.id === 'Esp32_S3_CAM';
+  const usbJtag = profile?.transport === 'usb-jtag';
+  const uart = profile?.transport === 'uart-gdb';
   const record = new Map(
     (debug?.registers ?? []).map((register) => [register.name.toLowerCase(), register.value]),
   );
@@ -131,6 +142,10 @@ export function HardwareDebuggerView() {
   const registeredProfile = profile ? getDebuggerProfile(profile.id) : undefined;
   const toolIdentity = debuggerToolIdentity(config);
   const currentTools = checkedTools?.identity === toolIdentity ? checkedTools.tools : undefined;
+  const toolsReady = debuggerToolsAvailable(profile, currentTools);
+  const uartPortAvailable = app?.ports.some((item) => item.path === config?.debugger?.port) ?? false;
+  const canUse = (action: DebuggerAction | 'breakpoints' | 'memoryRead') =>
+    debuggerCan(debug?.profile, action);
   const toolsLocked = busy || connected || attaching || !config;
   const debugSupported = nativeDebugger || pluginDebugger;
   const builtinPanels = !customOnly && (!config || debugSupported);
@@ -191,7 +206,7 @@ export function HardwareDebuggerView() {
     }
     setDebug(next);
   };
-  const targetIdentity = `${config?.boardId ?? ''}:${config?.programmer?.serialNumber ?? ''}:${config?.runtime?.deviceId ?? ''}`;
+  const targetIdentity = `${config?.boardId ?? ''}:${config?.programmer?.serialNumber ?? ''}:${config?.runtime?.deviceId ?? ''}:${config?.debugger?.transport ?? ''}:${config?.debugger?.port ?? ''}:${config?.debugger?.stubMode ?? ''}`;
   useEffect(() => {
     requests.current.invalidate();
     let disposed = false;
@@ -448,9 +463,32 @@ export function HardwareDebuggerView() {
     const next = { ...configRef.current, debugger: { ...configRef.current.debugger, [key]: value } };
     configRef.current = next;
     setConfig(next);
+    setSettingsSaved(false);
     checkedToolsRef.current = undefined;
     setCheckedTools(undefined);
     setCheckingTools(null);
+  };
+  const changeDebuggerOptions = (changes: Partial<NonNullable<ProjectConfig['debugger']>>) => {
+    if (toolsLocked || !configRef.current) return;
+    requests.current.begin('state');
+    const next = { ...configRef.current, debugger: { ...configRef.current.debugger, ...changes } };
+    configRef.current = next;
+    setConfig(next);
+    setSettingsSaved(false);
+    setCheckedTools(undefined);
+    checkedToolsRef.current = undefined;
+    setCheckingTools(null);
+  };
+  const saveDebuggerSettings = async () => {
+    const selection = configRef.current;
+    const projectRoot = app?.projectRoot;
+    if (!selection || !app) return;
+    await window.blode.debuggerSaveSettings({
+      expectedProjectRoot: projectRoot ?? '',
+      expectedBoardId: app.config.boardId,
+      debugger: selection.debugger ?? {},
+    });
+    setSettingsSaved(true);
   };
   const menus: DebuggerMenu[] = [
     {
@@ -470,12 +508,16 @@ export function HardwareDebuggerView() {
         ...commandKeys.map((action) => ({
           label: t(`debugger.${action}`),
           run: () => command(action),
-          disabled: !builtinPanels || busy || (action === 'pause' ? !connected || stopped : !stopped),
+          disabled:
+            !builtinPanels ||
+            busy ||
+            !canUse(action) ||
+            (action === 'pause' ? !connected || stopped : !stopped),
         })),
         {
           label: t('debugger.batch.title'),
           run: () => openDialog('breakpoints'),
-          disabled: !builtinPanels || !stopped || busy,
+          disabled: !builtinPanels || !stopped || busy || !canUse('breakpoints'),
         },
       ],
     },
@@ -558,7 +600,7 @@ export function HardwareDebuggerView() {
         {t('debugger.breakpoints')}
         <button
           className="debug-heading-action"
-          disabled={!stopped || busy}
+          disabled={!stopped || busy || !canUse('breakpoints')}
           onClick={() => openDialog('breakpoints')}
         >
           <Plus size={13} />
@@ -570,10 +612,10 @@ export function HardwareDebuggerView() {
           aria-label={t('debugger.breakpoints')}
           value={location}
           onChange={(event) => setLocation(event.target.value)}
-          placeholder={`main / main.c:20 / *${usbJtag ? '0x42000100' : '0x08000100'}`}
+          placeholder={`main / main.c:20 / *${esp32 ? '0x42000100' : '0x08000100'}`}
         />
         <button
-          disabled={!stopped || busy || !location.trim()}
+          disabled={!stopped || busy || !canUse('breakpoints') || !location.trim()}
           onClick={() => void act(() => window.blode.debuggerBreakpoint(location))}
         >
           {t('debugger.add')}
@@ -585,7 +627,7 @@ export function HardwareDebuggerView() {
             #{point.id} {point.location}
           </code>
           <button
-            disabled={!stopped || busy}
+            disabled={!stopped || busy || !canUse('breakpoints')}
             onClick={() => void act(() => window.blode.debuggerBreakpoint('', point.id))}
           >
             {t('action.deleteEntry')}
@@ -700,7 +742,7 @@ export function HardwareDebuggerView() {
         {t('debugger.memory')}
         <button
           className="primary debug-heading-action"
-          disabled={!stopped || busy || !validMemoryRange(address, length)}
+          disabled={!stopped || busy || !canUse('memoryRead') || !validMemoryRange(address, length)}
           onClick={readMemory}
         >
           <RefreshCw size={13} />
@@ -736,7 +778,7 @@ export function HardwareDebuggerView() {
         className="debug-memory-fields"
         onSubmit={(event) => {
           event.preventDefault();
-          if (stopped && !busy && validMemoryRange(address, length)) readMemory();
+          if (stopped && !busy && canUse('memoryRead') && validMemoryRange(address, length)) readMemory();
         }}
       >
         <label>
@@ -773,6 +815,21 @@ export function HardwareDebuggerView() {
 
   const connectionForm = (
     <section className="debug-connection-bar">
+      {esp32 && !pluginDebugger && (
+        <label>
+          <span>{t('debugger.transport')}</span>
+          <ModernSelect
+            value={uart ? 'uart-gdb' : 'usb-jtag'}
+            disabled={toolsLocked}
+            onChange={(event) =>
+              changeDebuggerOptions({ transport: event.target.value as 'usb-jtag' | 'uart-gdb' })
+            }
+          >
+            <option value="usb-jtag">{t('debugger.transport.usbJtag')}</option>
+            <option value="uart-gdb">{t('debugger.transport.uart')}</option>
+          </ModernSelect>
+        </label>
+      )}
       {pluginDebugger ? (
         <label>
           <span>{t('runtime.deviceId')}</span>
@@ -788,6 +845,19 @@ export function HardwareDebuggerView() {
             }
           />
         </label>
+      ) : uart ? (
+        <DebuggerUartSettings
+          options={config?.debugger}
+          ports={app?.ports ?? []}
+          disabled={toolsLocked}
+          onChange={changeDebuggerOptions}
+          onRefresh={() =>
+            void dialogAct(async () => {
+              await window.blode.listPorts();
+              await devices();
+            })
+          }
+        />
       ) : usbJtag ? (
         <label>
           <span>
@@ -798,13 +868,7 @@ export function HardwareDebuggerView() {
             placeholder={t('debugger.usbSerialAuto')}
             disabled={connected || attaching || busy}
             spellCheck={false}
-            onChange={(event) =>
-              setConfig((current) =>
-                current
-                  ? { ...current, debugger: { ...current.debugger, serialNumber: event.target.value } }
-                  : current,
-              )
-            }
+            onChange={(event) => changeDebuggerOptions({ serialNumber: event.target.value })}
           />
         </label>
       ) : (
@@ -841,7 +905,7 @@ export function HardwareDebuggerView() {
           </>
         )
       )}
-      {nativeDebugger && (
+      {nativeDebugger && !uart && (
         <>
           {!usbJtag && (
             <button
@@ -898,11 +962,12 @@ export function HardwareDebuggerView() {
           attaching ||
           busy ||
           !debugSupported ||
-          (!pluginDebugger && ((!usbJtag && !selectedSerial) || !currentTools?.gdb || !currentTools?.server))
+          (!pluginDebugger && ((uart ? !uartPortAvailable : !usbJtag && !selectedSerial) || !toolsReady))
         }
         onClick={() =>
           config &&
           void dialogAct(async () => {
+            await saveDebuggerSettings();
             await window.blode.debuggerConnect(config);
             setDialog(null);
           })
@@ -912,6 +977,9 @@ export function HardwareDebuggerView() {
       </button>
       <button disabled={(!connected && !attaching) || busy} onClick={() => command('disconnect')}>
         {t('debugger.disconnect')}
+      </button>
+      <button disabled={toolsLocked} onClick={() => void dialogAct(saveDebuggerSettings)}>
+        {t(settingsSaved ? 'debugger.settingsSaved' : 'debugger.saveSettings')}
       </button>
     </section>
   );
@@ -936,7 +1004,18 @@ export function HardwareDebuggerView() {
             <>
               {selectedRuntime && <p className="debug-dialog-target">{selectedRuntime.name}</p>}
               {connectionForm}
-              {nativeDebugger && currentTools && (!currentTools.gdb || !currentTools.server) && (
+              {uart && (
+                <div className="debug-uart-guide">
+                  <details>
+                    <summary>{t('debugger.uart.firmwareGuide')}</summary>
+                    <p>{t('debugger.uart.prerequisite')}</p>
+                    <p>{t('debugger.uart.runtimeGuide')}</p>
+                    <p>{t('debugger.uart.panicGuide')}</p>
+                    <p>{t('debugger.uart.arduinoGuide')}</p>
+                  </details>
+                </div>
+              )}
+              {nativeDebugger && currentTools && !toolsReady && (
                 <button onClick={() => openDialog('tools')}>
                   {t(profile?.tools.missingKey ?? 'debugger.toolsMissing')} · {t('debugger.toolSettings')}
                 </button>
@@ -987,7 +1066,7 @@ export function HardwareDebuggerView() {
                   spellCheck={false}
                   value={batchText}
                   disabled={busy}
-                  placeholder={`main\nmain.c:20\n*${usbJtag ? '0x42000100' : '0x08000100'}`}
+                  placeholder={`main\nmain.c:20\n*${esp32 ? '0x42000100' : '0x08000100'}`}
                   onChange={(event) => {
                     setBatchText(event.target.value);
                     setBatchResults([]);
@@ -1001,6 +1080,7 @@ export function HardwareDebuggerView() {
                   disabled={
                     busy ||
                     !stopped ||
+                    !canUse('breakpoints') ||
                     breakpointLocations(batchText).length < 1 ||
                     breakpointLocations(batchText).length > 128
                   }
@@ -1224,7 +1304,9 @@ export function HardwareDebuggerView() {
             {commandKeys.map((action) => (
               <button
                 key={action}
-                disabled={busy || (action === 'pause' ? debug?.connection !== 'running' : !stopped)}
+                disabled={
+                  busy || !canUse(action) || (action === 'pause' ? debug?.connection !== 'running' : !stopped)
+                }
                 onClick={() => command(action)}
               >
                 {action === 'continue' && <Play size={13} />}

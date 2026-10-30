@@ -31,11 +31,15 @@ export function DebuggerToolsPanel({
   const labels = profile?.tools;
   const rows = [
     { name: labels?.gdbName ?? 'GDB', found: tools?.gdb, path: tools?.paths?.gdb },
-    {
-      name: labels?.serverName ?? t('debugger.serverPath'),
-      found: tools?.paths ? !!tools.paths.server : tools?.server,
-      path: tools?.paths?.server,
-    },
+    ...(labels?.serverRequired !== false
+      ? [
+          {
+            name: labels?.serverName ?? t('debugger.serverPath'),
+            found: tools?.paths ? !!tools.paths.server : tools?.server,
+            path: tools?.paths?.server,
+          },
+        ]
+      : []),
     ...(labels?.scripts
       ? [
           {
@@ -66,20 +70,24 @@ export function DebuggerToolsPanel({
           </div>
         ))}
       </div>
-      {(['gdbPath', 'serverPath', ...(labels?.scripts ? (['scriptsPath'] as const) : [])] as const).map(
-        (key) => (
-          <label className="debug-dialog-field" key={key}>
-            {t(`debugger.${key}`)}
-            <input
-              value={paths?.[key] ?? ''}
-              placeholder={t('debugger.managedPath')}
-              spellCheck={false}
-              disabled={disabled}
-              onChange={(event) => onChange(key, event.target.value)}
-            />
-          </label>
-        ),
-      )}
+      {(
+        [
+          'gdbPath',
+          ...(labels?.serverRequired !== false ? (['serverPath'] as const) : []),
+          ...(labels?.scripts ? (['scriptsPath'] as const) : []),
+        ] as const
+      ).map((key) => (
+        <label className="debug-dialog-field" key={key}>
+          {t(`debugger.${key}`)}
+          <input
+            value={paths?.[key] ?? ''}
+            placeholder={t('debugger.managedPath')}
+            spellCheck={false}
+            disabled={disabled}
+            onChange={(event) => onChange(key, event.target.value)}
+          />
+        </label>
+      ))}
       <div className="debug-dialog-actions">
         <button disabled={disabled} onClick={onCheck}>
           {t('debugger.discoverTools')}

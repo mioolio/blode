@@ -53,6 +53,10 @@ export const configSchema = z
     partitions: z.array(partitionSchema).max(32),
     debugger: z
       .object({
+        transport: z.enum(['usb-jtag', 'uart-gdb']).optional(),
+        port: z.string().max(128).optional(),
+        baudRate: z.number().int().min(1200).max(3000000).optional(),
+        stubMode: z.enum(['runtime', 'panic']).optional(),
         gdbPath: z.string().max(4096).optional(),
         serverPath: z.string().max(4096).optional(),
         scriptsPath: z.string().max(4096).optional(),
@@ -95,6 +99,14 @@ export const configSchema = z
         packageDirectory: z.string().max(4096).optional(),
       })
       .strict(),
+  })
+  .strict();
+
+export const debuggerSettingsRequestSchema = z
+  .object({
+    expectedProjectRoot: z.string().max(4096),
+    expectedBoardId: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
+    debugger: configSchema.shape.debugger.unwrap(),
   })
   .strict();
 

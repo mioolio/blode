@@ -25,7 +25,8 @@ import {
   type ReopenProjectResult,
 } from '../shared/contracts';
 import { loadAppConfig, installDebugControls } from './debug';
-import { parseConfig, configSchema } from './config';
+import { parseConfig, configSchema, debuggerSettingsRequestSchema } from './config';
+import { isDebuggerWindowMethod } from './debugger-window-access';
 import { PROJECT_MARKER, safeWorkspacePath } from './workspace';
 import { startWebServer, type WebServerHandle } from './web';
 import { exportProbeLog } from './log-export';
@@ -419,16 +420,7 @@ async function bootstrap(): Promise<void> {
           throw new Error('error.unauthorized');
         return windowAttention();
       }
-      if (
-        secondary &&
-        method !== 'getState' &&
-        method !== 'listDebugProbes' &&
-        method !== 'windowAction' &&
-        method !== 'hostBrowse' &&
-        !(typeof method === 'string' && method.startsWith('runtimePlugin')) &&
-        !(typeof method === 'string' && method.startsWith('debugger'))
-      )
-        throw new Error('error.unauthorized');
+      if (secondary && !isDebuggerWindowMethod(method)) throw new Error('error.unauthorized');
       // Frameless controls must remain responsive even while a service is starting.
       if (method === 'windowAction') {
         const parsed = windowActionArgs.safeParse(args);
@@ -556,6 +548,7 @@ async function bootstrap(): Promise<void> {
     refreshDevices: true,
     progressiveStartup: true,
     hardwareBusy: () => !!hardwareDebugger?.active,
+    debuggerSerialPort: () => hardwareDebugger?.ownedSerialPort,
     toolchainEnv,
     fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
     toolchainRoot: process.env.BLODE_TOOLCHAIN_ROOT || (bundledToolsReady ? bundledTools : undefined),
@@ -880,6 +873,10 @@ async function bootstrap(): Promise<void> {
       args: z.tuple([configSchema.optional()]),
       run: (config) => hardwareDebugger!.state(config),
     },
+    debuggerSaveSettings: {
+      args: z.tuple([debuggerSettingsRequestSchema]),
+      run: (request) => core!.debuggerSaveSettings(request),
+    },
     debuggerStorage: { args: noArgs, run: () => hardwareDebugger!.storage() },
     debuggerSymbols: {
       args: noArgs,
@@ -897,7 +894,8 @@ async function bootstrap(): Promise<void> {
     debuggerConnect: {
       args: z.tuple([z.unknown()]),
       run: async (config) => {
-        await core!.runHardwareAction(() => hardwareDebugger!.connect(parseConfig(config)));
+        const selection = parseConfig(config);
+        await core!.runDebuggerConnect(selection, () => hardwareDebugger!.connect(selection));
       },
     },
     debuggerAction: {

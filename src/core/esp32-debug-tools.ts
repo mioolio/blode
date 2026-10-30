@@ -205,6 +205,7 @@ interface InstallOptions {
   runner?: typeof runCommand;
   platform?: NodeJS.Platform;
   arch?: NodeJS.Architecture;
+  tools?: ('gdb' | 'openocd')[];
 }
 const within = (root: string, candidate: string) => {
   const relative = path.relative(root, candidate);
@@ -357,6 +358,14 @@ export async function installEsp32DebugRelease(
   }
 }
 export async function installEsp32DebugTools(options: InstallOptions): Promise<void> {
-  for (const release of esp32DebugReleases(options.platform, options.arch))
+  if (
+    options.tools &&
+    (!options.tools.length || options.tools.some((tool) => !['gdb', 'openocd'].includes(tool)))
+  )
+    throw new Error('error.invalidArguments');
+  for (const release of esp32DebugReleases(options.platform, options.arch).filter(
+    (release) =>
+      !options.tools || options.tools.includes(release.kind === 'openocd-esp32' ? 'openocd' : 'gdb'),
+  ))
     await installEsp32DebugRelease(release, options);
 }

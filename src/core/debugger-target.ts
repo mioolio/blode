@@ -8,6 +8,7 @@ export function debuggerServerArguments(
   scripts?: string | null,
 ): string[] {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('error.invalidArguments');
+  if (profile.transport === 'uart-gdb') throw new Error('error.invalidArguments');
   if (profile.transport === 'swd') {
     const serial = config.programmer?.serialNumber;
     if (!serial || !/^[a-fA-F0-9]{1,64}$/.test(serial)) throw new Error('error.selectDebugProbe');

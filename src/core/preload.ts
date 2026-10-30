@@ -45,6 +45,7 @@ const bridge: DesktopApi = {
   firmwareFlash: (request) => call('firmwareFlash', request),
   openDebugger: () => call('openDebugger'),
   debuggerState: (config) => (config ? call('debuggerState', config) : call('debuggerState')),
+  debuggerSaveSettings: (request) => call('debuggerSaveSettings', request),
   debuggerSymbols: () => call('debuggerSymbols'),
   debuggerConnect: (config) => call('debuggerConnect', config),
   debuggerAction: (action) => call('debuggerAction', action),

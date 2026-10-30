@@ -19,6 +19,12 @@ import { debuggerServerArguments, debuggerSegmentKind } from './debugger-target'
 import { discoverEsp32DebugTools, installEsp32DebugTools } from './esp32-debug-tools';
 import { preflightEsp32UsbJtag } from '../../extensions/boards/Esp32_S3_CAM/device/debug-usb';
 import {
+  openUartGdbBridge,
+  validateUartGdbOptions,
+  type UartGdbBridge,
+} from '../../extensions/boards/Esp32_S3_CAM/debugger/uart-gdb';
+import { esp32UartGdbEnvironment } from '../../extensions/boards/Esp32_S3_CAM/debugger/uart-gdb-config';
+import {
   breakpointLocationsSchema,
   debuggerPatchSchema,
   debuggerAssembleSchema,
@@ -35,9 +41,15 @@ const str = (v: MiValue | undefined) => (typeof v === 'string' ? v : '');
 export class HardwareDebugger {
   private spawnProcess: typeof spawn = spawn;
   private usbPreflightAbort?: AbortController;
+  private openUartBridge = openUartGdbBridge;
+  private uartGdbEnvironment = esp32UartGdbEnvironment;
+  private uartBridge?: UartGdbBridge;
+  private uartPort?: string;
+  private disconnecting?: Promise<void>;
   private gdb: ChildProcessWithoutNullStreams | null = null;
   private server: ReturnType<typeof spawn> | null = null;
   private sequence = 0;
+  private executionTokens = new Set<number>();
   private pending = new Map<
     number,
     {
@@ -64,6 +76,7 @@ export class HardwareDebugger {
   private readonly symbolFiles = new Map<string, { file: string; name: string }>();
   private refreshTask: Promise<void> | undefined;
   private editing = false;
+  private editSettled?: Promise<void>;
   private session = 0;
   private stopRevision = 0;
   private keepPaused = false;
@@ -78,7 +91,16 @@ export class HardwareDebugger {
     private readonly emit: (message: string) => void = () => {},
   ) {}
   get active() {
-    return !!this.gdb || !!this.server || this.snapshot.connection === 'connecting';
+    return (
+      !!this.gdb ||
+      !!this.server ||
+      !!this.uartPort ||
+      !!this.disconnecting ||
+      this.snapshot.connection === 'connecting'
+    );
+  }
+  get ownedSerialPort(): string | undefined {
+    return this.uartPort;
   }
   private log(line: string) {
     this.snapshot.log = [...this.snapshot.log.slice(-299), line.slice(0, 8192)];
@@ -153,8 +175,31 @@ export class HardwareDebugger {
   }
   private configure(config?: ProjectConfig) {
     if (!config || this.active) return;
-    const profile = getDebuggerProfile(config.boardId);
+    const profile = getDebuggerProfile(config.boardId, config.debugger);
     if (!profile) return;
+    const targetIdentity = (value: ProjectConfig, target: DebuggerProfile) => {
+      const port = value.debugger?.port?.trim() ?? '';
+      return JSON.stringify([
+        value.boardId,
+        target.transport,
+        target.transport === 'uart-gdb'
+          ? /^COM\d+$/i.test(port)
+            ? port.toUpperCase()
+            : port
+          : target.transport === 'usb-jtag'
+            ? (value.debugger?.serialNumber ?? '').replace(/[:-]/g, '').toUpperCase()
+            : (value.programmer?.serialNumber ?? '').toUpperCase(),
+        target.transport === 'uart-gdb' ? (value.debugger?.stubMode ?? 'runtime') : '',
+        value.runtime?.deviceId ?? '',
+      ]);
+    };
+    if (
+      this.debugConfig &&
+      targetIdentity(this.debugConfig, this.profile) !== targetIdentity(config, profile)
+    ) {
+      this.snapshot.connection = 'disconnected';
+      this.snapshot.message = '';
+    }
     this.debugConfig = structuredClone(config);
     this.profile = profile;
     const symbols = this.symbolFiles.get(profile.id);
@@ -171,8 +216,14 @@ export class HardwareDebugger {
       return this.state();
     this.snapshot.tools = {
       gdb: !!tools.gdb,
-      server: !!tools.server && (this.profile.transport !== 'usb-jtag' || !!tools.scripts),
-      paths: { gdb: tools.gdb, server: tools.server, scripts: tools.scripts },
+      server:
+        profile.transport === 'uart-gdb' ||
+        (!!tools.server && (profile.transport !== 'usb-jtag' || !!tools.scripts)),
+      paths: {
+        gdb: tools.gdb,
+        server: profile.transport === 'uart-gdb' ? null : tools.server,
+        scripts: profile.transport === 'uart-gdb' ? null : tools.scripts,
+      },
     };
     this.snapshot.profile = this.profile;
     return structuredClone(this.snapshot);
@@ -284,6 +335,7 @@ export class HardwareDebugger {
         onLine,
         fetcher: network.fetcher,
         signal: network.signal,
+        ...(profile.transport === 'uart-gdb' ? { tools: ['gdb' as const] } : {}),
       });
       return;
     }
@@ -303,9 +355,21 @@ export class HardwareDebugger {
     this.log(line);
     const record = /^(\d*)\^([\w-]+)(?:,(.*))?$/.exec(line);
     if (record) {
-      const pending = this.pending.get(Number(record[1]));
-      if (!pending) return;
-      this.pending.delete(Number(record[1]));
+      const token = Number(record[1]);
+      const pending = this.pending.get(token);
+      if (!pending) {
+        // GDB can report ^running and then a late ^error for the same resume token.
+        if (record[2] === 'error' && this.executionTokens.delete(token)) {
+          let message = 'error.debuggerCommand';
+          try {
+            message = str(parseMiValues(record[3] ?? '').msg) || message;
+          } catch {}
+          this.snapshot.message = message;
+          void this.disconnect('error').catch((error) => this.log(String(error)));
+        }
+        return;
+      }
+      this.pending.delete(token);
       clearTimeout(pending.timer);
       let data: Record<string, MiValue> = {};
       try {
@@ -316,13 +380,19 @@ export class HardwareDebugger {
       }
       if (record[2] === 'error') pending.reject(new Error(str(data.msg) || 'error.debuggerCommand'));
       else {
-        if (record[2] === 'running') this.snapshot.connection = 'running';
+        if (record[2] === 'running') {
+          this.snapshot.connection = 'running';
+          this.executionTokens.add(token);
+          if (this.executionTokens.size > 32)
+            this.executionTokens.delete(this.executionTokens.values().next().value!);
+        }
         pending.resolve(data);
       }
     }
     const event = /^\d*\*(running|stopped)(?:,(.*))?$/.exec(line);
     if (event?.[1] === 'running') this.snapshot.connection = 'running';
     if (event?.[1] === 'stopped') {
+      this.executionTokens.clear();
       this.snapshot.connection = 'stopped';
       this.stopRevision++;
       let data: Record<string, MiValue> = {};
@@ -332,7 +402,7 @@ export class HardwareDebugger {
       for (const waiter of this.stopWaiters) waiter.resolve(data);
       this.stopWaiters.clear();
       const session = this.session;
-      if (!this.editing)
+      if (!this.editing && !this.disconnecting)
         void this.refresh().catch((e) => {
           if (session === this.session) this.snapshot.message = String(e);
         });
@@ -365,6 +435,12 @@ export class HardwareDebugger {
       const serial = config.programmer?.serialNumber;
       if (!serial || !/^[a-fA-F0-9]{1,64}$/.test(serial)) throw new Error('error.selectDebugProbe');
     }
+    const uartOptions = {
+      port: config.debugger?.port ?? '',
+      baudRate: config.debugger?.baudRate ?? 115200,
+      stubMode: config.debugger?.stubMode ?? 'runtime',
+    };
+    if (profile.transport === 'uart-gdb') validateUartGdbOptions(uartOptions);
     this.snapshot.connection = 'connecting';
     this.snapshot.sessionId = randomUUID();
     const session = ++this.session;
@@ -374,7 +450,7 @@ export class HardwareDebugger {
       if (session !== this.session) throw new Error('error.operationCancelled');
     };
     const processFailed = (error: Error) => {
-      if (session !== this.session) return;
+      if (session !== this.session || this.disconnecting) return;
       processFailure ??= error;
       this.snapshot.message = processFailure.message;
       void this.disconnect('error').catch((failure) => this.log(String(failure)));
@@ -386,81 +462,112 @@ export class HardwareDebugger {
     try {
       const tools = await this.tools(config);
       assertSession();
-      if (!tools.gdb || !tools.server) throw new Error('error.debuggerToolsMissing');
+      if (!tools.gdb || (profile.transport !== 'uart-gdb' && !tools.server))
+        throw new Error('error.debuggerToolsMissing');
       if (profile.transport === 'usb-jtag' && !tools.scripts) throw new Error('error.debuggerEspScripts');
+      const gdbEnvironment =
+        profile.transport === 'uart-gdb' ? await this.uartGdbEnvironment(tools.gdb) : undefined;
+      assertSession();
       const preflight = new AbortController();
       this.usbPreflightAbort = preflight;
-      try {
-        await this.probeUsbJtag(config, profile, preflight.signal, session);
-      } finally {
-        if (this.usbPreflightAbort === preflight) this.usbPreflightAbort = undefined;
-      }
-      assertSession();
       const command = (text: string) => {
         assertSession();
         return this.command(text);
       };
-      const reservation = net.createServer();
-      await new Promise<void>((r, j) => {
-        reservation.once('error', j);
-        reservation.listen(0, '127.0.0.1', r);
-      });
-      const port = (reservation.address() as net.AddressInfo).port;
-      await new Promise<void>((r) => reservation.close(() => r()));
-      assertSession();
-      this.server = this.spawnProcess(
-        tools.server,
-        debuggerServerArguments(profile, config, port, tools.scripts),
-        {
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        },
-      );
-      let serverOutput = '';
-      const serverLine = (bytes: Buffer) => {
-        if (session !== this.session) return;
-        serverOutput = (serverOutput + String(bytes)).slice(-8192);
-        this.log(String(bytes));
-      };
-      this.server.stdout?.on('data', serverLine);
-      this.server.stderr?.on('data', serverLine);
-      this.server.once('error', processFailed);
-      // close follows drained stdout/stderr, so the final USB/driver diagnostic is available.
-      this.server.once('close', (code, signal) =>
-        processFailed(
-          new Error(
-            serverOutput.trim()
-              ? `${profile.serverName}: ${serverOutput.trim()}`
-              : `${profile.serverName} exited (${signal ?? code ?? 'unknown'}).`,
-          ),
-        ),
-      );
-      await new Promise<void>((resolve, reject) => {
-        let tries = 0;
-        const attempt = () => {
-          try {
-            assertSession();
-          } catch (error) {
-            reject(error);
-            return;
+      let port: number;
+      if (profile.transport === 'uart-gdb') {
+        this.uartPort = uartOptions.port;
+        try {
+          const bridge = await this.openUartBridge({
+            ...uartOptions,
+            signal: preflight.signal,
+            onDiagnostic: (message) => {
+              if (session === this.session) this.log(message);
+            },
+            onError: processFailed,
+          });
+          if (session !== this.session) {
+            await bridge.close();
+            throw new Error('error.operationCancelled');
           }
-          const socket = net.createConnection({ host: '127.0.0.1', port });
-          socket.once('connect', () => {
-            socket.destroy();
-            resolve();
-          });
-          socket.once('error', () => {
-            socket.destroy();
-            if (++tries >= 40) reject(new Error(serverOutput.trim() || 'error.debuggerServerStart'));
-            else setTimeout(attempt, 150);
-          });
+          this.uartBridge = bridge;
+          port = bridge.port;
+        } catch (error) {
+          this.uartPort = undefined;
+          throw error;
+        } finally {
+          if (this.usbPreflightAbort === preflight) this.usbPreflightAbort = undefined;
+        }
+      } else {
+        try {
+          await this.probeUsbJtag(config, profile, preflight.signal, session);
+        } finally {
+          if (this.usbPreflightAbort === preflight) this.usbPreflightAbort = undefined;
+        }
+        assertSession();
+        const reservation = net.createServer();
+        await new Promise<void>((r, j) => {
+          reservation.once('error', j);
+          reservation.listen(0, '127.0.0.1', r);
+        });
+        port = (reservation.address() as net.AddressInfo).port;
+        await new Promise<void>((r) => reservation.close(() => r()));
+        assertSession();
+        this.server = this.spawnProcess(
+          tools.server!,
+          debuggerServerArguments(profile, config, port, tools.scripts),
+          {
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
+        );
+        let serverOutput = '';
+        const serverLine = (bytes: Buffer) => {
+          if (session !== this.session) return;
+          serverOutput = (serverOutput + String(bytes)).slice(-8192);
+          this.log(String(bytes));
         };
-        attempt();
-      });
+        this.server.stdout?.on('data', serverLine);
+        this.server.stderr?.on('data', serverLine);
+        this.server.once('error', processFailed);
+        // close follows drained stdout/stderr, so the final USB/driver diagnostic is available.
+        this.server.once('close', (code, signal) =>
+          processFailed(
+            new Error(
+              serverOutput.trim()
+                ? `${profile.serverName}: ${serverOutput.trim()}`
+                : `${profile.serverName} exited (${signal ?? code ?? 'unknown'}).`,
+            ),
+          ),
+        );
+        await new Promise<void>((resolve, reject) => {
+          let tries = 0;
+          const attempt = () => {
+            try {
+              assertSession();
+            } catch (error) {
+              reject(error);
+              return;
+            }
+            const socket = net.createConnection({ host: '127.0.0.1', port });
+            socket.once('connect', () => {
+              socket.destroy();
+              resolve();
+            });
+            socket.once('error', () => {
+              socket.destroy();
+              if (++tries >= 40) reject(new Error(serverOutput.trim() || 'error.debuggerServerStart'));
+              else setTimeout(attempt, 150);
+            });
+          };
+          attempt();
+        });
+      }
       assertSession();
       this.gdb = this.spawnProcess(tools.gdb, ['--interpreter=mi2', '--nx', '--quiet'], {
         windowsHide: true,
         stdio: 'pipe',
+        ...(gdbEnvironment ? { env: gdbEnvironment } : {}),
       });
       let buffer = '';
       this.gdb.stdout.on('data', (b) => {
@@ -496,9 +603,17 @@ export class HardwareDebugger {
         await command('-gdb-set remote hardware-breakpoint-limit 2');
         await command('-gdb-set remote hardware-watchpoint-limit 2');
       }
+      if (profile.transport === 'uart-gdb') {
+        // IDF's UART stub maps Z0 to CPU breakpoint slots. Never let GDB fall back to M/X instruction writes.
+        await command('-gdb-set remote software-breakpoint-packet on');
+        // IDF 5.1 advertises QThreadEvents but has no handler; querying it prevents execution commands.
+        await command('-gdb-set remote thread-events-packet off');
+      }
       if (this.symbols)
         await command('-file-exec-and-symbols ' + JSON.stringify(this.symbols.replaceAll('\\', '/')));
-      await command('-target-select extended-remote 127.0.0.1:' + port);
+      await command(
+        `-target-select ${profile.transport === 'uart-gdb' ? 'remote' : 'extended-remote'} 127.0.0.1:` + port,
+      );
       assertSession();
       this.snapshot.connection = 'stopped';
       // GDB may emit additional stop notifications after ^connected (including one per core).
@@ -546,14 +661,29 @@ export class HardwareDebugger {
     const task = (async () => {
       const names = list((await this.command('-data-list-register-names'))['register-names']).map(str);
       assertCurrent();
-      const values = list((await this.command('-data-list-register-values x'))['register-values']);
+      const supported = new Set([...this.profile.registerNames, this.profile.statusRegister]);
+      const indices =
+        this.profile.transport === 'uart-gdb'
+          ? names.flatMap((name, index) => (supported.has(name) ? [index] : []))
+          : [];
+      if (this.profile.transport === 'uart-gdb' && !indices.length) throw new Error('error.debuggerCommand');
+      const values = list(
+        (
+          await this.command('-data-list-register-values x' + (indices.length ? ' ' + indices.join(' ') : ''))
+        )['register-values'],
+      );
       assertCurrent();
-      const registers = values
+      let registers = values
         .map((v) => {
           const o = object(v);
           return { name: names[Number(str(o.number))] ?? str(o.number), value: str(o.value) };
         })
         .filter((v) => v.name);
+      if (this.profile.transport === 'uart-gdb') {
+        // IDF 5.1's compact stub packet differs from newer GDB FP/TIE layouts.
+        // Publish only the module's verified core register set.
+        registers = registers.filter((register) => supported.has(register.name));
+      }
       const programCounter = registers.find((item) => item.name === 'pc' || item.name === 'r15')?.value;
       let instructions: NonNullable<DebuggerState['instructions']> = [];
       try {
@@ -607,6 +737,15 @@ export class HardwareDebugger {
       return;
     }
     if (!this.gdb) throw new Error('error.debuggerDisconnected');
+    if (this.disconnecting) {
+      if (action === 'pause' && this.permitPauseRequest) {
+        this.keepPaused = true;
+        return;
+      }
+      throw new Error('error.debuggerBusy');
+    }
+    const capability = action === 'continue' || action === 'pause' ? action : 'step';
+    if (this.profile.capabilities?.[capability] === false) throw new Error('error.debuggerUartReadOnly');
     if (this.editing) {
       if (action === 'pause' && this.permitPauseRequest) {
         this.keepPaused = true;
@@ -628,11 +767,18 @@ export class HardwareDebugger {
       if (action !== 'pause' && this.snapshot.connection !== 'stopped')
         throw new Error('error.debuggerNotStopped');
       const revision = this.stopRevision;
+      const session = this.session;
       await this.command(commands[action]);
+      if (session !== this.session || !this.gdb)
+        throw new Error(
+          this.snapshot.connection === 'error' && this.snapshot.message
+            ? this.snapshot.message
+            : 'error.debuggerDisconnected',
+        );
       // Some remote stubs send ^done rather than ^running for execution commands.
       if (action !== 'pause' && revision === this.stopRevision) this.snapshot.connection = 'running';
     });
-    if (this.snapshot.connection === 'stopped') await this.refresh();
+    if (this.snapshot.connection === 'stopped' && !this.disconnecting) await this.refresh();
   }
   async breakpoint(location: string, removeId?: string) {
     return this.exclusive(async () => {
@@ -640,6 +786,7 @@ export class HardwareDebugger {
     });
   }
   private async breakpointRaw(location: string, removeId?: string): Promise<string | undefined> {
+    if (this.profile.capabilities?.breakpoints === false) throw new Error('error.debuggerUartReadOnly');
     if (this.snapshot.connection !== 'stopped') throw new Error('error.debuggerNotStopped');
     const session = this.session;
     if (removeId) {
@@ -654,7 +801,8 @@ export class HardwareDebugger {
     const data = object(
       (
         await this.command(
-          `-break-insert ${this.profile.architecture === 'xtensa' ? '-h ' : ''}` + JSON.stringify(location),
+          `-break-insert ${this.profile.architecture === 'xtensa' && this.profile.transport !== 'uart-gdb' ? '-h ' : ''}` +
+            JSON.stringify(location),
         )
       ).bkpt,
     );
@@ -665,8 +813,13 @@ export class HardwareDebugger {
     return id;
   }
   private async exclusive<T>(run: () => Promise<T>, permitPauseRequest = false): Promise<T> {
-    if (this.editing) throw new Error('error.debuggerBusy');
+    if (this.editing || this.disconnecting) throw new Error('error.debuggerBusy');
     this.editing = true;
+    let settled!: () => void;
+    const editSettled = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
+    this.editSettled = editSettled;
     this.keepPaused = false;
     this.permitPauseRequest = permitPauseRequest;
     const session = this.session;
@@ -677,6 +830,8 @@ export class HardwareDebugger {
     } finally {
       this.editing = false;
       this.permitPauseRequest = false;
+      if (this.editSettled === editSettled) this.editSettled = undefined;
+      settled();
     }
   }
   async breakpoints(locations: string[]): Promise<DebuggerBreakpointResult[]> {
@@ -712,7 +867,7 @@ export class HardwareDebugger {
     if (!gdb) throw new Error('error.debuggerToolsMissing');
     return assembleThumbInstruction(await assemblerToolsFromGdb(gdb), address, source);
   }
-  private interruptStop() {
+  private interruptStop(timeoutMs = 12000) {
     let timer: ReturnType<typeof setTimeout>;
     let waiter: { resolve: (data: Record<string, MiValue>) => void; reject: (error: Error) => void };
     const promise = new Promise<Record<string, MiValue>>((resolve, reject) => {
@@ -731,7 +886,7 @@ export class HardwareDebugger {
         },
       };
       this.stopWaiters.add(waiter);
-      timer = setTimeout(() => waiter.reject(new Error('error.debuggerTimeout')), 12000);
+      timer = setTimeout(() => waiter.reject(new Error('error.debuggerTimeout')), timeoutMs);
     });
     // The interrupt command can fail before the asynchronous stop arrives.
     void promise.catch(() => {});
@@ -845,12 +1000,98 @@ export class HardwareDebugger {
     return contents;
   }
   async disconnect(state: 'disconnected' | 'error' = 'disconnected') {
+    if (this.disconnecting) return this.disconnecting;
+    const task = this.disconnectNow(state);
+    this.disconnecting = task;
+    try {
+      await task;
+    } finally {
+      if (this.disconnecting === task) this.disconnecting = undefined;
+    }
+  }
+  private async releaseUartTarget() {
+    const session = this.session;
+    const deadline = Date.now() + 2500;
+    const withinDeadline = async <T>(task: Promise<T>): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          task,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error('error.debuggerTimeout')),
+              Math.max(1, deadline - Date.now()),
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    const check = () => {
+      if (session !== this.session || !this.gdb) throw new Error('error.debuggerSessionChanged');
+      if (Date.now() >= deadline) throw new Error('error.debuggerTimeout');
+    };
+    let wait: ReturnType<HardwareDebugger['interruptStop']> | undefined;
+    this.keepPaused = false;
+    try {
+      // Let an already-issued continue/break command settle before observing the target state.
+      if (this.editSettled) await withinDeadline(this.editSettled);
+      if (this.refreshTask) await withinDeadline(this.refreshTask).catch(() => {});
+      check();
+      if (this.profile.capabilities?.breakpoints !== false) {
+        // Include GDB's temporary next/finish breakpoints, which are not in the UI list.
+        let ownedStop = false;
+        this.permitPauseRequest = true;
+        if (this.snapshot.connection === 'running') {
+          wait = this.interruptStop(Math.max(1, deadline - Date.now()));
+          await withinDeadline(this.command('-exec-interrupt --all'));
+          const event = await withinDeadline(wait.promise);
+          ownedStop =
+            str(event['signal-name']) === 'SIGINT' &&
+            (!str(event.reason) || str(event.reason) === 'signal-received');
+        }
+        check();
+        if (this.snapshot.connection !== 'stopped') throw new Error('error.debuggerNotStopped');
+        const revision = this.stopRevision;
+        await withinDeadline(this.command('-break-delete'));
+        check();
+        this.snapshot.breakpoints = [];
+        // An intervening breakpoint/user pause must never be resumed by disconnect cleanup.
+        if (
+          ownedStop &&
+          !this.keepPaused &&
+          revision === this.stopRevision &&
+          this.snapshot.connection === 'stopped'
+        ) {
+          this.permitPauseRequest = false;
+          await withinDeadline(this.command('-exec-continue'));
+          check();
+          if (revision === this.stopRevision) this.snapshot.connection = 'running';
+        }
+      }
+      this.permitPauseRequest = false;
+      // No D/kill packet: legacy IDF stubs do not implement standard detach and it may resume.
+      await withinDeadline(this.command('-target-disconnect'));
+    } catch (error) {
+      this.log('UART disconnect: ' + String(error));
+    } finally {
+      this.permitPauseRequest = false;
+      wait?.cancel(new Error('error.debuggerDisconnected'));
+    }
+  }
+  private async disconnectNow(state: 'disconnected' | 'error') {
     this.usbPreflightAbort?.abort();
     this.usbPreflightAbort = undefined;
+    if (state === 'disconnected' && this.uartBridge && this.gdb) {
+      await this.releaseUartTarget();
+    }
     const gdb = this.gdb,
-      server = this.server;
+      server = this.server,
+      uart = this.uartBridge;
     this.gdb = null;
     this.server = null;
+    this.uartBridge = undefined;
     this.session++;
     this.refreshTask = undefined;
     this.keepPaused = true;
@@ -870,6 +1111,11 @@ export class HardwareDebugger {
       pending.reject(new Error('error.debuggerDisconnected'));
     }
     this.pending.clear();
+    this.executionTokens.clear();
+    if (uart) {
+      await uart.close();
+      this.uartPort = undefined;
+    }
     gdb?.stdin.end();
     for (const child of [gdb, server])
       if (child?.pid) {

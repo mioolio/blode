@@ -450,7 +450,6 @@ export function Settings({
                 {driver.supported && !driver.available && (
                   <p className="subtle-note">{t('driver.packageMissing')}</p>
                 )}
-                {isWeb && <p className="subtle-note">{t('driver.desktopOnly')}</p>}
               </div>
             );
           })}

@@ -16,11 +16,17 @@ import type {
   ProjectConfig,
   PortInfo,
   InstallationProgress,
+  DebuggerSettingsRequest,
 } from '../shared/contracts';
 import type { CreatePlatformRuntimes, RuntimeHost, RuntimeFirmwareImage } from '../../extensions/runtime';
 import { createPlatformRuntimes } from '../../extensions/runtime-registry';
 import { getBoardAdapter, listBoards } from '../../extensions/registry';
-import { parseConfig, parseProjectDescriptor, type ProjectBuild } from './config';
+import {
+  parseConfig,
+  parseProjectDescriptor,
+  debuggerSettingsRequestSchema,
+  type ProjectBuild,
+} from './config';
 import {
   loadProjectDescriptor,
   persistConfig,
@@ -78,6 +84,8 @@ export interface CoreOptions {
   progressiveStartup?: boolean;
   /** A debugger owns the physical connection until its session is stopped. */
   hardwareBusy?: () => boolean;
+  /** UART debugging reserves its port through connection and asynchronous cleanup. */
+  debuggerSerialPort?: () => string | undefined;
   pluginRoots?: string[];
   openRuntimeView?: (pluginId: string, view: RuntimeViewContribution) => Promise<void>;
 }
@@ -93,6 +101,8 @@ export interface CoreService extends CoreApi {
   flashPrepared(config: ProjectConfig, image: RuntimeFirmwareImage): Promise<void>;
   runHardwareAction(action: () => Promise<void>): Promise<void>;
   runDebuggerAction(action: () => Promise<void>): Promise<void>;
+  runDebuggerConnect(config: ProjectConfig, action: () => Promise<void>): Promise<void>;
+  debuggerSaveSettings(request: DebuggerSettingsRequest): Promise<void>;
   runInstallation(tool: string, action: (reporter: InstallationReporter) => Promise<void>): Promise<void>;
   /** Coalesce OS device notifications; hardware is enumerated only after operations are idle. */
   notifyDevicesChanged(): void;
@@ -190,6 +200,17 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   const requireHardware = () => {
     if (options.hardwareBusy?.()) throw new Error('error.debuggerOwnsDevice');
   };
+  const sameSerialPort = (a: string | undefined, b: string | undefined) =>
+    !!a &&
+    !!b &&
+    (a === b ||
+      (process.platform === 'win32' &&
+        /^COM[1-9]\d*$/i.test(a) &&
+        /^COM[1-9]\d*$/i.test(b) &&
+        a.toLowerCase() === b.toLowerCase()));
+  const requireSerialAvailable = (port: string) => {
+    if (sameSerialPort(options.debuggerSerialPort?.(), port)) throw new Error('error.debuggerOwnsDevice');
+  };
   const closeSerial = async () => {
     await serial.close();
   };
@@ -269,8 +290,9 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   const requirePort = async (requested = config.port): Promise<string> => {
     if (!requested) throw new Error('error.selectPort');
     const ports = await SerialConnection.list();
-    if (!ports.some((port) => port.path === requested)) throw new Error('error.portUnavailable');
-    return requested;
+    const selected = ports.find((port) => sameSerialPort(port.path, requested));
+    if (!selected) throw new Error('error.portUnavailable');
+    return selected.path;
   };
   const host: RuntimeHost = {
     dataRoot: options.dataRoot,
@@ -810,6 +832,21 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         emit('status.configSaved', 'success');
       });
     },
+    async debuggerSaveSettings(value) {
+      return withLock(async () => {
+        const parsed = debuggerSettingsRequestSchema.safeParse(value);
+        if (!parsed.success) throw new Error('error.invalidArguments');
+        const request = parsed.data;
+        if (request.expectedProjectRoot !== projectRoot || request.expectedBoardId !== config.boardId)
+          throw new Error('error.debuggerProjectChanged');
+        requireHardware();
+        const next = parseConfig({ ...config, debugger: { ...config.debugger, ...request.debugger } });
+        if (projectRoot) await persistConfig(projectRoot, next);
+        config = next;
+        invalidateRuntimes();
+        emit('status.configSaved', 'success');
+      });
+    },
     async setBuildEntry(relative) {
       return withLock(async () => {
         projectBuild = await persistBuildEntry(requireWorkspace(), config, relative);
@@ -882,6 +919,20 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     async runDebuggerAction(action) {
       await pendingDeviceScan;
       return withLock(action);
+    },
+    async runDebuggerConnect(value, action) {
+      const selection = parseConfig(value);
+      await pendingDeviceScan;
+      return withLock(async () => {
+        requireHardware();
+        if (selection.debugger?.transport === 'uart-gdb') {
+          const port = selection.debugger.port;
+          if (!port) throw new Error('error.debuggerUartPort');
+          await requirePort(port);
+          await closeSerial();
+        }
+        await action();
+      });
     },
     async runInstallation(tool, action) {
       await pendingDeviceScan;
@@ -1011,14 +1062,19 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       return withLock(async () => {
         if (!Number.isInteger(baudRate) || baudRate < 110 || baudRate > 4_000_000)
           throw new Error('error.invalidBaudRate');
-        await serial.open(await requirePort(port), baudRate, options);
+        const selected = await requirePort(port);
+        requireSerialAvailable(selected);
+        await serial.open(selected, baudRate, options);
       });
     },
     async serialClose() {
       return withLock(async () => closeSerial());
     },
     async serialWrite(data, encoding = 'utf8') {
-      return withLock(async () => serial.write(data, encoding));
+      return withLock(async () => {
+        requireSerialAvailable(serial.state.port);
+        await serial.write(data, encoding);
+      });
     },
     async setProjectRoot(root) {
       return withLock(async () => {

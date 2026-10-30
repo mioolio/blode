@@ -1,7 +1,7 @@
 import * as z from 'zod';
 import type { HardwareDebugger } from './hardware-debugger';
 import type { CoreService } from './service';
-import { parseConfig, configSchema } from './config';
+import { parseConfig, configSchema, debuggerSettingsRequestSchema } from './config';
 import {
   breakpointLocationsSchema,
   debuggerPatchSchema,
@@ -14,6 +14,10 @@ export function createWebDebugger(debuggerService: HardwareDebugger, core: CoreS
     debuggerState: {
       args: z.tuple([configSchema.optional()]),
       run: (config) => debuggerService.state(config),
+    },
+    debuggerSaveSettings: {
+      args: z.tuple([debuggerSettingsRequestSchema]),
+      run: (request) => core.debuggerSaveSettings(request),
     },
     debuggerStorage: { args: z.tuple([]), run: () => debuggerService.storage() },
     debuggerSymbolsPath: {
@@ -35,7 +39,10 @@ export function createWebDebugger(debuggerService: HardwareDebugger, core: CoreS
     },
     debuggerConnect: {
       args: z.tuple([z.unknown()]),
-      run: (config) => core.runHardwareAction(() => debuggerService.connect(parseConfig(config))),
+      run: (config) => {
+        const selection = parseConfig(config);
+        return core.runDebuggerConnect(selection, () => debuggerService.connect(selection));
+      },
     },
     debuggerAction: {
       args: z.tuple([z.enum(['continue', 'pause', 'step', 'next', 'finish', 'disconnect'])]),

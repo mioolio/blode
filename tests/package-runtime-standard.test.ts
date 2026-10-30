@@ -49,6 +49,16 @@ async function fixture(t: TestContext, sourceId: 'STM32F103C8T6' | 'Esp32_S3_CAM
   await fs.rename(source, path.join(root, 'source-moved-away'));
   assert.equal(await fs.stat(source).catch(() => null), null);
   assert.equal(packaged.manifest.compiler.mode, 'runtime');
+  if (sourceId === 'Esp32_S3_CAM') {
+    const firmware = path.join(packaged.directory, 'debugger/firmware/uart-gdb');
+    assert.match(
+      await fs.readFile(path.join(firmware, 'sdkconfig.defaults'), 'utf8'),
+      /CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME=y/,
+    );
+    assert.match(await fs.readFile(path.join(firmware, 'CMakeLists.txt'), 'utf8'), /project\(/);
+    await fs.access(path.join(firmware, 'main/main.c'));
+    await fs.access(path.join(firmware, 'cmake/runtime-stub.cmake'));
+  }
   const manager = new RuntimePlugins({ roots: [output], dataRoot: path.join(root, 'data') });
   t.after(() => manager.close());
   const discovered = await manager.discover();

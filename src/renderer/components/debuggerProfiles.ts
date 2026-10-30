@@ -1,5 +1,5 @@
 import { getDebuggerProfile, type DebuggerProfile } from '../../shared/debugger-profiles';
-import type { ProjectConfig } from '../../shared/contracts';
+import type { DebuggerAction, DebuggerState, ProjectConfig } from '../../shared/contracts';
 
 export interface DebuggerPresentation {
   id: string;
@@ -8,6 +8,7 @@ export interface DebuggerPresentation {
   statusRegister?: string;
   flags: readonly { name: string; bit: number }[];
   connection: string;
+  transport: 'swd' | 'usb-jtag' | 'uart-gdb';
   frequency: { default: number; min: number; max: number };
   defaultMemory: number;
   patch: boolean;
@@ -17,6 +18,7 @@ export interface DebuggerPresentation {
     scripts: boolean;
     installKey: string;
     missingKey: string;
+    serverRequired: boolean;
   };
 }
 
@@ -48,11 +50,15 @@ const presentations: Record<
 export function debuggerPresentation(
   id: string | undefined,
   baseRuntime?: string,
+  transport?: 'swd' | 'usb-jtag' | 'uart-gdb',
 ): DebuggerPresentation | undefined {
   const profile = (id && getDebuggerProfile(id)) || (baseRuntime && getDebuggerProfile(baseRuntime));
   if (!profile) return undefined;
+  const uart = profile.architecture === 'xtensa' && transport === 'uart-gdb';
   return {
     ...presentations[profile.architecture],
+    ...(uart ? { connection: 'UART GDB Stub' } : {}),
+    transport: uart ? 'uart-gdb' : profile.transport,
     id: profile.id,
     registers: profile.registerNames,
     patch: profile.canPatchInstructions,
@@ -60,9 +66,18 @@ export function debuggerPresentation(
     tools: {
       gdbName: profile.gdbName,
       serverName: profile.serverName,
-      scripts: profile.transport === 'usb-jtag',
-      installKey: profile.architecture === 'xtensa' ? 'debugger.installEspTools' : 'debugger.installArmTools',
-      missingKey: profile.architecture === 'xtensa' ? 'debugger.toolsMissingEsp' : 'debugger.toolsMissingArm',
+      scripts: !uart && profile.transport === 'usb-jtag',
+      serverRequired: !uart,
+      installKey: uart
+        ? 'debugger.installXtensaGdb'
+        : profile.architecture === 'xtensa'
+          ? 'debugger.installEspTools'
+          : 'debugger.installArmTools',
+      missingKey: uart
+        ? 'debugger.toolsMissingXtensaGdb'
+        : profile.architecture === 'xtensa'
+          ? 'debugger.toolsMissingEsp'
+          : 'debugger.toolsMissingArm',
     },
   };
 }
@@ -71,11 +86,28 @@ export function debuggerPresentation(
 export function debuggerToolIdentity(config: ProjectConfig | null | undefined): string {
   return JSON.stringify([
     config?.boardId ?? '',
+    config?.debugger?.transport ?? 'usb-jtag',
     config?.debugger?.gdbPath ?? '',
     config?.debugger?.serverPath ?? '',
     config?.debugger?.scriptsPath ?? '',
     config?.toolchain.stlinkDirectory ?? '',
   ]);
+}
+
+export function debuggerToolsAvailable(
+  profile: DebuggerPresentation | undefined,
+  tools: DebuggerState['tools'] | undefined,
+): boolean {
+  return !!tools?.gdb && (profile?.tools.serverRequired === false || !!tools.server);
+}
+
+export function debuggerCan(
+  profile: DebuggerState['profile'],
+  action: DebuggerAction | 'breakpoints' | 'memoryRead',
+): boolean {
+  if (action === 'disconnect') return true;
+  const capability = action === 'next' || action === 'finish' ? 'step' : action;
+  return profile?.capabilities?.[capability] !== false;
 }
 
 export function debuggerRegister(

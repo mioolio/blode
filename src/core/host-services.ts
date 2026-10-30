@@ -191,6 +191,18 @@ export function createHostServices(options: Options) {
         const debug = options.runtimeDebugger?.();
         if (!debug) throw new Error('error.runtimeDebuggerUnsupported');
         if (['state', 'storage'].includes(method)) return debug.invokePlugin(id, method, args);
+        // Cancellation must reach the debugger while connect holds the core operation lock.
+        if (method === 'disconnect' || (method === 'action' && args[0] === 'disconnect'))
+          return debug.invokePlugin(id, method, args);
+        if (method === 'connect') {
+          const config = core.currentConfig();
+          if (config.boardId !== id) throw new Error('error.runtimePluginConfig');
+          let result;
+          await core.runDebuggerConnect(config, async () => {
+            result = await debug.invokePlugin(id, method, args);
+          });
+          return result;
+        }
         let result;
         await core.runDebuggerAction(async () => {
           result = await debug.invokePlugin(id, method, args);
