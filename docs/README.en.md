@@ -2,13 +2,13 @@
 
 English | [简体中文](../README.md)
 
-Blode Studio is a modular embedded development workbench for editing, collaboration, offline builds, firmware export, serial communication and hardware debugging. The development branch includes the specific `Esp32_S3_CAM` and `STM32F103C8T6` runtime profiles.
+Blode Studio is a modular embedded development workbench for editing, collaboration, offline builds, firmware export, serial communication and hardware debugging. The current source on `main` includes the specific `Esp32_S3_CAM` and `STM32F103C8T6` runtime profiles.
 
 **Current release: 0.2.3.6** · [Release notes](releases/0.2.3.6.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
 
 ## Internal development preview: runtime plugins
 
-`codex/runtime-plugins-internal` is a development branch based on 0.2.3.6. It introduces runtime identity migration, API v2 package declarations, execution consent, replaceable compilers, and custom device/debug views. This update does not create a new stable release; `main` keeps the stable code. See the [internal update and acceptance checklist](internal/runtime-plugins.md) for validation status.
+The development preview from `codex/runtime-plugins-internal` has been merged into `main`. It introduces runtime identity migration, API v2 package declarations, execution consent, replaceable compilers, and custom device/debug views. The source retains its `0.2.3.6-internal` preview status. Existing 0.2.3.6 release packages are the earlier builds; this merge produces no new desktop or Web release binaries. See the [internal update and acceptance checklist](internal/runtime-plugins.md) for validation status.
 
 The latest internal update adds an interactive PowerShell terminal, extension windows and bottom-panel views, save-on-exit decisions and an optional system tray. Collaboration follows foreground attention and refreshes on return. Hardware debugging, Preferences and device controls share more compact wording and controls. See the [workbench interaction update](internal/workbench-interaction.md) for setup and validation details.
 
@@ -25,7 +25,7 @@ This update also fixes ESP32-S3 debug connections with an empty USB serial selec
 To try the source build:
 
 ```sh
-git clone --branch codex/runtime-plugins-internal --single-branch https://github.com/mioolio/blode.git
+git clone --branch main --single-branch https://github.com/mioolio/blode.git
 cd blode
 npm ci
 npm run dev

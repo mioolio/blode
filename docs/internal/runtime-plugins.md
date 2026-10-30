@@ -1,6 +1,6 @@
 # Runtime plugins — internal development update
 
-Status: development preview based on 0.2.3.6. The display version is `0.2.3.6-internal`, with `developmentChannel: internal-runtime-plugins`; the base release/package versions remain `0.2.3.6`/`0.2.3-6`. This is not a stable release. The integration branch is `codex/runtime-plugins-internal`; `main` remains the stable source at `193cda2ea5b2705732755f25b8a621d860b52101`.
+Status: development preview based on 0.2.3.6. The display version is `0.2.3.6-internal`, with `developmentChannel: internal-runtime-plugins`; the base release/package versions remain `0.2.3.6`/`0.2.3-6`. The work developed on `codex/runtime-plugins-internal` has been merged into `main`. The pre-merge stable baseline was `193cda2ea5b2705732755f25b8a621d860b52101`. Existing 0.2.3.6 release packages remain the earlier builds; this source merge does not produce a new stable release or new application binaries.
 
 ## Module and debugger follow-up — 2026-10-30
 

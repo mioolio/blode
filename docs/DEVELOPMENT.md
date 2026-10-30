@@ -1,5 +1,7 @@
 # 开发约定
 
+最新开发源码位于 `main`，包含从 `codex/runtime-plugins-internal` 合入的内部预览更新。0.2.3.6 发行包仍对应此前构建；本次源码合并不生成新发行包。克隆与启动命令见 [README](../README.md#快速开始)。
+
 ## 本地循环与运行数据
 
 执行 npm ci 后使用 npm run dev。启动脚本先构建 main、preload 与 MCP 桥，再启动 Vite 和 Electron。renderer 可热更新；core、shared、automation、preload、平台包或构建脚本修改后需重启开发进程，当前没有主进程自动重启 watch。

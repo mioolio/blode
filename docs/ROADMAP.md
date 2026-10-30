@@ -4,7 +4,7 @@ This roadmap describes the current implementation and planned validation. It is 
 
 ## Implemented capabilities
 
-The internal preview on `codex/runtime-plugins-internal` adds versioned runtime declarations, package approval, compiler ownership and overrides, custom device/debug views, and modern selectors. Its automated results and pending user acceptance are recorded in the [internal update](internal/runtime-plugins.md). This branch is based on 0.2.3.6 and does not publish a stable release.
+The internal preview, developed on `codex/runtime-plugins-internal` and now merged into `main`, adds versioned runtime declarations, package approval, compiler ownership and overrides, custom device/debug views, and modern selectors. Its automated results and pending user acceptance are recorded in the [internal update](internal/runtime-plugins.md). The preview is based on 0.2.3.6; existing release packages are unchanged, and this source merge does not publish a new stable release.
 
 The [workbench interaction update](internal/workbench-interaction.md) adds a persistent PTY terminal, declared plugin windows and bottom-panel views, attention-based collaboration presence, save-on-exit transactions and an optional system tray. Live tray, browser-window and Linux acceptance remain on the validation backlog.
 

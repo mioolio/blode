@@ -14,7 +14,7 @@ The Web edition runs a Node.js service on the computer that owns the projects an
 
 Windows is the current development environment. Linux downloads and platform paths are prepared, but actual Linux installation, compilation, packaging and hardware access have **not been verified**. See [platform support](PLATFORM-SUPPORT.md).
 
-The internal development branch includes an interactive terminal. Linux installation requires Python 3, make and a C/C++ compiler to build `node-pty`; Windows uses its ConPTY runtime. See the [workbench interaction update](internal/workbench-interaction.md).
+The current source on `main` includes an interactive terminal. Linux installation requires Python 3, make and a C/C++ compiler to build `node-pty`; Windows uses its ConPTY runtime. See the [workbench interaction update](internal/workbench-interaction.md).
 
 ## Start a Web ZIP release
 

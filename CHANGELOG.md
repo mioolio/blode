@@ -4,7 +4,7 @@
 
 ## Unreleased — 内部开发预览
 
-分支：`codex/runtime-plugins-internal`。本次基于 0.2.3.6，不发布新的正式安装包；源码运行方式见 [README](README.md)，任务、验证结果与人工验收步骤见[内部更新说明](docs/internal/runtime-plugins.md)。
+源码：内部开发更新已从 `codex/runtime-plugins-internal` 合入 `main`，继续作为基于 0.2.3.6 的内部预览。现有发行包保持此前构建，本次不发布新的正式安装包；源码运行方式见 [README](README.md)，任务、验证结果与人工验收步骤见[内部更新说明](docs/internal/runtime-plugins.md)。
 
 ### 新增
 

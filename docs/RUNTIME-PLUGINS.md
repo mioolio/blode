@@ -1,6 +1,6 @@
 # 运行时插件开发指南
 
-状态：内部开发预览，API v2，显示版本为 `0.2.3.6-internal`。源码分支为 `codex/runtime-plugins-internal`，`developmentChannel` 为 `internal-runtime-plugins`；稳定基线和 npm 包版本仍分别为 `0.2.3.6`、`0.2.3-6`。本次不发布新的正式版。验证记录及人工验收步骤见[内部更新说明](internal/runtime-plugins.md)。
+状态：内部开发预览，API v2，显示版本为 `0.2.3.6-internal`。最新源码已从 `codex/runtime-plugins-internal` 合入 `main`，`developmentChannel` 为 `internal-runtime-plugins`；稳定基线和 npm 包版本仍分别为 `0.2.3.6`、`0.2.3-6`。0.2.3.6 发行包保持此前构建，本次不发布新的正式版。验证记录及人工验收步骤见[内部更新说明](internal/runtime-plugins.md)。
 
 ## 设计边界
 
@@ -241,7 +241,7 @@ ESP32 模块维护者追加优化或语言选项时，应读取平台展开的�
 
 ### 独立窗口与底部功能区
 
-内部开发分支通过 `ui.views` 统一注册额外视图。每个 `id` 在插件内唯一，HTML 必须位于插件目录：
+当前源码通过 `ui.views` 统一注册额外视图。每个 `id` 在插件内唯一，HTML 必须位于插件目录：
 
 ```json
 {
