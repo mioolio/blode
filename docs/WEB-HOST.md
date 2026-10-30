@@ -72,6 +72,10 @@ Use the LAN address printed in the launch link. All browser API requests require
 
 Press **Ctrl+C** to stop the service and release its HTTP connections, automation socket, terminal processes and hardware debugger session. Each host data directory owns a separate automation endpoint. Run multiple instances with separate data directories and ports.
 
+When the desktop development session enables `web.allowExternal`, browser clients use the service port and the built renderer at the same origin. The desktop editor continues to use Vite. Rebuild the renderer after UI changes with `npm run build`.
+
+On Windows, run `scripts/enable-lan-access.ps1` in an administrator PowerShell to allow the service through the firewall. It detects the listening program and grants TCP access to `LocalSubnet` across network profiles. The default port is `47821`; use `-Port` to select another listening port. The rule applies to the current subnet without listing individual client IP addresses.
+
 ## Host files and hardware
 
 The **Open folder** picker browses the service computer's directories. It does not ask the browser user to upload their own computer's folder. Recent projects also refer to the service computer. Users sharing one host work in its current project; changing or closing that project affects the shared workspace.

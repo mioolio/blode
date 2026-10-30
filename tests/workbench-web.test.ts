@@ -11,6 +11,55 @@ import { UiCommands } from '../src/core/ui-commands';
 import { createAssistanceRoutes } from '../src/core/assistance-routes';
 import type { CoreService } from '../src/core/service';
 
+test('shared development browser entry serves same-origin assets instead of redirecting LAN visitors to loopback Vite', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'blode-lan-entry-'));
+  await mkdir(path.join(directory, 'dist/renderer/assets'), { recursive: true });
+  await writeFile(
+    path.join(directory, 'dist/renderer/index.html'),
+    '<title>LAN workspace</title><script src="/assets/app.js"></script>',
+  );
+  await writeFile(path.join(directory, 'dist/renderer/assets/app.js'), 'window.lanReady=true;');
+  let server: WebServerHandle | undefined;
+  try {
+    for (const allowExternal of [false, true]) {
+      server = await startWebServer({
+        api: {} as CoreService,
+        dataRoot: directory,
+        appRoot: directory,
+        isPackaged: false,
+        rendererUrl: 'http://127.0.0.1:5174',
+        allowExternal,
+        requireToken: true,
+        port: 0,
+      });
+      const base = new URL(server.endpoint);
+      base.hostname = '127.0.0.1';
+      const entry = await fetch(base, { redirect: 'manual' });
+      assert.equal(entry.status, allowExternal ? 200 : 302);
+      if (allowExternal) {
+        assert.equal(entry.headers.get('location'), null);
+        assert.match(await entry.text(), /LAN workspace/);
+        assert.equal(await (await fetch(new URL('/assets/app.js', base))).text(), 'window.lanReady=true;');
+        const denied = await fetch(new URL('/rpc', base), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ method: 'getState', args: [] }),
+        });
+        assert.equal(denied.status, 401);
+        await denied.text();
+      } else {
+        assert.equal(entry.headers.get('location'), 'http://127.0.0.1:5174');
+        await entry.text();
+      }
+      await server.close();
+      server = undefined;
+    }
+  } finally {
+    await server?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('two HTTP collaborators merge independent edits, retain conflicts and replay only latest logs', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'blode-collab-web-'));
   const workspace = { projectRoot: '/workspace', files: [{ path: 'main.c', content: 'aa\nbb\ncc\n' }] };

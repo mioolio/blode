@@ -77,6 +77,9 @@ export function HardwareDebuggerView() {
   const [view, setView] = useState<DebugView>('overview');
   const [storage, setStorage] = useState<DebuggerStorage | null>(null);
   const [busy, setBusy] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const connectOwner = useRef(0);
   const [installing, setInstalling] = useState(false);
   const [installation, setInstallation] = useState<InstallationState>();
   const installationOwner = useRef<{ requested: boolean; id?: string }>({ requested: false });
@@ -84,6 +87,7 @@ export function HardwareDebuggerView() {
   const checkedToolsRef = useRef<typeof checkedTools>(undefined);
   const [checkingTools, setCheckingTools] = useState<string | null>(null);
   const busyRef = useRef(false);
+  const actionOwner = useRef(0);
   const [error, setError] = useState('');
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [localFailures, setLocalFailures] = useState<string[]>([]);
@@ -109,7 +113,8 @@ export function HardwareDebuggerView() {
   const lastSample = useRef<string | undefined>(undefined);
   const connected = debug?.connection === 'stopped' || debug?.connection === 'running';
   const stopped = debug?.connection === 'stopped';
-  const attaching = debug?.connection === 'connecting';
+  const attaching = connecting || debug?.connection === 'connecting';
+  const canDisconnect = (connected || attaching) && (!busy || attaching) && !disconnecting;
   const selectedRuntime = app?.boards.find((board) => board.id === config?.boardId);
   const plugin = selectedRuntime?.runtimePlugin;
   const profile = debuggerPresentation(
@@ -346,6 +351,7 @@ export function HardwareDebuggerView() {
   }, []);
   const act = async (action: () => Promise<unknown>) => {
     if (busyRef.current) return;
+    const owner = ++actionOwner.current;
     requests.current.invalidate();
     const actionRequest = requests.current.begin('action');
     busyRef.current = true;
@@ -358,11 +364,33 @@ export function HardwareDebuggerView() {
     } catch (e) {
       if (requests.current.current(actionRequest)) reportError(e);
     } finally {
+      if (owner === actionOwner.current) {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    }
+  };
+  const disconnect = async () => {
+    ++actionOwner.current;
+    ++connectOwner.current;
+    setDisconnecting(true);
+    requests.current.invalidate();
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await window.blode.debuggerAction('disconnect');
+      await refresh();
+    } catch (e) {
+      reportError(e);
+    } finally {
+      setConnecting(false);
+      setDisconnecting(false);
       busyRef.current = false;
       setBusy(false);
     }
   };
-  const command = (action: DebuggerAction) => void act(() => window.blode.debuggerAction(action));
+  const command = (action: DebuggerAction) =>
+    action === 'disconnect' ? void disconnect() : void act(() => window.blode.debuggerAction(action));
   const chooseSymbols = () =>
     void act(async () => {
       if (!(await refresh())) return;
@@ -403,6 +431,20 @@ export function HardwareDebuggerView() {
   };
   const dialogAct = async (action: () => Promise<unknown>) => {
     await act(action);
+  };
+  const connect = () => {
+    if (!config || busyRef.current) return;
+    const owner = ++connectOwner.current;
+    setConnecting(true);
+    void dialogAct(async () => {
+      await saveDebuggerSettings();
+      if (connectOwner.current !== owner) return;
+      await window.blode.debuggerConnect(config);
+      if (connectOwner.current !== owner) return;
+      setDialog(null);
+    }).finally(() => {
+      if (connectOwner.current === owner) setConnecting(false);
+    });
   };
   const addBatch = () =>
     void dialogAct(async () => {
@@ -490,7 +532,7 @@ export function HardwareDebuggerView() {
           run: () => openDialog('connection'),
           disabled: !builtinPanels,
         },
-        { label: t('debugger.disconnect'), run: () => command('disconnect'), disabled: !connected || busy },
+        { label: t('debugger.disconnect'), run: () => command('disconnect'), disabled: !canDisconnect },
       ],
     },
     {
@@ -955,18 +997,11 @@ export function HardwareDebuggerView() {
           !debugSupported ||
           (!pluginDebugger && ((uart ? !uartPortAvailable : !usbJtag && !selectedSerial) || !toolsReady))
         }
-        onClick={() =>
-          config &&
-          void dialogAct(async () => {
-            await saveDebuggerSettings();
-            await window.blode.debuggerConnect(config);
-            setDialog(null);
-          })
-        }
+        onClick={connect}
       >
         {t('debugger.connect')}
       </button>
-      <button disabled={(!connected && !attaching) || busy} onClick={() => command('disconnect')}>
+      <button disabled={!canDisconnect} onClick={() => void disconnect()}>
         {t('debugger.disconnect')}
       </button>
       <button disabled={toolsLocked} onClick={() => void dialogAct(saveDebuggerSettings)}>

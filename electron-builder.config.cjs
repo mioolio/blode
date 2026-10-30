@@ -81,6 +81,8 @@ module.exports = {
   artifactName: `Blode.Studio-${releaseVersion}-desktop${full ? '-full' : ''}-win-x64.\${ext}`,
   publish: null,
   beforeBuild: require('./scripts/native-runtime.cjs').beforeBuild,
+  afterPack: require('./scripts/windows-package-integrity.cjs').afterPack,
+  afterAllArtifactBuild: require('./scripts/windows-package-integrity.cjs').afterAllArtifactBuild,
   win: {
     // A 3+ GiB portable executable would unpack itself on every launch, so the
     // full build is published as a plain, directly runnable folder archive.

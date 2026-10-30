@@ -178,6 +178,7 @@ export class HardwareDebugger {
   }
   private configure(config?: ProjectConfig) {
     if (!config || this.active) return;
+    if (this.debugConfig && JSON.stringify(this.debugConfig) === JSON.stringify(config)) return;
     const profile = getDebuggerProfile(config.boardId, config.debugger);
     if (!profile) return;
     const targetIdentity = (value: ProjectConfig, target: DebuggerProfile) => {
@@ -214,7 +215,6 @@ export class HardwareDebugger {
     const profile = this.profile,
       session = this.session,
       selection = this.debugConfig;
-    await this.refreshAutomaticSymbols();
     const tools = await this.tools(selection, profile);
     if (profile !== this.profile || session !== this.session || selection !== this.debugConfig)
       return this.state();
@@ -337,6 +337,7 @@ export class HardwareDebugger {
     return this.snapshot.symbols;
   }
   async storage(): Promise<DebuggerStorage | null> {
+    await this.refreshAutomaticSymbols();
     if (!this.symbols) return null;
     const profile = this.profile,
       name = this.snapshot.symbols;

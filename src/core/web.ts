@@ -735,7 +735,9 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
       response.end();
       return;
     }
-    if (!options.isPackaged && options.rendererUrl) {
+    // Shared browser sessions stay on the service origin; a loopback Vite URL
+    // would refer to each visitor's own computer and separate the API origin.
+    if (!options.isPackaged && options.rendererUrl && !options.allowExternal) {
       response.writeHead(302, { location: `${options.rendererUrl}${url.search}` });
       response.end();
       return;

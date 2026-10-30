@@ -35,7 +35,7 @@ ESP32-S3 + CH340 烧录底座已在 Windows 参考固件上完成断点、单步
 - **AI 使用验收**：手动／自动补全、中文注释与全输入触发、间隔设置和错误反馈已有 46 项相关测试及 18 个真实编辑器场景通过；继续评估不同模型的建议质量、输入法体验、长会话及大型工程修改。
 - **通用扩展生态**：管理、权限审查和个性化示例已通过二进制宿主验证；持续完善更多第三方扩展的适配。见[通用扩展开发](docs/GENERAL-EXTENSIONS.md)。
 - **界面验收**：Git 差异与组件库布局已重排，大列表使用有界渲染；本轮实际视觉与滚动帧率待人工验收。
-- **开发分发**：当前补全与导航改进以 `main` 源码交付，本轮不再打包；历史桌面与 Web 验证包、二进制插件验收记录保留。
+- **本地发行准备**：0.3.4.2 桌面便携版与独立 Web 版已构建，附[发行说明](docs/releases/0.3.4.2.md)，由发布者手动创建 GitHub 发行版。构建后的局域网和 STM32 调试修复见[更新记录](CHANGELOG.md)，现有包尚未重新构建。
 - **协作验收**：外部只读标签共享与恢复已补充自动化覆盖；继续扩展跨机器、高延迟网络和长时间场景。
 - **硬件验收**：ESP32-S3 原生 USB-JTAG、现有相机工程的 UART GDB 迁移，以及 STM32 指令修改的实机覆盖。
 
@@ -71,7 +71,7 @@ ESP32-S3 摄像头引脚由工程配置。旧工程的 `esp32-s3`、`stm32` 标�
 | Linux x64／ARM64   | Node.js 宿主与平台工具 | 已做代码适配；安装、USB、编译和桌面打包待实机验证 |
 | macOS              | 自定义工具路径         | 未验证                                            |
 
-发行包、校验和与安装步骤见[下载](https://github.com/mioolio/blode/releases)和[发行说明](docs/releases/0.2.3.6.md)。
+发行包、校验和与安装步骤见[下载](https://github.com/mioolio/blode/releases)和[发行说明](docs/releases/0.3.4.2.md)。
 
 ## 快速开始
 
@@ -164,7 +164,7 @@ npm run package:web
 
 | 任务       | 文档                                                                                                                                                                                                                                             |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 安装与开发 | [Web 宿主](docs/WEB-HOST.md) · [开发说明](docs/DEVELOPMENT.md) · [发行说明](docs/releases/0.2.3.6.md)                                                                                                                                            |
+| 安装与开发 | [Web 宿主](docs/WEB-HOST.md) · [开发说明](docs/DEVELOPMENT.md) · [发行说明](docs/releases/0.3.4.2.md)                                                                                                                                            |
 | 编译与硬件 | [工程配置](docs/PROJECTS.md) · [命名编译入口](docs/BUILD_TARGETS.md) · [组件库](docs/COMPONENT-LIBRARIES.md) · [硬件调试](docs/HARDWARE-DEBUGGING.md) · [工具版本](docs/TOOL-VERSIONS.md) · [离线交付](docs/OFFLINE-DELIVERY.md)                 |
 | 编辑与团队 | [资源预览](docs/ASSET-PREVIEW.md) · [源码定位](docs/SOURCE-NAVIGATION.md) · [语言规则](docs/LANGUAGE-RULES.md) · [多人协作](docs/COLLABORATION.md) · [VS Code 连接](docs/vscode.md) · [Git](docs/GIT.md) · [工程打包](docs/PROJECT-PACKAGING.md) |
 | AI 与插件  | [AI 接口](docs/AI-PIPE.md) · [AI 补全与模型服务](docs/AI-COMPLETIONS.md) · [通用扩展](docs/GENERAL-EXTENSIONS.md) · [运行时插件](docs/RUNTIME-PLUGINS.md) · [模块语言](docs/MODULE-LANGUAGES.md) · [架构](docs/ARCHITECTURE.md)                  |

@@ -218,7 +218,12 @@ export class RuntimeDebugger extends HardwareDebugger {
     }
   }
   override async state(config?: ProjectConfig): Promise<DebuggerState> {
-    if (config && !this.active && !this.connectingProvider) {
+    if (
+      config &&
+      !this.active &&
+      !this.connectingProvider &&
+      JSON.stringify(config) !== JSON.stringify(this.selectedConfig)
+    ) {
       this.selectedConfig = structuredClone(config);
       this.configurationRevision++;
     }

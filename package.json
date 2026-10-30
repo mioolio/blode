@@ -1,8 +1,8 @@
 {
   "name": "blode-studio",
   "productName": "Blode Studio",
-  "version": "0.2.3-6",
-  "releaseVersion": "0.2.3.6",
+  "version": "0.3.4-2",
+  "releaseVersion": "0.3.4.2",
   "description": "Modular microcontroller development studio",
   "private": true,
   "type": "module",
@@ -69,6 +69,5 @@
   "bugs": {
     "url": "https://github.com/mioolio/blode/issues"
   },
-  "license": "Apache-2.0",
-  "developmentChannel": "internal-runtime-plugins"
+  "license": "Apache-2.0"
 }
