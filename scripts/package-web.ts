@@ -70,12 +70,15 @@ export async function packageWebRelease(options: { output?: string; skipBuild?: 
       main: 'dist/web-server.cjs',
       scripts: { start: 'node dist/web-server.cjs' },
       engines: { node: '>=24' },
-      dependencies: { serialport: sourcePackage.dependencies.serialport },
+      dependencies: {
+        serialport: sourcePackage.dependencies.serialport,
+        'node-pty': sourcePackage.dependencies['node-pty'],
+      },
       license: sourcePackage.license,
       repository: sourcePackage.repository,
     };
     await fs.writeFile(path.join(staging, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
-    process.stdout.write('Preparing a serialport-only runtime lockfile (no install scripts).\n');
+    process.stdout.write('Preparing the native runtime lockfile (SerialPort and PTY; no install scripts).\n');
     await execute(
       process.execPath,
       [
@@ -108,7 +111,7 @@ export async function packageWebRelease(options: { output?: string; skipBuild?: 
 This edition runs a Node.js service on the computer that owns the projects and hardware. It does not contain Electron, Chromium, downloaded toolchains, project files or user credentials.
 
 1. Install Node.js 24 or newer and extract this ZIP into a writable folder.
-2. Run \`npm ci --omit=dev\` in that folder. serialport is the only direct runtime dependency.
+2. Run \`npm ci --omit=dev\` in that folder. SerialPort and node-pty provide the native device and interactive terminal runtimes.
 3. Run \`npm start\` and open the private launch link printed once in the terminal.
 4. To share within a trusted LAN, run \`npm start -- --host 0.0.0.0 --port 47821\`. Keep the launch token private.
 

@@ -1,3 +1,6 @@
+import { ModernSelect } from './ModernSelect';
+import { RuntimeDeviceFields } from './RuntimeDeviceFields';
+import { RuntimePluginView } from './RuntimePluginView';
 import { CircuitBoard, Cpu, Gauge, RefreshCw, ScanSearch, Usb, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
 import { MemoryUsage } from './MemoryUsage';
@@ -27,6 +30,13 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
     drafts,
   } = studio;
   const workspaceOpen = !!state?.workspaceOpen;
+  const plugin = board?.runtimePlugin;
+  const pluginTransport = !!plugin && ['usb', 'physical', 'custom'].includes(plugin.transport);
+  const hidden = new Set([
+    ...(plugin?.ui.hiddenCapabilities ?? []),
+    ...(config?.runtime?.disabledCapabilities ?? []),
+  ]);
+  const hasSerial = !plugin || (plugin.capabilities.includes('serial') && !hidden.has('serial'));
   const initializing = !state || state.initializing === true;
   const debugProbes = state?.debugProbes ?? [];
   const selectedProbe = debugProbes.find(
@@ -43,14 +53,16 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
     config?.programmer?.transport === 'stlink'
       ? candidate.transport === 'stlink' &&
         candidate.serialNumber?.toLowerCase() === config.programmer.serialNumber.toLowerCase()
-      : config?.programmer?.transport === 'serial' &&
-        candidate.transport === 'serial' &&
-        candidate.port === config.port,
+      : config?.programmer?.transport === 'serial'
+        ? candidate.transport === 'serial' && candidate.port === config.port
+        : candidate.deviceId === config?.runtime?.deviceId &&
+          candidate.transport === config?.programmer?.transport,
   );
   const autoDeviceValue = automaticChoice ? '' : (selectedCandidate?.id ?? '');
   const canProbe =
     !initializing &&
     (isAuto ||
+      pluginTransport ||
       (usesStlink ? !!selectedProbe || (probeUncertain && !!config?.programmer?.serialNumber) : hasPort));
   const portField = (
     <label>
@@ -64,7 +76,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
           {t('action.refresh')}
         </button>
       </span>
-      <select
+      <ModernSelect
         value={hasPort || initializing ? (config?.port ?? '') : ''}
         disabled={!config || !!busy || initializing}
         onChange={(event) => config && setConfig({ ...config, port: event.target.value })}
@@ -86,11 +98,11 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
             {port.manufacturer ? ` — ${port.manufacturer}` : ''}
           </option>
         ))}
-      </select>
+      </ModernSelect>
     </label>
   );
   return (
-    <aside className="device-panel">
+    <aside className="device-panel" tabIndex={0} aria-label={t('device.title')}>
       <div className="panel-heading">
         <span className="panel-title">
           <CircuitBoard size={14} strokeWidth={1.8} aria-hidden="true" />
@@ -111,7 +123,8 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
             <Cpu size={12} strokeWidth={1.8} aria-hidden="true" />
             {t('device.board')}
           </span>
-          <select
+          <ModernSelect
+            aria-label={t('device.board')}
             value={config?.boardId ?? ''}
             disabled={!config || !!busy}
             onChange={(event) => {
@@ -125,6 +138,9 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                   baudRate:
                     selected.recommendedBaudRate ?? selected.defaultConfig.baudRate ?? config.baudRate,
                   boardId: selected.id,
+                  runtime: selected.defaultConfig.runtime
+                    ? structuredClone(selected.defaultConfig.runtime)
+                    : undefined,
                   programmer: selected.defaultConfig.programmer
                     ? { ...selected.defaultConfig.programmer }
                     : undefined,
@@ -142,8 +158,48 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 {board.name}
               </option>
             ))}
-          </select>
+          </ModernSelect>
         </label>
+        {!!state?.runtimePlugins?.errors.length && (
+          <details className="subtle-note">
+            <summary>
+              {t('runtime.loadErrors')} ({state.runtimePlugins.errors.length})
+            </summary>
+            {state.runtimePlugins.errors.map((error, index) => (
+              <p key={index}>
+                {error.directory}
+                <br />
+                {t(error.message)}
+              </p>
+            ))}
+          </details>
+        )}
+        {state?.runtimePlugins?.plugins.some(
+          (item) => item.id === config?.boardId && item.trust === 'required',
+        ) && (
+          <button
+            className="text-button"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent('blode:runtime-plugin-review', { detail: config?.boardId }),
+              )
+            }
+          >
+            {t('runtime.review')}
+          </button>
+        )}
+        {plugin && config && (
+          <RuntimeDeviceFields
+            plugin={plugin}
+            config={config}
+            disabled={!!busy || initializing}
+            onChange={(value) => {
+              setConfig(value);
+              setStale(true);
+            }}
+          />
+        )}
+        {plugin?.ui.view && <RuntimePluginView id={plugin.id} kind="device" />}
         {isAuto && (
           <label>
             <span className="field-label label-with-action">
@@ -156,7 +212,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                 {t('action.refresh')}
               </button>
             </span>
-            <select
+            <ModernSelect
               value={autoDeviceValue}
               disabled={!config || !!busy || initializing}
               onChange={(event) => {
@@ -171,6 +227,10 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                     serialNumber: selected?.transport === 'stlink' ? (selected.serialNumber ?? '') : '',
                     frequencyKhz: config.programmer?.frequencyKhz ?? 1800,
                   },
+                  runtime:
+                    selected && !['serial', 'stlink'].includes(selected.transport)
+                      ? { ...config.runtime, deviceId: selected.deviceId ?? selected.id }
+                      : config.runtime,
                 });
                 setStale(true);
               }}
@@ -183,7 +243,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                   {candidate.name}
                 </option>
               ))}
-            </select>
+            </ModernSelect>
             {!initializing && !!state?.detection?.unavailablePlatforms.length && (
               <span className="subtle-note">
                 {t('device.detectionToolsMissing')}{' '}
@@ -214,7 +274,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                   {t('action.refresh')}
                 </button>
               </span>
-              <select
+              <ModernSelect
                 value={
                   selectedProbe?.serialNumber ?? (initializing ? config?.programmer?.serialNumber : '') ?? ''
                 }
@@ -245,7 +305,7 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                     {probe.name}
                   </option>
                 ))}
-              </select>
+              </ModernSelect>
               {initializing ? (
                 <span className="subtle-note" role="status">
                   {t('device.connectionChecking')}
@@ -306,21 +366,22 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
             )}
           </>
         )}
-        {isAuto || usesStlink ? (
-          <details className="device-monitor-options">
-            <summary className="subtle-note">{t('device.serialMonitorOptions')}</summary>
-            {portField}
-          </details>
-        ) : (
-          portField
-        )}
-        {!isAuto && !usesStlink && (
+        {hasSerial &&
+          (isAuto || usesStlink ? (
+            <details className="device-monitor-options">
+              <summary className="subtle-note">{t('device.serialMonitorOptions')}</summary>
+              {portField}
+            </details>
+          ) : (
+            portField
+          ))}
+        {!isAuto && !usesStlink && !pluginTransport && hasSerial && (
           <label>
             <span className="field-label">
               <Gauge size={12} strokeWidth={1.8} aria-hidden="true" />
               {t('device.speed')}
             </span>
-            <select
+            <ModernSelect
               value={config?.baudRate ?? board?.recommendedBaudRate ?? 460800}
               disabled={!config || !!busy}
               onChange={(event) => config && setConfig({ ...config, baudRate: Number(event.target.value) })}
@@ -331,14 +392,16 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
                   {value === board?.recommendedBaudRate ? ` · ${t('device.recommended')}` : ''}
                 </option>
               ))}
-            </select>
+            </ModernSelect>
           </label>
         )}
         <div className="device-actions">
-          <button className="secondary" onClick={probe} disabled={!!busy || !canProbe}>
-            <ScanSearch size={13} strokeWidth={1.8} aria-hidden="true" />
-            {t('action.probe')}
-          </button>
+          {(!plugin || plugin.capabilities.includes('probe')) && (
+            <button className="secondary" onClick={probe} disabled={!!busy || !canProbe}>
+              <ScanSearch size={13} strokeWidth={1.8} aria-hidden="true" />
+              {t('action.probe')}
+            </button>
+          )}
           {configDirty && workspaceOpen && (
             <button className="secondary" onClick={saveConfig} disabled={!!busy}>
               {t('action.apply')}
@@ -346,10 +409,8 @@ export function DeviceInspector({ studio }: { studio: Studio }) {
           )}
         </div>
       </section>
-      {workspaceOpen ? (
+      {workspaceOpen && !hidden.has('layout') && (
         <MemoryUsage state={state} config={config} drafts={drafts} stale={stale || dirty || configDirty} />
-      ) : (
-        <p className="subtle-note device-empty">{t('welcome.noWorkspace')}</p>
       )}
     </aside>
   );

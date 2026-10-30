@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   hasFatalStartupError,
+  classifyElectronExit,
   findStaleElectronProcesses,
   findStaleVite,
   recoverStaleElectron,
@@ -25,6 +26,52 @@ const entry = (
   ParentProcessId: parentPid,
   ExecutablePath: executable,
   CommandLine: command,
+});
+
+test('closing normally never retries a historical renderer crash, including before mounting', () => {
+  for (const log of [
+    '',
+    '2026-10-30T00:00:00Z window first paint',
+    '2026-10-30T00:00:00Z render-process-gone crashed exit=-2147483645',
+    '2026-10-30T00:00:00Z child-process-gone GPU crashed exit=1',
+    '2026-10-30T00:00:00Z window ready\n2026-10-30T00:00:01Z render-process-gone crashed exit=-2147483645',
+  ]) {
+    assert.deepEqual(classifyElectronExit({ code: 0, timedOut: false, log }), {
+      retry: null,
+      failed: false,
+      exitCode: 0,
+    });
+  }
+});
+
+test('actual sandbox failure and startup timeout retain bounded recovery', () => {
+  for (const code of [0x80000003, -2147483645]) {
+    const result = { code, timedOut: false, log: '' };
+    assert.equal(classifyElectronExit(result).retry, 'sandbox');
+    assert.equal(classifyElectronExit(result, { sandbox: true }).retry, 'software');
+    assert.equal(classifyElectronExit(result, { sandbox: true, software: true }).retry, null);
+    assert.equal(classifyElectronExit(result, { sandbox: true, software: true }).failed, true);
+  }
+  const rendererFatal = {
+    code: 0,
+    timedOut: false,
+    log: '2026-10-30T00:00:00Z render-process-gone crashed exit=-2147483645\n2026-10-30T00:00:01Z fatal Error: ERR_FAILED',
+  };
+  assert.equal(classifyElectronExit(rendererFatal).retry, 'sandbox');
+  const timeout = { code: null, timedOut: true, log: '' };
+  assert.equal(classifyElectronExit(timeout).retry, 'software');
+  assert.deepEqual(classifyElectronExit(timeout, { software: true }), {
+    retry: null,
+    failed: true,
+    exitCode: 1,
+  });
+  const mountedFailure = { code: 1, timedOut: false, log: '2026-10-30T00:00:00Z window ready' };
+  assert.deepEqual(classifyElectronExit(mountedFailure), { retry: null, failed: true, exitCode: 1 });
+  assert.equal(
+    classifyElectronExit({ ...rendererFatal, log: '2026-10-30T00:00:00Z fatal Error: service failure' })
+      .failed,
+    true,
+  );
 });
 
 test('a mounted interface does not mask a later fatal service initialization error', () => {

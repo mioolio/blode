@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseKeilProject } from '../extensions/boards/stm32/keil';
-import { migrateLegacyCmsis } from '../extensions/boards/stm32/cmsis';
+import { parseKeilProject } from '../extensions/boards/STM32F103C8T6/compiler/keil';
+import { migrateLegacyCmsis } from '../extensions/boards/STM32F103C8T6/compiler/cmsis';
 const project = `<Project><Targets><Target><TargetName>OLED</TargetName><Device>STM32F103C8</Device><Cads><VariousControls><Define>USE_STDPERIPH_DRIVER</Define><IncludePath>.\\Start;.\\Library</IncludePath></VariousControls></Cads><Groups><Group><Files><File><FilePath>.\\User\\main.c</FilePath></File><File><FilePath>.\\Start\\startup_stm32f10x_md.s</FilePath></File><File><FilePath>.\\Start\\startup_stm32f10x_hd.s</FilePath><FileOption><IncludeInBuild>0</IncludeInBuild></FileOption></File></Files></Group></Groups></Target></Targets></Project>`;
 test('Keil build list selects MD startup and dependencies rather than unused startup variants', () => {
   const result = parseKeilProject(project, 'Project.uvprojx');

@@ -4,6 +4,11 @@ import { aiParameterSchemas } from '../core/ai-schemas';
 import { collaborationSchemas } from '../core/collaboration-schemas';
 import { uiCommandSchema } from '../core/ui-commands';
 import { hostParameterSchemas } from '../core/host-service-schemas';
+import {
+  breakpointLocationsSchema,
+  debuggerPatchSchema,
+  debuggerAssembleSchema,
+} from '../shared/debugger-edit';
 
 const empty = z.object({}).strict();
 const path = z.string().min(1).max(4096);
@@ -33,7 +38,7 @@ export const workbenchRouteSchemas = {
       confirm,
     })
     .strict(),
-  'debugger.state': empty,
+  'debugger.state': z.object({ config: configSchema.optional() }).strict(),
   'debugger.open': empty,
   'debugger.symbols.set': z.object({ path }).strict(),
   'debugger.connect': z.object({ config: configSchema }).strict(),
@@ -46,11 +51,21 @@ export const workbenchRouteSchemas = {
   'debugger.memory': z
     .object({ address: z.number().int().min(0).max(0xffffffff), length: z.number().int().min(1).max(4096) })
     .strict(),
+  'debugger.breakpoints': z.object({ locations: breakpointLocationsSchema }).strict(),
+  'debugger.patch': debuggerPatchSchema,
+  'debugger.assemble': debuggerAssembleSchema,
   'debugger.storage': empty,
-  'debugger.tools.install': z.object({ confirm }).strict(),
+  'debugger.tools.install': z.object({ confirm, config: configSchema.optional() }).strict(),
   'debugger.gdb.set': z.object({ path }).strict(),
   'ui.state': empty,
   'ui.command': uiCommandSchema,
+  'runtime.view.open': z
+    .object({
+      id: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+      viewId: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+      target: z.string().min(1).max(128).optional(),
+    })
+    .strict(),
   'window.action': z.object({ action: z.enum(['minimize', 'maximize', 'close']), confirm }).strict(),
   'logs.latest': empty,
   'collaboration.state': collaborationSchemas.state,
@@ -67,6 +82,26 @@ export const workbenchRouteSchemas = {
 export type WorkbenchRouteName = keyof typeof workbenchRouteSchemas;
 
 export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
+  'components.state': 'List project components and platform-provided libraries.',
+  'components.search': 'Search the Arduino library catalog on explicit request.',
+  'components.install':
+    'Install a selected Arduino library version and dependencies into the expected project; requires confirm=true.',
+  'components.import': 'Import a local host folder or ZIP into the expected project; requires confirm=true.',
+  'components.remove':
+    'Remove an unchanged managed component from the expected project; requires confirm=true.',
+  'runtime.context': 'Read the runtime device context and declared capabilities.',
+  'runtime.configure': 'Update selected runtime device values using its declared configuration constraints.',
+  'runtime.device':
+    'Run a declared action of the selected approved native device runtime. Pass confirm=true when required by its declaration.',
+  'runtime.plugins':
+    'Inspect declared third-party runtime packages and approval status without executing code.',
+  'runtime.trust':
+    'Approve native plugin execution after reviewing the package fingerprint. Requires confirm=true; permanent approval writes a machine-bound .uel marker.',
+  'runtime.view': 'Read an approved plugin custom interface for an isolated frame.',
+  'runtime.view.info': 'Read an approved extension view declaration.',
+  'runtime.view.open':
+    'Request a declared extension view in one workbench. Browser windows require a user click.',
+  'runtime.debug': 'Invoke an approved runtime debug provider method.',
   'language.index': 'Index saved C/C++ workspace symbols and export their source locations.',
   'capabilities.get': 'List all available automation capabilities and required confirmations.',
   'file.create': 'Create a project-relative file.',
@@ -86,13 +121,22 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
   'firmware.export':
     'Export the verified build to an absolute path. Existing files require confirmOverwrite=true.',
   'firmware.flash': 'Flash a prepared selection after target validation; confirm=true is required.',
-  'debugger.state': 'Read the shared hardware debugger state.',
+  'debugger.state':
+    'Read shared debugger state and architecture capabilities; config selects a target and tools before connecting.',
   'debugger.open': 'Open the separate hardware debugger window.',
-  'debugger.symbols.set': 'Select ARM ELF symbols using an absolute native path, without flashing.',
-  'debugger.connect': 'Attach the debugger to the selected ST-Link; never downloads firmware.',
+  'debugger.symbols.set':
+    'Select an ELF matching the chosen target architecture, using an absolute native path without flashing.',
+  'debugger.connect':
+    'Attach to STM32 ST-Link or ESP32-S3 USB-JTAG using the supplied config; never downloads firmware.',
   'debugger.action': 'Continue, pause, step or disconnect the shared debugger.',
   'debugger.breakpoint': 'Add a breakpoint or remove its numeric identifier.',
   'debugger.memory': 'Read up to 4096 bytes of real target memory while paused.',
+  'debugger.breakpoints':
+    'Add up to 128 breakpoints while paused; return individual added/existing/failed results.',
+  'debugger.patch':
+    'Replace one SRAM Thumb instruction with expected-byte comparison and readback verification. Requires confirm=true. Running targets require pauseAndResume=true; failures remain paused. Flash is not rewritten.',
+  'debugger.assemble':
+    'Assemble one Thumb instruction at an address using the selected GNU tools and return bytes without writing hardware.',
   'debugger.storage': 'Inspect the selected local ELF file and segments.',
   'debugger.tools.install': 'Install GNU debugger tools with confirm=true.',
   'debugger.gdb.set': 'Set a trusted native GDB executable path.',
@@ -133,8 +177,15 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
   'project.package.preview': 'Inspect portable ZIP files, external dependencies and unresolved paths.',
   'project.package.export':
     'Save shared drafts and produce a portable ZIP. External dependencies require confirmExternal=true; unresolved paths require allowIncomplete=true.',
-  'terminal.state': 'Read the bounded target-machine command output and process state.',
+  'terminal.state':
+    'Read the target terminal state and ANSI output after a session cursor; does not start a shell.',
+  'terminal.open':
+    'Open or reuse a persistent interactive shell on the target machine; confirm=true is required.',
   'terminal.run':
-    'Run an explicit shell command on the target machine; confirm=true is required. Non-interactive, bounded to two minutes.',
-  'terminal.stop': 'Stop the command process owned by this host.',
+    'Submit a command to the persistent target shell, preserving its directory and variables; confirm=true is required.',
+  'terminal.stop': 'Send Ctrl+C to the host terminal without closing its shell.',
+  'terminal.write':
+    'Send raw terminal input, including interactive answers or control keys; confirm=true is required.',
+  'terminal.resize': 'Set terminal columns and rows for the current session.',
+  'terminal.close': 'Close the host terminal and its child processes; confirm=true is required.',
 };

@@ -1,0 +1,131 @@
+{
+  "id": "Esp32_S3_CAM",
+  "name": "Esp32_S3_CAM",
+  "version": "2.0.0-dev.1",
+  "apiVersion": 2,
+  "runtimeApiVersion": 2,
+  "kind": "board",
+  "entry": "device/adapter.ts",
+  "runtime": "runtime/index.ts",
+  "transport": "serial",
+  "vendor": "Espressif",
+  "descriptionKey": "boards.esp32s3Description",
+  "capabilities": ["compile", "flash", "probe", "serial", "layout", "partitions", "debug"],
+  "sourceInputs": [],
+  "support": {
+    "chips": ["ESP32-S3"],
+    "families": ["ESP32-S3"],
+    "status": "experimental",
+    "notes": "Camera GPIO assignments belong to the project. This profile does not cover other ESP32 families."
+  },
+  "defaultConfig": {
+    "version": 1,
+    "name": "blink",
+    "boardId": "Esp32_S3_CAM",
+    "port": "",
+    "baudRate": 460800,
+    "flashSize": 8388608,
+    "partitions": [
+      {
+        "id": "bootloader",
+        "name": "bootloader",
+        "type": "system",
+        "offset": 0,
+        "size": 32768
+      },
+      {
+        "id": "partition-table",
+        "name": "partition_table",
+        "type": "system",
+        "offset": 32768,
+        "size": 4096
+      },
+      {
+        "id": "nvs",
+        "name": "nvs",
+        "type": "data",
+        "offset": 36864,
+        "size": 24576
+      },
+      {
+        "id": "phy",
+        "name": "phy_init",
+        "type": "data",
+        "offset": 61440,
+        "size": 4096
+      },
+      {
+        "id": "app",
+        "name": "factory",
+        "type": "app",
+        "offset": 65536,
+        "size": 3145728
+      },
+      {
+        "id": "coredump",
+        "name": "coredump",
+        "type": "data",
+        "offset": 3211264,
+        "size": 65536
+      },
+      {
+        "id": "filesystem",
+        "name": "spiffs",
+        "type": "data",
+        "offset": 3276800,
+        "size": 5111808
+      }
+    ],
+    "toolchain": {
+      "mode": "managed",
+      "arduinoCli": "",
+      "python": "",
+      "additionalUrls": ["https://espressif.github.io/arduino-esp32/package_esp32_index.json"],
+      "fqbn": "esp32:esp32:esp32s3"
+    }
+  },
+  "compiler": {
+    "mode": "host",
+    "baseRuntime": "Esp32_S3_CAM"
+  },
+  "debugger": {
+    "mode": "builtin"
+  },
+  "layout": {
+    "flashBaseAddress": 0,
+    "recommendedFlashSizes": [4194304, 8388608, 16777216],
+    "possibleFlashSizes": [4194304, 8388608, 16777216],
+    "ramSize": 327680
+  },
+  "constraints": {
+    "notes": ["Custom resource sizes are project settings; recommendations do not constrain them."]
+  },
+  "ui": {
+    "fields": [],
+    "hiddenCapabilities": []
+  },
+  "languages": {
+    "mode": "declared",
+    "default": "cpp",
+    "entries": [
+      {
+        "id": "c",
+        "editorLanguage": "cpp",
+        "extensions": [".c"],
+        "catalogs": [],
+        "standards": {
+          "c99": ["languages/C/c99/catalog.json"],
+          "c11": ["languages/C/c11/catalog.json"],
+          "c17": ["languages/C/c17/catalog.json"],
+          "c23": ["languages/C/c23/catalog.json"]
+        }
+      },
+      {
+        "id": "cpp",
+        "editorLanguage": "cpp",
+        "extensions": [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".ino", ".h"],
+        "catalogs": ["languages/C++/c-basics.json", "languages/C++/arduino.json"]
+      }
+    ]
+  }
+}

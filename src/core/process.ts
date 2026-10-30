@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { OutputDecoder, type OutputEncoding } from './output-decoder';
 
 export interface CommandResult {
   code: number;
@@ -13,6 +14,7 @@ export interface RunOptions {
   env?: NodeJS.ProcessEnv;
   onLine?: (line: string) => void;
   signal?: AbortSignal;
+  encoding?: OutputEncoding;
 }
 
 /** A process boundary: arguments never pass through a shell; output is bounded. */
@@ -25,7 +27,14 @@ export async function runCommand(
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: { ...process.env, ...options.env, NO_COLOR: '1', LC_ALL: 'C' },
+      env: {
+        ...process.env,
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+        ...options.env,
+        NO_COLOR: '1',
+        LC_ALL: 'C',
+      },
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -33,7 +42,8 @@ export async function runCommand(
     let output = '';
     let stdout = '';
     let stderr = '';
-    let pending = '';
+    const pending = ['', ''];
+    const decoders = [new OutputDecoder(options.encoding), new OutputDecoder(options.encoding)];
     let settled = false;
     const stop = () => {
       // Compilers launch subprocesses; Windows needs the whole owned process tree stopped.
@@ -65,21 +75,20 @@ export async function runCommand(
       }
     }, options.timeout ?? 120_000);
     options.signal?.addEventListener('abort', abort, { once: true });
-    const consume = (data: Buffer) => {
-      const chunk = data.toString('utf8');
+    const consume = (chunk: string, index: number) => {
+      if (index === 0) stdout = (stdout + chunk).slice(-2_000_000);
+      else stderr = (stderr + chunk).slice(-2_000_000);
       output = (output + chunk).slice(-2_000_000);
-      pending = (pending + chunk).slice(-64_000);
-      const lines = pending.split(/\r?\n|\r/g);
-      pending = lines.pop() ?? '';
+      pending[index] = (pending[index] + chunk).slice(-64_000);
+      const lines = pending[index].split(/\r?\n|\r/g);
+      pending[index] = lines.pop() ?? '';
       for (const line of lines) if (line.trim()) options.onLine?.(line);
     };
     child.stdout.on('data', (data: Buffer) => {
-      stdout = (stdout + data.toString('utf8')).slice(-2_000_000);
-      consume(data);
+      consume(decoders[0].write(data), 0);
     });
     child.stderr.on('data', (data: Buffer) => {
-      stderr = (stderr + data.toString('utf8')).slice(-2_000_000);
-      consume(data);
+      consume(decoders[1].write(data), 1);
     });
     child.once('error', (error) => {
       clearTimeout(timer);
@@ -92,7 +101,10 @@ export async function runCommand(
     child.once('close', (code) => {
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', abort);
-      if (pending.trim()) options.onLine?.(pending);
+      for (let index = 0; index < 2; index++) {
+        consume(decoders[index].end(), index);
+        if (pending[index].trim()) options.onLine?.(pending[index]);
+      }
       if (!settled) {
         settled = true;
         resolve({ code: code ?? -1, output, stdout, stderr });

@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import { HardDrive, Layers, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -196,7 +197,7 @@ export function ResourceLayout({
           {flashSizes && flashSizes.length > 0 && (
             <label className="inline-field">
               <span>{t('device.flash')}</span>
-              <select
+              <ModernSelect
                 aria-label={t('device.flash')}
                 value={customMode ? 'custom' : String(config.flashSize)}
                 disabled={busy}
@@ -216,7 +217,7 @@ export function ResourceLayout({
                   </option>
                 ))}
                 {customFlashSize && <option value="custom">{t('layout.customFlashKiB')}</option>}
-              </select>
+              </ModernSelect>
             </label>
           )}
           {customMode && (

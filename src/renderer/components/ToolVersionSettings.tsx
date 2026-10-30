@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import { useEffect, useState } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import type { ProjectConfig } from '../../shared/contracts';
@@ -36,7 +37,7 @@ export function ToolVersionSettings({
       next.entries.some((entry) => entry.id === current)
         ? current
         : (next.entries.find(
-            (entry) => entry.kind === (config.boardId === 'stm32' ? 'gnu-arm' : 'arduino-esp32'),
+            (entry) => entry.kind === (config.boardId === 'STM32F103C8T6' ? 'gnu-arm' : 'arduino-esp32'),
           )?.id ??
           next.entries[0]?.id ??
           ''),
@@ -45,7 +46,9 @@ export function ToolVersionSettings({
       const installed = next.installedTools ?? [];
       return installed.some((entry) => entry.id === current)
         ? current
-        : (installed.find((entry) => entry.platforms.includes(config.boardId as 'stm32' | 'esp32-s3'))?.id ??
+        : (installed.find((entry) =>
+            entry.platforms.includes(config.boardId as 'STM32F103C8T6' | 'Esp32_S3_CAM'),
+          )?.id ??
             installed[0]?.id ??
             '');
     });
@@ -85,7 +88,6 @@ export function ToolVersionSettings({
           {t('action.refresh')}
         </button>
       </div>
-      <p className="subtle-note">{t('settings.versions.note')}</p>
       {!api.toolVersionsState ? (
         <p className="subtle-note">{t('settings.versions.restart')}</p>
       ) : (
@@ -120,7 +122,7 @@ export function ToolVersionSettings({
                 <>
                   <label>
                     {t('settings.versions.localChoose')}
-                    <select
+                    <ModernSelect
                       value={localSelected}
                       disabled={busy || pending}
                       onChange={(event) => setLocalSelected(event.target.value)}
@@ -130,7 +132,7 @@ export function ToolVersionSettings({
                           {item.name} · {t(sourceLabels[item.source])}
                         </option>
                       ))}
-                    </select>
+                    </ModernSelect>
                   </label>
                   {local && (
                     <>
@@ -163,7 +165,6 @@ export function ToolVersionSettings({
                           {t('settings.versions.use')}
                         </button>
                       </div>
-                      <p className="subtle-note">{t('settings.versions.applyNote')}</p>
                     </>
                   )}
                 </>
@@ -173,7 +174,7 @@ export function ToolVersionSettings({
             <div className="tool-version-panel" role="tabpanel">
               <label>
                 {t('settings.versions.choose')}
-                <select
+                <ModernSelect
                   value={selected}
                   disabled={pending || busy}
                   onChange={(event) => {
@@ -193,7 +194,7 @@ export function ToolVersionSettings({
                         ))}
                     </optgroup>
                   ))}
-                </select>
+                </ModernSelect>
               </label>
               {entry && (
                 <>
@@ -236,7 +237,6 @@ export function ToolVersionSettings({
                       {t('settings.versions.use')}
                     </button>
                   </div>
-                  <p className="subtle-note">{t('settings.versions.applyNote')}</p>
                 </>
               )}
             </div>

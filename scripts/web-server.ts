@@ -1,13 +1,13 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { createCore, type CoreOptions } from '../src/core/service';
+import { createCore, type CoreOptions, type CoreService } from '../src/core/service';
 import { startPipeServer, type PipeServerHandle } from '../src/automation/server';
 import { startWebServer, type WebServerHandle } from '../src/core/web';
 import { RecentProjects } from '../src/core/recent-projects';
 import { RecentLogs } from '../src/core/recent-logs';
 import { FirmwareStore } from '../src/core/firmware';
-import { HardwareDebugger } from '../src/core/hardware-debugger';
+import { RuntimeDebugger } from '../src/core/runtime-debugger';
 import { createWebDebugger } from '../src/core/web-debugger';
 import { AiAssistance } from '../src/core/ai-assistance';
 import { CollaborationService } from '../src/core/collaboration';
@@ -94,10 +94,20 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
     web?.publish(event);
     pipe?.publish(event);
   };
-  const hardware = new HardwareDebugger(toolchainRoot, path.join(dataRoot, 'debugger'), (message) =>
-    emit({ kind: 'status', level: 'info', message, time: new Date().toISOString() }),
+  let core: CoreService;
+  const ui = new UiCommands((request) => web?.publishUiCommand(request));
+  const hardware = new RuntimeDebugger(
+    toolchainRoot,
+    path.join(dataRoot, 'debugger'),
+    (message) => emit({ kind: 'status', level: 'info', message, time: new Date().toISOString() }),
+    () => core?.runtimePlugins,
+    () => core?.currentConfig(),
   );
-  const core = await createCore({
+  core = await createCore({
+    openRuntimeView: async (pluginId, view) => {
+      await ui.command({ action: 'runtimeView', pluginId, viewId: view.id });
+    },
+    pluginRoots: [path.join(appRoot, 'extensions', 'boards'), path.join(dataRoot, 'plugins')],
     projectRoot: options.project ? path.resolve(options.project) : '',
     dataRoot,
     toolchainRoot,
@@ -115,11 +125,17 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
     publish: (event) => web?.publishCollaboration(event),
   });
   const protection = protectSharedWorkspace(core, collaboration);
-  const ai = new AiAssistance({ dataRoot, projectRoot: () => core.currentProjectRoot(), emit });
-  const ui = new UiCommands((request) => web?.publishUiCommand(request));
+  const ai = new AiAssistance({
+    dataRoot,
+    projectRoot: () => core.currentProjectRoot(),
+    emit,
+    builtins: async () =>
+      (await core.languageConfiguration())?.entries.flatMap((entry) => entry.contributions),
+  });
   // Browser peers cannot claim the trusted local client's global undo permission.
   const assistance = createAssistanceRoutes(ai, collaboration, ui, false);
   const services = createHostServices({
+    runtimeDebugger: () => hardware,
     core,
     collaboration,
     firmware,

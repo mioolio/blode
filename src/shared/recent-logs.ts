@@ -2,7 +2,9 @@ import type { LogEvent } from './contracts';
 
 /** Combine an initial/reconnected snapshot with live events without replay duplicates. */
 export function mergeRecentLogs(current: LogEvent[], incoming: LogEvent[]): LogEvent[] {
-  const all = [...current, ...incoming].filter((event) => !event.progressOnly);
+  const all = [...current, ...incoming].filter(
+    (event) => !event.progressOnly && !(event.kind === 'terminal' && !event.message),
+  );
   const newer = (a: LogEvent, b: LogEvent) =>
     a.sequence !== undefined && b.sequence !== undefined
       ? a.sequence - b.sequence

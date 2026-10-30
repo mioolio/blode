@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AiAssistanceConfiguration, AiAssistanceState } from '../../shared/ai';
 import { useI18n } from '../i18n';
 import { setCompletionCatalog } from '../editor/completionProvider';
+import { ContextHelp } from './ContextHelp';
 import './ai-completion-settings.css';
 
 /** The same declarative catalog is editable here and through the authenticated AI API. */
@@ -61,7 +62,6 @@ export function AiCompletionSettings() {
           {t('action.refresh')}
         </button>
       </div>
-      <p className="subtle-note">{t('ai.completions.note')}</p>
       <label className="ai-prediction-toggle">
         <input
           type="checkbox"
@@ -85,7 +85,12 @@ export function AiCompletionSettings() {
           disabled={!state || busy}
         />
       </label>
-      <p className="subtle-note">{t('ai.completions.catalogNote')}</p>
+      <div className="ai-catalog-help">
+        <ContextHelp title={t('ai.completions.catalog')}>
+          <p>{t('ai.completions.note')}</p>
+          <p>{t('ai.completions.catalogNote')}</p>
+        </ContextHelp>
+      </div>
       <div className="ai-completion-actions">
         <button
           className="primary"

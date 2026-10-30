@@ -4,17 +4,22 @@ This roadmap describes the current implementation and planned validation. It is 
 
 ## Implemented capabilities
 
-| Area            | Available behavior                                                                                                                                |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspaces      | Welcome screen, recent project history, project open/close, configurable build entry and portable project ZIP export                              |
-| Editors         | C/C++ definitions, declarations, headers and references; incremental source index; versioned JSON C rules; preview/pinned tabs and AI predictions |
-| Hardware        | ESP32-S3 and STM32 discovery, offline compilation, prepared firmware programming, selectable export formats and serial communication              |
-| Debugging       | Separate STM32/ST-Link/GDB workbench with sampled CPU, registers, memory, firmware storage, breakpoints and logs                                  |
-| Teamwork        | Shared browser editing, presence colors, shared open tabs, edit conflict reporting and per-user browser undo                                      |
-| Version control | Independent `.blode/git` history with disable/removal controls; explicitly enabled sharing of an existing repository                              |
-| Tools           | Wide Preferences layout, installation output, pinned compiler/CLI/core version catalog and custom tool paths                                      |
-| Editions        | Electron desktop and a standalone Node.js Web host that excludes Electron/Chromium from its release ZIP                                           |
-| Automation      | Validated AI/workbench interfaces with explicit confirmation parameters for sensitive actions                                                     |
+The internal preview, developed on `codex/runtime-plugins-internal` and now merged into `main`, adds versioned runtime declarations, package approval, compiler ownership and overrides, custom device/debug views, and modern selectors. Its automated results and pending user acceptance are recorded in the [internal update](internal/runtime-plugins.md). The preview is based on 0.2.3.6; existing release packages are unchanged, and this source merge does not publish a new stable release.
+
+The [workbench interaction update](internal/workbench-interaction.md) adds a persistent PTY terminal, declared plugin windows and bottom-panel views, attention-based collaboration presence, save-on-exit transactions and an optional system tray. Live tray, browser-window and Linux acceptance remain on the validation backlog.
+
+| Area            | Available behavior                                                                                                                                       |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspaces      | Welcome screen, recent project history, project open/close, configurable build entry and portable project ZIP export                                     |
+| Editors         | C/C++ definitions, declarations, headers and references; incremental source index; versioned JSON C rules; preview/pinned tabs and AI predictions        |
+| Hardware        | `Esp32_S3_CAM` and `STM32F103C8T6` discovery, offline compilation, prepared firmware programming, selectable export formats and serial communication     |
+| Debugging       | STM32/ST-Link and ESP32-S3 USB-JTAG workbench; architecture-aware registers, memory, disassembly and batch breakpoints; STM32 SRAM instruction edits     |
+| Modules         | Ten responsibility directories, independent language catalogs, managed runtime compilers, standalone JavaScript packages and ZIP export for binary hosts |
+| Teamwork        | Shared browser editing, presence colors, shared open tabs, edit conflict reporting and per-user browser undo                                             |
+| Version control | Independent `.blode/git` history with disable/removal controls; explicitly enabled sharing of an existing repository                                     |
+| Tools           | Wide Preferences layout, installation output, pinned compiler/CLI/core version catalog and custom tool paths                                             |
+| Editions        | Electron desktop and a standalone Node.js Web host that excludes Electron/Chromium from its release ZIP                                                  |
+| Automation      | Validated AI/workbench interfaces with explicit confirmation parameters for sensitive actions                                                            |
 
 Details and limitations are documented in the relevant guides. The entries above describe implemented code paths; they do not imply that every combination of device, operating system and project format has passed acceptance testing.
 
@@ -25,8 +30,8 @@ Details and limitations are documented in the relevant guides. The entries above
 | Git              | Temporary repositories exercise literal-path staging, commits, branches, diffs and rename boundaries; local bare remotes exercise push and fast-forward pull                                           | No mutation or push of the user's current repository; hosted-provider authentication and team merge scenarios still need acceptance testing |
 | Project ZIP      | Fixture projects verify standard ZIP records/CRC, external includes and Keil dependency collection, rewritten archive paths, unresolved dependency reporting and unsafe-path rejection                 | A second computer has not yet compiled a shared complex firmware project                                                                    |
 | Node Web host    | Temporary-port HTTP tests verify loopback token requirements, empty home state, host folder selection, project open, version catalog, project ZIP download and terminal output in the target directory | Platform runtimes are replaced by fixtures; no physical probe/flash, sustained browser session or Linux host test                           |
-| Web distribution | The Node bundle passes an Electron-import check and CLI help runs under Node; the review ZIP was generated and inspected with a serialport-only runtime lockfile                                       | A fresh recipient-machine dependency install and hardware session remain unverified                                                         |
-| Tool versions    | Mocked downloads verify host asset names, checksum fallback/rejection, side-by-side selection and isolated pinned ESP32 package stores                                                                 | Large publisher toolchains were not downloaded or installed in this change                                                                  |
+| Web distribution | The Node bundle passes an Electron-import check and CLI help runs under Node; internal packaging includes SerialPort and node-pty runtime dependencies                                                 | A fresh recipient-machine dependency install and hardware session remain unverified                                                         |
+| Tool versions    | Mocked downloads verify version selection and isolation; Windows ESP32 debug GDB/OpenOCD archives were downloaded, SHA-256 checked, extracted and executed with version flags                          | Firmware compilation with these tools, Linux execution and physical debug sessions remain unverified                                        |
 
 The corresponding tests are `tests/git.test.ts`, `tests/project-package.test.ts`, `tests/web-host.test.ts` and `tests/tool-versions.test.ts`. These are service-level results from the Windows development environment, not a claim of cross-machine or physical hardware validation.
 
@@ -49,6 +54,8 @@ The corresponding tests are `tests/git.test.ts`, `tests/project-package.test.ts`
 - Review additional embedded platforms only after their adapters, compiler paths and hardware tests can remain isolated from the core services.
 
 ## Future considerations
+
+Runtime follow-up work includes acceptance on physical USB/SWD devices, Linux hosts, custom-view browser interactions, and clean-machine package transfers. Process isolation for native extension failures, a package installation/update workflow and background indexing of large tool packages are planned architecture topics.
 
 Potential future work includes richer merge-conflict review, broader compiler-version coverage, project-specific team permissions, additional debugger targets, and more resilient session recovery. These items are exploratory and have no committed schedule.
 

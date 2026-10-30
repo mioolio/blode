@@ -8,6 +8,8 @@ import zh from './locales/zh-CN.json';
 import en from './locales/en-US.json';
 
 const readOnly = new Set<RouteName>([
+  'components.state',
+  'components.search',
   'state.get',
   'ports.list',
   'probes.list',
@@ -19,6 +21,7 @@ const readOnly = new Set<RouteName>([
   'drivers.status',
   'debugger.state',
   'debugger.memory',
+  'debugger.assemble',
   'debugger.storage',
   'ui.state',
   'logs.latest',
@@ -33,8 +36,10 @@ const readOnly = new Set<RouteName>([
   'host.browse',
   'project.package.preview',
   'terminal.state',
+  'runtime.view.info',
 ]);
 const destructive = new Set<RouteName>([
+  'components.remove',
   'flash.run',
   'file.write',
   'config.set',
@@ -43,12 +48,15 @@ const destructive = new Set<RouteName>([
   'file.delete',
   'file.rename',
   'firmware.flash',
+  'debugger.patch',
   'project.close',
   'window.action',
   'collaboration.resolve',
   'collaboration.undo',
   'git.action',
   'terminal.run',
+  'terminal.write',
+  'terminal.close',
 ]);
 
 /** MCP is only a transport adapter: it calls the same validated pipe routes as any AI. */
@@ -78,6 +86,7 @@ export function createMcpServer(client = new PipeClient(), language = process.en
             'tools.installVersion',
             'git.action',
             'terminal.run',
+            'terminal.write',
           ].includes(method),
         },
       },

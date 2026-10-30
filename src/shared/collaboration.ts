@@ -38,6 +38,9 @@ export interface CollaborationPresenceInput {
   openTools?: CollaborationToolTab[];
   activeTool?: CollaborationToolTab;
   clientKind?: 'desktop' | 'web';
+  attention?: 'active' | 'inactive';
+  /** Native window attention generation; browser peers do not send this field. */
+  attentionEpoch?: number;
 }
 export interface CollaborationLeaveRequest {
   peerId: string;
@@ -47,6 +50,7 @@ export interface CollaborationLeaveRequest {
   sequence?: number;
 }
 export interface CollaborationPeer extends CollaborationIdentity {
+  attention?: 'active' | 'inactive';
   color: string;
   path: string;
   startLine: number;

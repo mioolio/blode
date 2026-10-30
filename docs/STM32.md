@@ -1,11 +1,11 @@
-# STM32、Arm Compiler 与 ST-Link
+# STM32F103C8T6 / ST-Link
 
 STM32 使用独立的 ST-Link / SWD 调试连接。COM 串口用于串口监视，ST-Link 不必出现在 COM 列表。当前源码编译配置明确支持已识别的 `0x410` STM32F1 中容量 Cortex-M3 目标；其他芯片拒绝源码编译，可在真实目标与容量已确认后使用外部生成的完整二进制验证路径。
 
 ## 连接与识别
 
 1. 连接 ST-Link 的 SWDIO、SWCLK、GND，确认目标供电与电压匹配。
-2. 使用自动检测选择明确候选，或选择 STM32 / ST-Link 及探针序列号。
+2. 使用自动检测选择明确候选，或选择 `STM32F103C8T6` 运行时及探针序列号。
 3. “文件 → 首选项 → 驱动”负责 Windows 驱动；“工具链”负责 ST-Link 命令行工具与 Arm Compiler 路径，二者分别检测。
 4. 识别芯片并核对实际 ID、Flash 和 SRAM。多台调试器不默认选第一台，无法确认芯片或容量时保留诊断输出并拒绝继续。
 
@@ -15,7 +15,7 @@ STM32 使用独立的 ST-Link / SWD 调试连接。COM 串口用于串口监视�
 
 右键工程中的文件或目录选择编译入口，只写入 `be.build.entry`，不会立即编译。随后保存工程并执行构建：
 
-- 有 entry：使用 Arm Compiler 6 的 armclang 编译 C/C++，armlink 链接，fromelf 输出二进制。entry 可为文件、目录或 `.`。
+- 有 entry：按编译设置使用 GNU Arm GCC 或 Arm Compiler 6 编译、链接并输出二进制。entry 可为文件、目录或 `.`。
 - 无 entry：保留根目录 `firmware.bin` 的现有二进制验证，不运行源码编译。
 
 字段片段示例，不是完整工程描述符：
@@ -68,7 +68,7 @@ ST-Link 报告的是芯片自述容量，克隆或改写过的芯片可能误报
 
 平台源码目录可以复制并注册到匹配宿主，但不包含编译器；分享平台代码不等于取得编译器重分发许可或转授本机工具授权。
 
-ST-Link 托管工具使用固定官方发行及 SHA-256 校验，开发位置为 `tools/stlink/`；Windows 签名驱动归档位于 `tools/STSW-LINK/`。详见 [工具链说明](TOOLCHAINS.md) 与 [平台包说明](../extensions/boards/stm32/README.md)。
+ST-Link 托管工具使用固定官方发行及 SHA-256 校验，开发位置为 `tools/stlink/`；Windows 签名驱动归档位于 `tools/STSW-LINK/`。详见 [工具链说明](TOOLCHAINS.md) 与 [平台包说明](../extensions/boards/STM32F103C8T6/README.md)。
 
 ## 自动化
 
@@ -76,6 +76,6 @@ ST-Link 托管工具使用固定官方发行及 SHA-256 校验，开发位置为
 
 ## 离线构建与 Keil 工程
 
-源码编译和现有固件验证不要求设备在线，ST-Link 目标核对只在烧录前要求。手动 STM32 模式使用当前 F1 中容量编译配置；自动模式可从单一 .uvprojx 的 STM32F103C8/CB/R8/RB/T8/TB 目标解析平台与容量，无法确定时明确提示选择平台。构建配置不等同于真实硬件识别。
+源码编译和现有固件验证不要求设备在线，ST-Link 目标核对只在烧录前要求。当前运行时范围为 STM32F103C8T6；自动模式可从单一 `.uvprojx` 的 STM32F103C8 或 STM32F103C8T6 目标选择此配置，其他型号由各自运行时负责。默认 Flash 为 64 KiB、SRAM 为 20 KiB，用户可另设资源容量。ST-Link 的 `0x410` 芯片 ID 可核对 F1 中容量系列，不能单凭该 ID 推断封装丝印。
 
 Keil 工程读取实际启用的文件列表、全局宏、包含目录和 scatter 路径，备用启动文件不参与构建。多目标工程须先明确单一目标；外部路径和构建钩子不被自动执行。仅已知 CMSIS 1.30 的四个旧 GCC naked 栈访问函数在构建目录生成 AC6 兼容副本，并输出提示，原文件不改写。OLED 工程副本已实际生成 3880 字节固件，RAM 占用 1632 字节，未烧录。

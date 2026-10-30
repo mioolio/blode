@@ -9,6 +9,10 @@ import { createServer } from 'vite';
 import { developmentRuntimeExecutables, ensureWindowsRuntimeIntegrity } from './windows-runtime.mjs';
 import {
   hasFatalStartupError,
+  hasReadyWindow,
+  classifyElectronExit,
+  resolveDevelopmentSandbox,
+  rememberSandboxCompatibility,
   recoverStaleDevProcesses,
   recoverStaleElectron,
   stopProcessTree,
@@ -110,7 +114,7 @@ process.once('unhandledRejection', (error) => {
 });
 
 let launchAttempt = 0;
-const launch = async (args, softwareRendering = false) => {
+const launch = async (args, softwareRendering = false, onReady) => {
   const attempt = ++launchAttempt;
   report(`Electron attempt ${attempt}: starting${args.length ? ` (${args.join(' ')})` : ''}`);
   rmSync(startupLog, { force: true });
@@ -129,13 +133,22 @@ const launch = async (args, softwareRendering = false) => {
     },
   });
   let timedOut = false;
+  let readyObserved = false;
+  let rememberReady;
+  const observeReady = (log) => {
+    if (readyObserved || timedOut || stopping || !hasReadyWindow(log)) return;
+    readyObserved = true;
+    clearTimeout(startupDeadline);
+    clearInterval(startupWatch);
+    console.log('Blode Studio is ready.');
+    report(`Electron attempt ${attempt}: interface ready`);
+    if (onReady)
+      rememberReady = onReady(log).catch((error) => {
+        report(`Startup compatibility could not be saved: ${error.message}`);
+      });
+  };
   const startupWatch = setInterval(() => {
-    if (readStartupLog().includes('window ready')) {
-      clearTimeout(startupDeadline);
-      clearInterval(startupWatch);
-      console.log('Blode Studio is ready.');
-      report(`Electron attempt ${attempt}: interface ready`);
-    }
+    observeReady(readStartupLog());
   }, 250);
   const startupDeadline = setTimeout(() => {
     timedOut = true;
@@ -149,7 +162,13 @@ const launch = async (args, softwareRendering = false) => {
       electron.once('error', reject);
       electron.once('exit', (code) => resolve(code));
     });
+    // Cleanup can cross the startup deadline after a perfectly normal close.
+    // Stop startup observation at exit, before the process inventory await.
+    clearInterval(startupWatch);
+    clearTimeout(startupDeadline);
     const log = readStartupLog();
+    observeReady(log);
+    await rememberReady;
     // Keep failed-attempt evidence: the next launch resets the current log.
     try {
       copyFileSync(startupLog, `${startupLog}.attempt-${attempt}.log`);
@@ -234,45 +253,67 @@ try {
     );
     await quit();
   }
-  let sandboxRetried = false;
+  const sandboxOptions = {
+    workspaceRoot: repository,
+    electronExecutable,
+    electronVersion: require('electron/package.json').version,
+    profile: devUserData,
+    override: process.env.BLODE_DEV_SANDBOX,
+  };
+  const sandbox = await resolveDevelopmentSandbox(sandboxOptions);
+  let sandboxDisabled = sandbox.mode === 'no-sandbox';
+  if (sandbox.source === 'verified')
+    report('Using startup compatibility verified for this Electron version and profile');
+  else if (sandbox.source === 'required') report('Sandbox required by BLODE_DEV_SANDBOX');
+  else if (sandbox.source === 'disabled') report('Sandbox disabled by BLODE_DEV_SANDBOX');
+  let sandboxFailure;
   let softwareRetried = false;
   while (!stopping) {
-    const result = await launch(sandboxRetried ? ['--no-sandbox'] : [], softwareRetried);
+    const remember =
+      sandboxDisabled && !softwareRetried && sandboxFailure
+        ? async (recoveredLog) => {
+            if (
+              await rememberSandboxCompatibility(sandboxOptions, {
+                failedAttempt: sandboxFailure,
+                recoveredLog,
+                sandboxDisabled: true,
+                softwareRendering: softwareRetried,
+              })
+            )
+              report('Startup compatibility verified and saved for this development profile');
+          }
+        : undefined;
+    const result = await launch(sandboxDisabled ? ['--no-sandbox'] : [], softwareRetried, remember);
     if (stopping) break;
-    const early = !result.log.includes('window ready');
     const startupFailed = hasFatalStartupError(result.log);
-    const chromiumCrash =
-      result.code === 0x80000003 ||
-      result.code === -2147483645 ||
-      /render-process-gone crashed exit=-2147483645\b/.test(result.log);
-    if (early && chromiumCrash && !sandboxRetried) {
-      sandboxRetried = true;
+    const outcome = classifyElectronExit(result, {
+      sandbox: sandboxDisabled || !sandbox.canRetrySandbox,
+      software: softwareRetried,
+    });
+    if (outcome.retry === 'sandbox') {
+      sandboxDisabled = true;
+      sandboxFailure = result;
       console.warn(
-        '\nChromium failed during startup. Its processes have been stopped; retrying once with --no-sandbox.\n',
+        '\nThe sandboxed renderer crashed during startup (0x80000003). Retrying once with --no-sandbox.\n',
       );
       continue;
     }
-    if (
-      early &&
-      (chromiumCrash ||
-        result.timedOut ||
-        /(?:gpu-process|child-process-gone GPU).*?(?:crashed|abnormal-exit)/i.test(result.log)) &&
-      !softwareRetried
-    ) {
+    if (outcome.retry === 'software') {
       softwareRetried = true;
+      sandboxFailure = undefined;
       console.warn('\nThe window could not start. Retrying once with software rendering.\n');
       continue;
     }
-    if (early || startupFailed) {
+    if (outcome.failed) {
       console.error(
         startupFailed
           ? `\nBlode Studio initialization failed (code ${result.code ?? 'unknown'}).`
-          : `\nBlode Studio exited before its window was ready (code ${result.code ?? 'unknown'}).`,
+          : `\nBlode Studio exited unexpectedly (code ${result.code ?? 'unknown'}).`,
       );
       console.error(result.log || 'Electron exited before writing its startup log.');
       console.error(`User data: ${devUserData}`);
     }
-    await quit(early || startupFailed ? 1 : (result.code ?? 0));
+    await quit(outcome.exitCode);
   }
 } catch (error) {
   console.error(error.message);

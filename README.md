@@ -2,84 +2,38 @@
 
 简体中文 | [English](docs/README.en.md)
 
-Blode Studio 是面向 ESP32-S3 与 STM32 的模块化嵌入式开发工作台，覆盖源码编辑、多人协作、离线编译、固件导出、串口通信与硬件调试。
+面向 ESP32-S3 与 STM32 的模块化开发工作台。集成代码编辑、团队协作、编译烧录、串口通信、硬件调试和 Git，提供 Windows 桌面版与独立 Web 宿主。
 
-**当前发行：0.2.3.6** · [版本说明](docs/releases/0.2.3.6.md) · [变更记录](CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
+[快速开始](#快速开始) · [支持范围](#支持范围) · [功能](#功能概览) · [文档](#文档导航) · [更新记录](CHANGELOG.md) · [下载](https://github.com/mioolio/blode/releases)
 
-## 选择发行版
+## 版本与状态
 
-两个发行版共用工程格式、编辑器和目标机器服务。选择取决于工作方式：
+| 通道     | 版本／分支                    | 使用方式                                                          |
+| -------- | ----------------------------- | ----------------------------------------------------------------- |
+| 稳定版   | **0.2.3.6** · 已发布发行包    | 下载桌面便携包或 Web 包，参阅[发行说明](docs/releases/0.2.3.6.md) |
+| 内部预览 | **0.2.3.6-internal** · `main` | 从最新源码运行；新功能验证后再进入稳定版                          |
 
-| 发行版      | 适用场景                             | 运行环境                                  | 发行文件                                   |
-| ----------- | ------------------------------------ | ----------------------------------------- | ------------------------------------------ |
-| 桌面便携版  | 在本机直接编辑、编译、连接硬件和调试 | Windows x64；内含 Electron 桌面运行时     | `Blode.Studio-0.2.3.6-desktop-win-x64.exe` |
-| 独立 Web 版 | 目标电脑运行服务，多人通过浏览器访问 | 服务端 Node.js 24+、npm；客户端使用浏览器 | `Blode.Studio-0.2.3.6-web.zip`             |
+内部开发更新已从 `codex/runtime-plugins-internal` 合入 `main`。0.2.3.6 发行包仍为此前构建，本次合并不生成新的桌面或 Web 发行包。
 
-本次桌面包采用轻量便携模式；两个发行版均通过首选项安装工具链，或使用已安装的自定义工具路径。Git 功能使用目标电脑上的 Git。发行产物生成在 `release/0.2.3.6/`，校验与升级步骤见[发行说明](docs/releases/0.2.3.6.md)。
+### 本次内部更新
 
-## 0.2.3.6 新特性
+- **组件库**：运行菜单管理工程依赖；搜索 Arduino 库并选择版本，递归安装依赖，或从目标电脑文件夹／ZIP 导入。组件随工程保存，详见[组件库指南](docs/COMPONENT-LIBRARIES.md)。
+- **ESP32 修复**：调试允许留空 USB 序列号自动选择；编译选项追加到平台 `extra_flags`，保留 `-c` 等原有参数。
+- **ESP32-S3 硬件调试**：通过 USB-JTAG、Espressif OpenOCD 和 Xtensa GDB 查看寄存器、反汇编、调用栈与内存，支持暂停、单步及断点。
+- **调试工作区**：顶部连接／调试／视图／工具菜单，批量断点，醒目的内存读取入口；STM32 支持汇编预览及 SRAM 指令修改。
+- **退出修复**：正常关闭不再触发开发启动器的沙箱重试，关闭期间的已销毁帧与预期取消不再输出多余错误。
+- **工作台与扩展**：PowerShell 交互终端、插件独立窗口和底部面板、保存后退出与可选托盘、前后台协作状态同步。
+- **标准模块**：两个平台统一拆成 10 个职责目录；模块自行声明语言列表或固定语言，C 标准目录隔离；新增独立模块打包，供二进制宿主安装。
 
-| 能力               | 使用方式                                                                                            |
-| ------------------ | --------------------------------------------------------------------------------------------------- |
-| 定义与头文件导航   | 右键或 `F12` 查看 C/C++ 定义、声明和引用，打开关联头文件；重名结果在候选列表中切换，`Alt+←` 返回    |
-| 分版本语言规则     | C99、C11、C17、C23 各自使用独立 JSON 目录；函数按 a–z 分类，控制流、类型和检查规则分文件维护        |
-| 工作区增量索引     | 函数、宏、类型和变量参与补全；草稿实时更新，保存源码的派生缓存位于 `.blode/index/`                  |
-| 工程高级设置       | 右键根目录 `be` → **高级设置**，编辑名称、平台、入口、文件清单和 C 标准，并预览 JSON                |
-| 分层编译设置       | **运行 → 编译设置**，配置调试／发布、体积优化以及通用、STM32、ESP32-S3 的 C/C++ 本机工具版本        |
-| 独立 Git 管理      | 默认创建 `.blode/git`；支持差异、暂存、提交、分支、远端、停用和移除独立历史，共享已有仓库需主动开启 |
-| 多人协作           | 浏览器身份、颜色、共享标签、阅读范围和最新编译日志同步；独立修改合并，重叠修改提示冲突              |
-| 稳定阅读与撤销     | 远端修改尽量保持阅读锚点；网页撤销只处理自己的修改，关闭标签与离开页面释放协作状态                  |
-| 外部 AI 补全       | 用户和外部 AI 维护补全清单；预测提示默认关闭，启用后按 Tab 接受版本匹配的建议                       |
-| 启动与安装可观测性 | 启动器逐阶段计时，长等待持续提示；首选项显示下载、解压、安装和第三方程序输出                        |
+ESP32-S3 调试与 Linux 适配尚待实机验收。功能范围、准备步骤及测试记录见[硬件调试指南](docs/HARDWARE-DEBUGGING.md)、[调试更新](docs/internal/debugger-editing.md)和[工作台更新](docs/internal/workbench-interaction.md)。本次仅更新源码，不生成新的发行包。
 
-完整变化、兼容性调整和验证范围见 [0.2.3.6 发行说明](docs/releases/0.2.3.6.md)。
+## 快速开始
 
-## 核心工作流
-
-- **编辑与工程管理**：首页最近工程、预览／固定标签、横向滚动、拆分编辑器、草稿恢复，以及保存并关闭工程返回首页。
-- **编译与烧录**：文件或目录可设置为编译入口；编译可离线执行，烧录前识别连接设备。STM32 支持受支持的 Keil `.uvprojx` 工程信息。
-- **布局与产物**：可视化 Flash 布局、ELF 资源测量、BIN／Intel HEX／S-record 导出、STM32 ELF 导出，以及无工程预备固件烧录。
-- **串口通信**：实时 UTF-8／HEX 收发，自选换行、波特率、数据位、校验、停止位和流控。
-- **硬件调试**：独立桌面窗口或浏览器标签页查看 STM32／ST-Link 的寄存器、反汇编、调用栈、断点、内存和本地 ELF 段。
-- **工程交付**：导出标准 ZIP，收集受支持的工程外依赖并改写归档副本中的路径，附带依赖清单。
-- **自动化**：JSON-RPC 与 MCP 共用经过校验的接口，覆盖工程、Git、编译、固件、调试、语言索引、补全和界面操作。
-
-## 安装与启动
-
-### Windows 桌面便携版
-
-1. 将 `Blode.Studio-0.2.3.6-desktop-win-x64.exe` 放到可写目录，运行应用。
-2. 打开工程目录或其中的 `be` 文件。
-3. 在首选项选择或安装工具链。使用 Git 时，先在目标电脑安装 Git。
-4. 右键源码文件或文件夹设置编译入口，通过 `be` 高级设置配置工程；在 **运行 → 编译设置** 选择构建模式和已安装工具版本。
-5. 保存并编译；烧录和硬件调试时连接、识别目标设备。
-
-便携版使用操作系统的应用数据目录保存设置、历史和工具，不要求工程与程序放在同一目录。
-
-### 独立 Web 版
-
-在拥有工程和硬件的目标电脑解压 Web ZIP，然后执行：
+开发环境：**Node.js 24+、npm、Git**。
 
 ```sh
-npm ci --omit=dev
-npm start
-```
-
-浏览器打开终端输出的私密链接。文件选择器浏览的是**服务所在电脑**；编译器、Git 和 USB 设备也由该电脑提供。
-
-多人通过可信局域网访问时，在服务电脑执行：
-
-```sh
-npm start -- --host 0.0.0.0 --port 47821
-```
-
-链接中的令牌授权访问目标机器的工程与操作能力，应按工作区凭据管理。按 `Ctrl+C` 停止服务。详细部署与参数说明见 [Web 服务指南](docs/WEB-HOST.md)。
-
-### 从源码运行
-
-开发环境需要 Node.js 24+、npm，以及用于版本管理和相应测试的 Git：
-
-```sh
+git clone --branch main --single-branch https://github.com/mioolio/blode.git
+cd blode
 npm ci
 npm run dev
 ```
@@ -91,82 +45,119 @@ npm run web:build
 npm run web:start
 ```
 
-修改主进程、平台包或 preload 后重新启动开发版；界面源码支持热更新。启动排查、权限修复和日志位置见[开发说明](docs/DEVELOPMENT.md)。
+浏览器打开终端输出的访问链接。工程、编译器和 USB 设备均由宿主电脑提供；网页中的文件选择器浏览宿主目录。部署与局域网访问见 [Web 宿主](docs/WEB-HOST.md)。
 
-## 语言规则与工程格式
+### 开始一个工程
 
-语言数据和解析器分开维护：
+1. 打开工程文件夹，或打开其中的 `be` 工程文件。
+2. 在 **运行 → 编译设置** 选择平台、工具版本和调试／发布模式。
+3. 右键文件或文件夹设置编译入口，保存并编译。
+4. 连接设备后烧录；从 **视图 → 硬件仿真** 打开独立调试工作区。
+
+主进程、平台包或 preload 修改后需要重启开发版；界面源码支持热更新。启动诊断见[开发说明](docs/DEVELOPMENT.md)。
+
+需要第三方源码时，从 **运行 → 组件库** 安装或导入。项目依赖与平台内置库分开显示；桌面版和 Web 版都读取目标电脑的目录与 ZIP。
+
+## 支持范围
+
+### 目标芯片
+
+下表描述 `main` 中的内部预览实现。运行时名称对应明确的芯片范围。
+
+| 运行时          | 芯片              | 编译                                  | 烧录          | 硬件调试                                              |
+| --------------- | ----------------- | ------------------------------------- | ------------- | ----------------------------------------------------- |
+| `Esp32_S3_CAM`  | ESP32-S3          | Arduino CLI + Arduino-ESP32           | esptool／串口 | USB-JTAG + Espressif OpenOCD + Xtensa GDB；待实机验收 |
+| `STM32F103C8T6` | STM32F103C8／C8T6 | GNU Arm GCC 或已授权的 Arm Compiler 6 | ST-Link／SWD  | ST-Link + GDB；新增指令修改待实机验收                 |
+
+ESP32-S3 摄像头接线由工程配置。旧工程的 `esp32-s3`、`stm32` 标识在读取时迁移；其他 ESP32／STM32 型号由独立运行时包声明支持范围。详细能力与验证状态见[平台支持](docs/PLATFORM-SUPPORT.md)。
+
+### 宿主版本
+
+| 版本               | 运行方式                   | 当前状态                                                   |
+| ------------------ | -------------------------- | ---------------------------------------------------------- |
+| Windows x64 桌面版 | Electron 便携应用          | 主要开发与测试环境                                         |
+| 独立 Web 版        | Node.js 24+ 服务 + 浏览器  | 共用宿主编译、Git、串口和调试服务                          |
+| Linux x64／ARM64   | Node.js 宿主及平台工具路径 | 已做代码适配；安装、USB、编译与桌面打包未在 Linux 实机验证 |
+| macOS              | 自定义工具路径             | 未验证                                                     |
+
+稳定版下载文件为 `Blode.Studio-0.2.3.6-desktop-win-x64.exe` 和 `Blode.Studio-0.2.3.6-web.zip`。安装、校验与升级步骤见[发行说明](docs/releases/0.2.3.6.md)。
+
+## 功能概览
+
+| 领域       | 功能                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| 编辑器     | C/C++ 定义、声明、引用和头文件跳转；多标签、预览标签、拆分编辑、草稿恢复                         |
+| 语言扩展   | C99／C11／C17／C23 独立 JSON 规则；工作区增量索引；自定义补全与诊断                              |
+| 编译与交付 | 分平台／语言工具版本；调试与发布模式；固件体积优化；BIN／HEX／S-record／ELF 导出；可迁移工程 ZIP |
+| 组件库     | Arduino 在线索引与版本依赖；目标电脑目录／ZIP 导入；工程内源码与清单；修改和依赖删除保护         |
+| 硬件       | 串口 UTF-8／HEX 收发；预备固件烧录；寄存器、指令、内存、调用栈及断点调试                         |
+| 团队协作   | 共享标签、用户颜色、阅读范围、最新日志；独立修改合并、冲突提示及按用户撤销                       |
+| Git 与终端 | 图形化差异、暂存、提交、分支和远端操作；持久 PowerShell／系统 Shell                              |
+| AI 接口    | JSON-RPC／MCP 控制工作台；维护补全清单；外部 AI 预测建议，默认关闭                               |
+| 插件       | API v2 运行时包；设备连接、编译、调试、布局声明；自定义窗口和底部功能区                          |
+
+## 工程与扩展
+
+`be` 保存工程配置。右键 **高级设置** 可编辑入口、文件清单和语言标准；`be.build.settings` 维护通用、平台与语言层级的编译选项。工程示例和迁移规则见[工程与编译设置](docs/PROJECTS.md)。
+
+`blode.components.json` 管理工程组件，源码保存在 `libraries/` 或 `components/`，可随工程复制与提交。编译时宿主派生组件路径，不需要在 `be` 中填写 `build.components`。
 
 ```text
-extensions/completions/
-├─ C/
-│  ├─ c99/
-│  ├─ c11/
-│  ├─ c17/
-│  └─ c23/
-│     ├─ a.json ... z.json
-│     ├─ keywords.json
-│     ├─ control-flow.json
-│     ├─ types.json
-│     └─ rules.json
-└─ C++/
-   └─ arduino/
+extensions/
+├─ boards/
+│  ├─ Esp32_S3_CAM/
+│  └─ STM32F103C8T6/
+│     ├─ support/       # 支持范围
+│     ├─ device/        # 设备配置与协议
+│     ├─ runtime/       # 执行入口
+│     ├─ constraints/   # 操作约束
+│     ├─ ui/            # 界面集成
+│     ├─ compiler/      # 构建流程
+│     ├─ debugger/      # 调试集成
+│     ├─ layout/        # 存储与资源
+│     ├─ languages/     # 模块语言及版本目录
+│     └─ tools/         # 工具管理
+└─ completions/         # 宿主语言基础与旧模块默认数据
 ```
 
-工程可在 `languages/C/<标准>/` 下维护自定义规则。JSON 结构和标准配置错误会显示文件、行列；源码规则可设置为 warning 或 error，error 会阻止构建。当前规则支持词法模式和函数调用检查，完整预处理与类型分析由编译工具链执行。
+两个平台均采用上面的十目录结构。模块语言不改写宿主清单；工程可通过 `languages/C/<标准>/` 叠加自己的规则，索引缓存在 `.blode/index/`。
 
-`be` 的 `build` 字段示例：
+模块作者使用 `npm run package:runtime -- extensions/boards/Esp32_S3_CAM --output ./release/modules --zip` 生成独立包。使用者将包安装到兼容宿主数据目录的 `plugins/<id>/` 后重启，无需主程序源码或 TypeScript。新契约需要包含本次内部更新的宿主，旧正式版二进制需先升级。
 
-```json
-{
-  "entry": "src/main.c",
-  "files": ["src/main.c", "src/driver.c", "startup/startup_stm32f10x_md.s"],
-  "cStandard": "c17"
-}
-```
+目录职责、构建与二进制部署见[模块开发指南](docs/RUNTIME-PLUGINS.md)，JSON 格式与版本隔离见[模块语言适配](docs/MODULE-LANGUAGES.md)。
 
-C 标准默认采用 C17；选择其他版本前，核对工具链支持范围。旧 `blode.completions.json` 和 `.blode/project.json` 工程仍保留兼容入口。详见[语言规则](docs/LANGUAGE-RULES.md)与[工程架构](docs/ARCHITECTURE.md)。
-
-编译设置保存在 `be.build.settings`，依次支持通用、平台和 C/C++ 层级。跟随选项沿用上级配置，自动选项在本机查找兼容工具，明确的版本从已安装清单选择；下载与安装在首选项完成。STM32 同次构建使用同一编译器系列，ESP32-S3 使用一致的 Arduino CLI 与 core。调试和发布选项、JSON 示例及可迁移打包行为见[工程与编译设置](docs/PROJECTS.md)。
-
-## 平台支持
-
-| 目标平台 | 编译                                                  | 烧录／调试                           |
-| -------- | ----------------------------------------------------- | ------------------------------------ |
-| ESP32-S3 | Arduino CLI + Arduino-ESP32                           | esptool 串口烧录、串口通信           |
-| STM32F1  | GNU Arm GCC 或已授权的 Arm Compiler 6；受支持工程导入 | ST-Link／SWD 烧录，ST-Link／GDB 调试 |
-| 自动检测 | 从受支持的工程数据确定平台，或手动选择                | 连接设备识别目标                     |
-
-Windows x64 是本次桌面产物和当前主要开发环境。Linux x64／ARM64 已提供 Node 宿主路径及部分 GNU／Arduino 下载适配，**尚未在 Linux 实机验证安装、编译、USB 访问或桌面打包**。macOS 自定义工具路径也未验证。详细矩阵见[平台支持](docs/PLATFORM-SUPPORT.md)，历史硬件记录见[硬件验证](docs/HARDWARE-VALIDATION.md)。
-
-硬件工作台读取已连接目标的实际调试数据。CPU 结构图配合暂停采样展示寄存器与指令，完整的周期级芯片仿真不在本版范围内。
-
-## 构建与验证
+## 开发与验证
 
 ```sh
 npm run typecheck
 npm test
+npm run format:check
+```
+
+需要生成产物时：
+
+```sh
 npm run build
 npm run package:desktop
 npm run package:web
 ```
 
-桌面发行使用现有 `package:lite` 流程的 `package:desktop` 别名。独立 Web 构建检查宿主包中的 Electron 导入。测试包含临时 Git 仓库、规则诊断、索引、协作、工程打包和带模拟硬件边界的 HTTP 服务；实际设备、跨机器和持续协作的结果单独记录。
+自动化测试覆盖服务接口、协作、Git、工程打包、工具安装及模拟调试协议。物理设备、跨机器协作与各操作系统的结果单独记录；详见[验证记录](docs/HARDWARE-VALIDATION.md)和[路线图](docs/ROADMAP.md)。
 
 ## 文档导航
 
-| 面向         | 文档                                                                                                                                                                              |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 发行与升级   | [0.2.3.6 发行说明](docs/releases/0.2.3.6.md) · [CHANGELOG](CHANGELOG.md)                                                                                                          |
-| 语言与编辑器 | [语言规则](docs/LANGUAGE-RULES.md) · [AI 补全与预测](docs/AI-COMPLETIONS.md)                                                                                                      |
-| 团队工作     | [多人协作](docs/COLLABORATION.md) · [Git 管理](docs/GIT.md) · [工程打包](docs/PROJECT-PACKAGING.md)                                                                               |
-| 编译与硬件   | [工程与编译设置](docs/PROJECTS.md) · [STM32](docs/STM32.md) · [ESP32-S3](extensions/boards/esp32-s3/README.md) · [工具链](docs/TOOLCHAINS.md) · [工具版本](docs/TOOL-VERSIONS.md) |
-| 部署与开发   | [Web 宿主](docs/WEB-HOST.md) · [开发约定](docs/DEVELOPMENT.md) · [架构](docs/ARCHITECTURE.md) · [扩展](extensions/README.md)                                                      |
-| 状态与计划   | [平台支持](docs/PLATFORM-SUPPORT.md) · [路线图](docs/ROADMAP.md) · [功能指南](docs/NEW-FEATURES.md) · [实机案例](SHOWCASE.md)                                                     |
-| 社区与安全   | [贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md) · [许可证](LICENSE)                                                                                                         |
+| 任务          | 文档                                                                                                                                                                         |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 安装与升级    | [发行说明](docs/releases/0.2.3.6.md) · [Web 宿主](docs/WEB-HOST.md) · [开发说明](docs/DEVELOPMENT.md)                                                                        |
+| 编译与硬件    | [工程配置](docs/PROJECTS.md) · [组件库](docs/COMPONENT-LIBRARIES.md) · [硬件调试](docs/HARDWARE-DEBUGGING.md) · [工具版本](docs/TOOL-VERSIONS.md) · [STM32](docs/STM32.md)   |
+| 编辑与团队    | [语言规则](docs/LANGUAGE-RULES.md) · [多人协作](docs/COLLABORATION.md) · [Git](docs/GIT.md) · [工程打包](docs/PROJECT-PACKAGING.md)                                          |
+| AI 与插件开发 | [AI 接口](docs/AI-PIPE.md) · [AI 补全](docs/AI-COMPLETIONS.md) · [运行时插件](docs/RUNTIME-PLUGINS.md) · [模块语言](docs/MODULE-LANGUAGES.md) · [架构](docs/ARCHITECTURE.md) |
+| 支持与计划    | [平台支持](docs/PLATFORM-SUPPORT.md) · [硬件验证](docs/HARDWARE-VALIDATION.md) · [路线图](docs/ROADMAP.md) · [更新记录](CHANGELOG.md)                                        |
 
-## 贡献与许可证
+## 参与贡献
 
-通过 [GitHub Issues](https://github.com/mioolio/blode/issues) 报告问题和讨论需求，通过 Pull Request 提交改进。问题报告请附版本、发行版、目标系统、工程类型和脱敏日志；源码、日志和硬件结果的提交约定见[贡献指南](CONTRIBUTING.md)。
+通过 [Issues](https://github.com/mioolio/blode/issues) 报告问题或提出建议，通过 Pull Request 提交改进。报告请包含应用版本、宿主系统、目标芯片、复现步骤和脱敏日志。提交约定见[贡献指南](CONTRIBUTING.md)，漏洞报告见[安全政策](SECURITY.md)。
 
-Blode Studio 采用 [Apache License 2.0](LICENSE)，随发行包提供[第三方依赖许可声明](docs/THIRD-PARTY-NOTICES.md)。下载的编译器、驱动和其他第三方工具遵循各自的许可证。
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE)。发行包附带[第三方依赖许可](docs/THIRD-PARTY-NOTICES.md)；编译器、驱动和其他下载工具遵循各自许可证。

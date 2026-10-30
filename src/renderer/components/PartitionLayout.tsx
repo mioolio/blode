@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import { HardDrive, Info, Lock, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
@@ -16,7 +17,7 @@ const unstyledFieldset = { border: 0, margin: 0, padding: 0, minWidth: 0 };
 
 /** Allocate only unoccupied, aligned bytes; never create a zero-sized partition. */
 function findFreeRegion(config: ProjectConfig): { offset: number; size: number } | null {
-  let cursor = config.boardId === 'esp32-s3' ? 0x9000 : 0;
+  let cursor = config.boardId === 'Esp32_S3_CAM' ? 0x9000 : 0;
   const sorted = [...config.partitions].sort((left, right) => left.offset - right.offset);
   for (const partition of [...sorted, { offset: config.flashSize, size: 0 }]) {
     const offset = Math.ceil(cursor / sectorSize) * sectorSize;
@@ -69,7 +70,7 @@ export function PartitionLayout({
 
   const partition = config.partitions.find((item) => item.id === selected);
   const sorted = [...config.partitions].sort((left, right) => left.offset - right.offset);
-  const isEsp32S3 = config.boardId === 'esp32-s3';
+  const isEsp32S3 = config.boardId === 'Esp32_S3_CAM';
   const locked = isEsp32S3 && partition?.type === 'system';
   const freeRegion = findFreeRegion(config);
   const appOffset = sorted.find((item) => item.type === 'app')?.offset ?? Number.MAX_SAFE_INTEGER;
@@ -262,7 +263,7 @@ export function PartitionLayout({
             </div>
             <label className="inline-field">
               <span>{t('device.flash')}</span>
-              <select
+              <ModernSelect
                 aria-label={t('device.flash')}
                 value={customMode ? 'custom' : String(config.flashSize)}
                 onChange={(event) => {
@@ -281,7 +282,7 @@ export function PartitionLayout({
                   </option>
                 ))}
                 {customFlashSize && <option value="custom">{t('layout.customFlash')}</option>}
-              </select>
+              </ModernSelect>
             </label>
             {customFlashSize && customMode && (
               <label className="inline-field compact-field">
@@ -430,7 +431,7 @@ export function PartitionLayout({
                     </label>
                     <label>
                       {t('layout.type')}
-                      <select
+                      <ModernSelect
                         value={partition.type}
                         onChange={(event) => update({ type: event.target.value as Partition['type'] })}
                       >
@@ -439,7 +440,7 @@ export function PartitionLayout({
                             {t(`layout.${type}`)}
                           </option>
                         ))}
-                      </select>
+                      </ModernSelect>
                     </label>
                     <label>
                       {t('layout.address')} <small>{t('layout.hex')}</small>

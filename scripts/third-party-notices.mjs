@@ -63,7 +63,12 @@ sections.push(
   'Declared license: MIT',
   '',
   '```text',
-  (await fs.readFile(path.join(root, 'extensions/boards/stm32/vendor/LICENSE.xmldom'), 'utf8')).trim(),
+  (
+    await fs.readFile(
+      path.join(root, 'extensions/boards/STM32F103C8T6/compiler/vendor/LICENSE.xmldom'),
+      'utf8',
+    )
+  ).trim(),
   '```',
   '',
 );

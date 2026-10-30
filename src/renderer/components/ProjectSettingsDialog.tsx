@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import { useEffect, useRef, useState } from 'react';
 import { Settings2, X } from 'lucide-react';
 import type { Studio } from '../workspace/useStudio';
@@ -102,13 +103,16 @@ export function ProjectSettingsDialog({ studio }: { studio: Studio }) {
             </label>
             <label>
               {t('device.board')}
-              <select
+              <ModernSelect
                 value={draft.config.boardId}
                 onChange={(e) => {
                   const board = state.boards.find((item) => item.id === e.target.value);
                   if (board)
                     updateConfig({
                       ...board.defaultConfig,
+                      runtime: board.defaultConfig.runtime
+                        ? structuredClone(board.defaultConfig.runtime)
+                        : undefined,
                       name: draft.config.name,
                       toolchain: { ...draft.config.toolchain, ...board.defaultConfig.toolchain },
                     });
@@ -119,7 +123,7 @@ export function ProjectSettingsDialog({ studio }: { studio: Studio }) {
                     {board.name}
                   </option>
                 ))}
-              </select>
+              </ModernSelect>
             </label>
             <label>
               {t('project.buildEntry')}
@@ -131,7 +135,7 @@ export function ProjectSettingsDialog({ studio }: { studio: Studio }) {
             </label>
             <label>
               {t('project.cStandard')}
-              <select
+              <ModernSelect
                 value={draft.cStandard}
                 onChange={(e) => update({ cStandard: e.target.value as ProjectSettingsDraft['cStandard'] })}
               >
@@ -140,7 +144,7 @@ export function ProjectSettingsDialog({ studio }: { studio: Studio }) {
                     {value.toUpperCase()}
                   </option>
                 ))}
-              </select>
+              </ModernSelect>
             </label>
             <label className="project-settings-wide">
               {t('project.settingsFiles')}

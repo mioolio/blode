@@ -3,11 +3,18 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { Stm32Compiler, inspectStm32Elf, validateStm32Binary } from '../extensions/boards/stm32/compiler';
-import { createF1GnuLinkerScript, createF1GnuStartup } from '../extensions/boards/stm32/templates';
-import { GNU_WINDOWS_RELEASE, GnuArmToolchain } from '../extensions/boards/stm32/gnu';
-import { stm32Adapter } from '../extensions/boards/stm32/adapter';
-import { createStm32Runtime } from '../extensions/boards/stm32/runtime';
+import {
+  Stm32Compiler,
+  inspectStm32Elf,
+  validateStm32Binary,
+} from '../extensions/boards/STM32F103C8T6/compiler/index';
+import {
+  createF1GnuLinkerScript,
+  createF1GnuStartup,
+} from '../extensions/boards/STM32F103C8T6/compiler/templates';
+import { GNU_WINDOWS_RELEASE, GnuArmToolchain } from '../extensions/boards/STM32F103C8T6/tools/gnu';
+import { stm32Adapter } from '../extensions/boards/STM32F103C8T6/device/adapter';
+import { createStm32Runtime } from '../extensions/boards/STM32F103C8T6/runtime/index';
 import { safeWorkspacePath } from '../src/core/workspace';
 import type { RuntimeHost } from '../extensions/runtime';
 import type { BuildResult } from '../src/shared/contracts';
@@ -209,6 +216,29 @@ test('unknown STM32 chips are not guessed into the F1 startup/memory profile', a
   assert.equal(calls.length, 0);
 });
 
+test('the named F103C8 profile accepts C8/C8T6 Keil targets and does not relabel other F103 parts', async (t) => {
+  const { compiler, config, project, host, calls } = await fixture(t);
+  const runtime = createStm32Runtime(host);
+  const descriptor = (device: string) =>
+    `<Project><Targets><Target><TargetName>Main</TargetName><Device>${device}</Device><Groups><Group><Files><File><FilePath>src/main.c</FilePath></File></Files></Group></Groups></Target></Targets></Project>`;
+  for (const device of ['STM32F103C8', 'STM32F103C8T6']) {
+    await fs.writeFile(path.join(project, 'Project.uvprojx'), descriptor(device));
+    assert.equal(await compiler.projectDevice({ entry: 'src/main.c' }), device);
+    const selected = await runtime.projectConfig!(config, { entry: 'src/main.c' });
+    assert.equal(selected?.boardId, 'STM32F103C8T6');
+    assert.equal(selected?.flashSize, 64 * 1024);
+  }
+  for (const device of ['STM32F103CB', 'STM32F103RB', 'STM32F103TB', 'STM32F407VG']) {
+    await fs.writeFile(path.join(project, 'Project.uvprojx'), descriptor(device));
+    await assert.rejects(compiler.projectDevice({ entry: 'src/main.c' }), /stm32CompilerProfileRequired/);
+    await assert.rejects(
+      runtime.projectConfig!(config, { entry: 'src/main.c' }),
+      /stm32CompilerProfileRequired/,
+    );
+  }
+  assert.equal(calls.length, 0, 'target classification does not invoke tools or access a device');
+});
+
 test('scatter-file executable preprocessor commands are refused before invoking the linker', async (t) => {
   const { compiler, project, config, calls } = await fixture(t);
   await fs.writeFile(
@@ -385,7 +415,7 @@ test('per-language GNU pins select distinct installed versions and C++ links wit
     entry: 'src',
     settings: {
       common: { family: 'gnu-arm', version: '15.2.1-1.1' },
-      platforms: { stm32: { cpp: { family: 'gnu-arm', directory: cpp } } },
+      platforms: { STM32F103C8T6: { cpp: { family: 'gnu-arm', directory: cpp } } },
       mode: 'debug',
       optimizeForSize: true,
     },
@@ -447,7 +477,9 @@ test('mixed compiler families are rejected and size mode can be disabled in rele
     compiler.build(config, {
       entry: 'src',
       settings: {
-        platforms: { stm32: { c: { family: 'gnu-arm', directory: gnu }, cpp: { family: 'armclang' } } },
+        platforms: {
+          STM32F103C8T6: { c: { family: 'gnu-arm', directory: gnu }, cpp: { family: 'armclang' } },
+        },
       },
     }),
     /buildCompilerMixedFamilies/,

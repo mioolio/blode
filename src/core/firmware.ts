@@ -91,14 +91,14 @@ export class FirmwareStore {
   ): Promise<T> {
     const selected = this.selections.get(id);
     if (!selected) throw new Error('firmware.selectionExpired');
-    if (boardId !== 'stm32' && boardId !== 'esp32-s3') throw new Error('firmware.selectPlatform');
+    if (boardId !== 'STM32F103C8T6' && boardId !== 'Esp32_S3_CAM') throw new Error('firmware.selectPlatform');
     if (
       selected.metadata.format !== 'bin' &&
       requestedAddress !== undefined &&
       requestedAddress !== selected.metadata.address
     )
       throw new Error('firmware.addressInFile');
-    const base = requestedAddress ?? (boardId === 'stm32' ? 0x08000000 : 0);
+    const base = requestedAddress ?? (boardId === 'STM32F103C8T6' ? 0x08000000 : 0);
     const merged = mergeSegments(
       selected.metadata.format === 'bin'
         ? [{ address: base, data: selected.segments[0].data }]
@@ -149,14 +149,14 @@ export async function prepareBuildExport(
   const boardId = state.config.boardId;
   const app = state.config.partitions.find((partition) => partition.type === 'app');
   const inputs: { file: string; address: number }[] = [];
-  if (boardId === 'esp32-s3') {
+  if (boardId === 'Esp32_S3_CAM') {
     const suffixes = ['.ino.bootloader.bin', '.ino.partitions.bin', '.ino.bin'];
     for (const [index, suffix] of suffixes.entries()) {
       const file = saved.result.artifacts.find((item) => item.endsWith(suffix));
       if (!file || !app) throw new Error('firmware.incompleteBuild');
       inputs.push({ file, address: index === 0 ? 0 : index === 1 ? 0x8000 : app.offset });
     }
-  } else if (boardId === 'stm32') {
+  } else if (boardId === 'STM32F103C8T6') {
     const file = saved.result.artifacts.find((item) => /(?:^|\/)firmware\.bin$/.test(item));
     if (!file) throw new Error('firmware.incompleteBuild');
     inputs.push({ file, address: 0x08000000 });
@@ -171,7 +171,7 @@ export async function prepareBuildExport(
     merged = mergeSegments(normalized);
   const name = (state.config.name || 'firmware').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
   if (format === 'elf') {
-    if (boardId !== 'stm32') throw new Error('firmware.elfUnavailable');
+    if (boardId !== 'STM32F103C8T6') throw new Error('firmware.elfUnavailable');
     const elfPath = await safeWorkspacePath(root, '.blode/build/firmware.elf', { internal: true });
     const info = await fs.lstat(elfPath).catch(() => null);
     if (!info?.isFile() || info.isSymbolicLink() || info.size > MAX_FIRMWARE_BYTES)

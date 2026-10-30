@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { Studio } from './useStudio';
 import type { UiRequest } from '../../shared/workbench';
 import { useI18n } from '../i18n';
+import { workspaceCloseGate } from './workspaceCloseGate';
 
 /** One renderer acknowledges each explicitly targeted, named AI UI command. */
 export function useAutomationCommands(studio: Studio) {
@@ -18,8 +19,9 @@ export function useAutomationCommands(studio: Studio) {
     return window.blode.onUiCommand((request: UiRequest) => {
       if (request.target !== clientId.current) return;
       const apply = async () => {
+        if (workspaceCloseGate.isFrozen()) throw new Error('error.shutdownInProgress');
         const view = current.current;
-        if (view.busy && !['console', 'consolePanel', 'devicePanel'].includes(request.action))
+        if (view.busy && !['console', 'consolePanel', 'devicePanel', 'runtimeView'].includes(request.action))
           throw new Error('error.busy');
         const path = () => {
           if (!request.path || !view.state?.files.some((file) => file.path === request.path))
@@ -27,6 +29,14 @@ export function useAutomationCommands(studio: Studio) {
           return request.path;
         };
         switch (request.action) {
+          case 'runtimeView':
+            if (!request.pluginId || !request.viewId) throw new Error('rpc.invalidParams');
+            window.dispatchEvent(
+              new CustomEvent('blode:runtime-view-request', {
+                detail: { pluginId: request.pluginId, viewId: request.viewId },
+              }),
+            );
+            break;
           case 'home':
             view.goHome();
             break;

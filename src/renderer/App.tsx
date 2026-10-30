@@ -15,6 +15,13 @@ import { HostFilePicker } from './components/HostFilePicker';
 import { ProjectPackageDialog } from './components/ProjectPackageDialog';
 import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { BuildSettingsLauncher } from './components/BuildSettingsLauncher';
+import { ComponentLibrariesLauncher } from './components/ComponentLibrariesLauncher';
+import { RuntimePluginTrustDialog } from './components/RuntimePluginTrustDialog';
+import { RuntimeContributions } from './components/RuntimeContributions';
+import { DesktopLifecycle } from './components/DesktopLifecycle';
+const RuntimeViewPage = lazy(() =>
+  import('./components/RuntimeViewPage').then((module) => ({ default: module.RuntimeViewPage })),
+);
 import './styles/web-responsive.css';
 
 const HardwareDebuggerView = lazy(() =>
@@ -25,7 +32,11 @@ const HardwareDebuggerView = lazy(() =>
 export default function App() {
   return (
     <>
-      {window.location.hash === '#/hardware-debugger' ? (
+      {window.location.hash.startsWith('#/runtime-view/') ? (
+        <Suspense fallback={<div />}>
+          <RuntimeViewPage />
+        </Suspense>
+      ) : window.location.hash === '#/hardware-debugger' ? (
         <Suspense fallback={<div className="editor-empty">Blode Studio</div>}>
           <HardwareDebuggerView />
         </Suspense>
@@ -121,6 +132,10 @@ function WorkspaceApp() {
       <ProjectPackageDialog studio={studio} />
       <ProjectSettingsDialog studio={studio} />
       <BuildSettingsLauncher studio={studio} />
+      <ComponentLibrariesLauncher studio={studio} />
+      <RuntimePluginTrustDialog studio={studio} />
+      <RuntimeContributions studio={studio} />
+      <DesktopLifecycle studio={studio} />
     </div>
   );
 }

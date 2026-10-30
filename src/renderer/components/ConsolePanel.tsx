@@ -1,4 +1,5 @@
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+import { ModernSelect } from './ModernSelect';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import {
   CircleAlert,
   CircleCheck,
@@ -16,6 +17,9 @@ import type { Studio } from '../workspace/useStudio';
 import type { SerialOptions } from '../../shared/contracts';
 import { iconButton } from './IconButton';
 import { TerminalPanel } from './TerminalPanel';
+import { RuntimePluginView } from './RuntimePluginView';
+import { registeredRuntimeViews } from '../../shared/runtime-views';
+import './runtime-surfaces.css';
 
 /** ConsolePanel renders one workspace surface; application actions stay in useStudio. */
 export function ConsolePanel({ studio }: { studio: Studio }) {
@@ -24,7 +28,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     locale,
     tab,
     setTab,
-    logs,
+    logs: allLogs,
     setLogs,
     busy,
     errors,
@@ -43,10 +47,26 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     serialInput,
     setSerialInput,
   } = studio;
+  const logs = allLogs.filter((log) => log.kind !== 'terminal' && !!log.message);
   const logRef = useRef<HTMLDivElement>(null);
   const baudRatesId = useId();
   const [encoding, setEncoding] = useState<'utf8' | 'hex'>('utf8');
   const [lineEnding, setLineEnding] = useState<'none' | 'lf' | 'cr' | 'crlf'>('lf');
+  const pluginViews = registeredRuntimeViews(state?.runtimePlugins?.plugins ?? []).filter(
+    (view) => view.location === 'panel',
+  );
+  const pluginView = pluginViews.find((view) => view.key === tab);
+  useEffect(() => {
+    const open = (event: Event) => {
+      const key = (event as CustomEvent<string>).detail;
+      if (pluginViews.some((view) => view.key === key)) setTab(key as `plugin:${string}`);
+    };
+    window.addEventListener('blode:runtime-panel', open);
+    return () => window.removeEventListener('blode:runtime-panel', open);
+  }, [pluginViews.map((view) => view.key).join('|')]);
+  useEffect(() => {
+    if (tab.startsWith('plugin:') && !pluginView) setTab('output');
+  }, [tab, !!pluginView]);
   // Ctrl+A inside the console selects the visible log text, never the whole window.
   const selectLogText = (event: KeyboardEvent<HTMLElement>) => {
     const target = event.target as HTMLElement | null;
@@ -89,6 +109,15 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               {id === 'warnings' && <span className="count-badge">{warnings.length}</span>}
             </button>
           ))}
+          {pluginViews.map((view) => (
+            <button
+              key={view.key}
+              className={tab === view.key ? 'active' : ''}
+              onClick={() => setTab(view.key as `plugin:${string}`)}
+            >
+              {view.label}
+            </button>
+          ))}
         </div>
         <div className="console-tools">
           {busy && (
@@ -98,6 +127,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
             </span>
           )}
           {tab !== 'terminal' &&
+            !pluginView &&
             iconButton(
               'action.clear',
               () =>
@@ -113,12 +143,17 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           )}
         </div>
       </div>
-      <TerminalPanel visible={tab === 'terminal'} />
+      <TerminalPanel visible={tab === 'terminal' && studio.consolePanelVisible} />
+      {pluginView && (
+        <div className="console-plugin-view">
+          <RuntimePluginView key={pluginView.key} id={pluginView.pluginId} kind={`view:${pluginView.id}`} />
+        </div>
+      )}
       {tab === 'serial' && (
         <>
           <div className="serial-toolbar" style={{ flexWrap: 'wrap' }}>
             <Usb size={13} strokeWidth={1.8} aria-hidden="true" />
-            <select
+            <ModernSelect
               aria-label={t('console.serialDevice')}
               title={t('console.serialDevice')}
               value={
@@ -145,7 +180,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                   {port.manufacturer ? ` — ${port.manufacturer}` : ''}
                 </option>
               ))}
-            </select>
+            </ModernSelect>
             <input
               type="number"
               min={110}
@@ -176,15 +211,15 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               {t(serialConnected ? 'action.disconnect' : 'action.connect')}
             </button>
             <span className={`status-dot ${serialConnected ? '' : 'inactive'}`} />
-            <select
+            <ModernSelect
               aria-label={t('console.encoding')}
               value={encoding}
               onChange={(event) => setEncoding(event.target.value as 'utf8' | 'hex')}
             >
               <option value="utf8">UTF-8</option>
               <option value="hex">HEX</option>
-            </select>
-            <select
+            </ModernSelect>
+            <ModernSelect
               aria-label={t('console.lineEnding')}
               value={lineEnding}
               disabled={encoding === 'hex'}
@@ -194,7 +229,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
               <option value="lf">LF</option>
               <option value="cr">CR</option>
               <option value="crlf">CRLF</option>
-            </select>
+            </ModernSelect>
           </div>
           <details
             className="serial-options"
@@ -204,7 +239,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
             <div className="serial-toolbar" style={{ flexWrap: 'wrap', paddingLeft: 0 }}>
               <label>
                 {t('console.dataBits')}{' '}
-                <select
+                <ModernSelect
                   value={serialOptions?.dataBits ?? 8}
                   disabled={serialConnected || !!busy}
                   onChange={(event) =>
@@ -219,11 +254,11 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                       {bits}
                     </option>
                   ))}
-                </select>
+                </ModernSelect>
               </label>
               <label>
                 {t('console.parity')}{' '}
-                <select
+                <ModernSelect
                   value={serialOptions?.parity ?? 'none'}
                   disabled={serialConnected || !!busy}
                   onChange={(event) =>
@@ -238,11 +273,11 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                       {t(`console.parity.${parity}`)}
                     </option>
                   ))}
-                </select>
+                </ModernSelect>
               </label>
               <label>
                 {t('console.stopBits')}{' '}
-                <select
+                <ModernSelect
                   value={serialOptions?.stopBits ?? 1}
                   disabled={serialConnected || !!busy}
                   onChange={(event) =>
@@ -257,11 +292,11 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                       {bits}
                     </option>
                   ))}
-                </select>
+                </ModernSelect>
               </label>
               <label>
                 {t('console.flowControl')}{' '}
-                <select
+                <ModernSelect
                   value={serialOptions?.flowControl ?? 'none'}
                   disabled={serialConnected || !!busy}
                   onChange={(event) =>
@@ -274,14 +309,14 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                   <option value="none">{t('console.flow.none')}</option>
                   <option value="rtscts">RTS/CTS</option>
                   <option value="xonxoff">XON/XOFF</option>
-                </select>
+                </ModernSelect>
               </label>
             </div>
             <p className="subtle-note">{t('console.serialDeviceHint')}</p>
           </details>
         </>
       )}
-      {tab !== 'terminal' && (
+      {tab !== 'terminal' && !pluginView && (
         <div
           className="log-scroll"
           ref={logRef}

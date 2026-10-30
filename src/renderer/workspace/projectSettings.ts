@@ -1,4 +1,5 @@
 import type { ProjectBuildInputs, ProjectConfig } from '../../shared/contracts';
+import { canonicalBoardId, migrateLegacyBuildPlatforms } from '../../shared/runtime-identity';
 
 export interface ProjectSettingsDraft {
   config: ProjectConfig;
@@ -16,7 +17,8 @@ export function readProjectSettings(
   const descriptor = text.trim() ? JSON.parse(text) : { ...config, build };
   if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor))
     throw new Error('error.invalidProjectDescriptor');
-  const { build: savedBuild = {}, ...savedConfig } = descriptor;
+  const { build: rawBuild = {}, ...savedConfig } = descriptor;
+  const savedBuild = migrateLegacyBuildPlatforms(rawBuild) as ProjectBuildInputs;
   if (
     typeof savedConfig.name !== 'string' ||
     typeof savedConfig.boardId !== 'string' ||
@@ -34,7 +36,7 @@ export function readProjectSettings(
   )
     throw new Error('error.invalidProjectDescriptor');
   return {
-    config: savedConfig as ProjectConfig,
+    config: { ...savedConfig, boardId: canonicalBoardId(savedConfig.boardId) } as ProjectConfig,
     entry: savedBuild.entry ?? savedBuild.sketch ?? '',
     files: (savedBuild.files ?? []).join('\n'),
     cStandard: savedBuild.cStandard ?? 'c17',

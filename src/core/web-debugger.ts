@@ -1,12 +1,20 @@
 import * as z from 'zod';
 import type { HardwareDebugger } from './hardware-debugger';
 import type { CoreService } from './service';
-import { parseConfig } from './config';
+import { parseConfig, configSchema } from './config';
+import {
+  breakpointLocationsSchema,
+  debuggerPatchSchema,
+  debuggerAssembleSchema,
+} from '../shared/debugger-edit';
 
 /** Browser clients share the desktop debugger and its hardware lock; no native path API. */
 export function createWebDebugger(debuggerService: HardwareDebugger, core: CoreService) {
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
-    debuggerState: { args: z.tuple([]), run: () => debuggerService.state() },
+    debuggerState: {
+      args: z.tuple([configSchema.optional()]),
+      run: (config) => debuggerService.state(config),
+    },
     debuggerStorage: { args: z.tuple([]), run: () => debuggerService.storage() },
     debuggerSymbolsPath: {
       args: z.tuple([z.string().min(1).max(4096)]),
@@ -41,11 +49,23 @@ export function createWebDebugger(debuggerService: HardwareDebugger, core: CoreS
       args: z.tuple([z.number().int().min(0).max(0xffffffff), z.number().int().min(1).max(4096)]),
       run: (address, length) => debuggerService.memory(address, length),
     },
+    debuggerBreakpoints: {
+      args: z.tuple([breakpointLocationsSchema]),
+      run: (locations) => debuggerService.breakpoints(locations),
+    },
+    debuggerPatch: {
+      args: z.tuple([debuggerPatchSchema]),
+      run: (request) => debuggerService.patch(request),
+    },
+    debuggerAssemble: {
+      args: z.tuple([debuggerAssembleSchema.shape.address, debuggerAssembleSchema.shape.source]),
+      run: (address, source) => debuggerService.assemble(address, source),
+    },
     debuggerInstallTools: {
-      args: z.tuple([]),
-      run: () =>
-        core.runInstallation('GNU Arm GCC / GDB', ({ progress, log, fetcher, signal }) =>
-          debuggerService.install(progress, log, { fetcher, signal }),
+      args: z.tuple([configSchema.optional()]),
+      run: (config) =>
+        core.runInstallation('GDB / debug server', ({ progress, log, fetcher, signal }) =>
+          debuggerService.install(progress, log, { fetcher, signal, config }),
         ),
     },
   };

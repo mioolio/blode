@@ -292,7 +292,7 @@ export function CodeEditor({
     if (!model || !decorations.current) return;
     if (model.uri.toString() !== modelPath) return;
     const ranges = latest.current.peers
-      .filter((peer) => peer.path === latest.current.path)
+      .filter((peer) => peer.attention !== 'inactive' && peer.path === latest.current.path)
       .map((peer) => {
         const first = Math.max(1, Math.min(model.getLineCount(), peer.startLine));
         const last = Math.max(first, Math.min(model.getLineCount(), peer.endLine));
@@ -547,6 +547,21 @@ export function CodeEditor({
             cursor: position ? { line: position.lineNumber, column: position.column } : undefined,
           });
         };
+        let restoredFrame: number | undefined;
+        const attentionRestored = () => {
+          if (restoredFrame !== undefined) cancelAnimationFrame(restoredFrame);
+          restoredFrame = requestAnimationFrame(() => {
+            restoredFrame = undefined;
+            if (editor.current === instance) reportView();
+          });
+        };
+        window.addEventListener('blode:attention-restored', attentionRestored);
+        subscriptions.current.push({
+          dispose() {
+            window.removeEventListener('blode:attention-restored', attentionRestored);
+            if (restoredFrame !== undefined) cancelAnimationFrame(restoredFrame);
+          },
+        });
         subscriptions.current.push(
           instance.onDidScrollChange(reportView),
           instance.onDidChangeCursorPosition(reportView),

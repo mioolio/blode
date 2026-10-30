@@ -2,7 +2,7 @@ node_modules/
 dist/
 release/
 .tools/
-tools/
+/tools/
 *.log
 *.tsbuildinfo
 **/.blode/build/
@@ -10,6 +10,7 @@ tools/
 **/.blode/index/
 **/.blode/git/
 **/.blode/git-management.json
+**/.uel
 **/.blode/staging/
 **/.blode/build-state.json
 artifacts/

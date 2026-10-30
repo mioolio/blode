@@ -26,13 +26,17 @@
     "web:dev": "tsx scripts/web-server.ts",
     "web:build": "node scripts/build-web.mjs",
     "web:start": "node dist/web-server.cjs",
-    "package:web": "tsx scripts/package-web.ts"
+    "package:web": "tsx scripts/package-web.ts",
+    "package:runtime": "tsx scripts/package-runtime.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "@monaco-editor/react": "4.7.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "lucide-react": "^0.577.0",
     "monaco-editor": "^0.55.1",
+    "node-pty": "1.1.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "serialport": "13.0.0",
@@ -65,5 +69,6 @@
   "bugs": {
     "url": "https://github.com/mioolio/blode/issues"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "developmentChannel": "internal-runtime-plugins"
 }

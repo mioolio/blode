@@ -73,7 +73,7 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 
 `flash.run` 和 `toolchain.install` 的 `confirm` 必须为布尔值 `true`，不能使用字符串。客户端必须根据用户指令决定是否有权进行对应操作；它是调用者的明确声明，不代表软件另外弹出了授权窗口。
 
-源文件写入经过核心的工程根目录约束、扩展名白名单、大小限制及符号链接/目录联接检查。`terminal.run` 是独立的显式命令能力，在目标电脑运行，需 `confirm: true`，有输出与运行时长限制，不提供交互式 stdin。`config.set` 可以配置自定义工具链可执行文件；工具路径、Git 与命令调用属于可信主机操作。
+源文件写入经过核心的工程根目录约束、扩展名白名单、大小限制及符号链接/目录联接检查。命令窗口在目标电脑运行持久 PTY Shell；`terminal.open/run/write/close` 需 `confirm: true`。`run` 提交一条命令，`write` 支持后续交互输入；`stop` 发送 Ctrl+C，`close` 结束会话。`state` 支持 `sessionId`／`after` 增量游标，`resize` 设置行列；输出缓存有界。`config.set` 可以配置自定义工具链可执行文件；工具路径、Git 与命令调用属于可信主机操作。
 
 ## 扩展工作台能力
 
@@ -86,19 +86,24 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 | 驱动       | `drivers.status`、`drivers.install`                                                                                                                                                                          |
 | 固件       | `firmware.prepare`、`firmware.export`、`firmware.flash`                                                                                                                                                      |
 | 独立调试   | `debugger.open`、`debugger.state`、`debugger.symbols.set`、`debugger.connect`、`debugger.action`、`debugger.breakpoint`、`debugger.memory`、`debugger.storage`、`debugger.tools.install`、`debugger.gdb.set` |
+| 调试编辑   | `debugger.assemble` 生成机器码预览；`debugger.breakpoints` 批量断点；`debugger.patch` 使用会话 ID、原字节比较和 `confirm: true` 修改 SRAM 指令                                                               |
 | 界面与日志 | `ui.state`、`ui.command`、`window.action`、`logs.latest`                                                                                                                                                     |
 | 补全与预测 | `ai.state`、`ai.configure`、`ai.predictions.poll`、`ai.prediction.submit`、`ai.prediction.read`、`ai.prediction.request`、`ai.prediction.cancel`                                                             |
 | 多人协作   | `collaboration.state`、`collaboration.open`、`collaboration.presence`、`collaboration.edit`、`collaboration.save`、`collaboration.resolve`、`collaboration.leave`                                            |
 | 撤销与重做 | `collaboration.undo`（`direction: undo/redo`，`scope: own/global`；全局仅可信本地传输）                                                                                                                      |
 | 本地 Git   | `git.status`、`git.diff`、`git.action`                                                                                                                                                                       |
 | 工具版本   | `tools.versions`、`tools.installVersion`、`tools.selectVersion`                                                                                                                                              |
+| 组件库     | `components.state`、`components.search`、`components.install`、`components.import`、`components.remove`                                                                                                      |
 | 工程打包   | `project.package.preview`、`project.package.export`                                                                                                                                                          |
 | 主机目录   | `host.browse`（目标电脑路径）                                                                                                                                                                                |
-| 命令窗口   | `terminal.state`、`terminal.run`、`terminal.stop`                                                                                                                                                            |
+| 命令窗口   | `terminal.state`、`terminal.open`、`terminal.run`、`terminal.write`、`terminal.resize`、`terminal.stop`、`terminal.close`                                                                                    |
+| 插件视图   | `runtime.plugins`、`runtime.view.info`、`runtime.view.open`；打开请求可指定工作台 `target`                                                                                                                   |
 
 文件树操作使用工程相对路径。`project.open`、`firmware.prepare/export`、`debugger.symbols.set` 和 `debugger.gdb.set` 使用桌面服务所在电脑的绝对路径；不通过浏览器任意访问客户端文件。`firmware.prepare` 返回不可变选择 ID，随后将 ID、配置、地址及 `confirm: true` 交给 `firmware.flash`。导出默认不覆盖已有文件，覆盖时另需 `confirmOverwrite: true`。
 
-`flash.run`、`toolchain.install`、`file.delete`、`project.close`、`drivers.install`、`firmware.flash`、`debugger.tools.install` 和 `window.action` 都必须传布尔值 `confirm: true`。软件允许已授权 AI 直接执行这些动作，不额外弹出确认流程；参数校验、设备互斥、构建指纹和目标边界检查仍然生效。
+`flash.run`、`toolchain.install`、`file.delete`、`project.close`、`drivers.install`、`firmware.flash`、`debugger.tools.install`、`components.install/import/remove` 和 `window.action` 都必须传布尔值 `confirm: true`。软件允许已授权 AI 直接执行这些动作，不额外弹出确认流程；参数校验、设备互斥、构建指纹和目标边界检查仍然生效。
+
+`debugger.patch` 同样要求 `confirm: true`，且必须使用 `debugger.state` 返回的当前 `sessionId`。参数还包括 `address`、原机器码 `expected`、新机器码 `bytes` 和布尔值 `pauseAndResume`。内置实现仅改写 STM32F103C8T6 SRAM 中等长的单条 Thumb 指令；运行中修改需 `pauseAndResume: true`，写入或校验失败后不继续运行。`debugger.assemble` 接收 `address`、`source` 并返回机器码预览，不写入硬件。`debugger.breakpoints` 接收最多 128 项 `locations`，逐项返回状态。详见[调试编辑契约](internal/debugger-editing.md)。
 
 `ui.state` 列出已连接界面的 `clientId`、当前文件、标签、未保存文件及面板状态。`ui.command` 默认作用于桌面端，无桌面端时选择一个活跃网页客户端；也可用 `target` 指定 ID。命令会等待该界面回执。例如：
 
@@ -117,6 +122,38 @@ MCP 工具名统一为 `blode_` + 将方法名中的 `.` 替换为 `_`。例如 
 `project.readFile` 读取磁盘索引；读取含未保存修改的当前共享版本请使用 `collaboration.open`。编辑时提交其 `session`、`revision` 与 UTF-16 偏移变化，收到冲突后先核对合并，再以准确版本保存。旧 `file.write` 无法静默替换其他用户的共享草稿。工程切换会先保存已同步的共享修改；未同步的本地编辑应先经目标界面的 `save` 命令保存。
 
 手动及 AI 修改补全、预测请求示例见 [补全与外部 AI 预测](AI-COMPLETIONS.md)；协作者颜色、版本合并与稳定阅读位置见 [网页多人协作](COLLABORATION.md)。
+
+## 组件库接口
+
+组件操作针对当前宿主工程。先读取 `components.state`，再将返回的 `projectRoot` 原样作为写操作的 `expectedProjectRoot`；宿主在开始及提交时检查工程是否仍匹配。无工程时可搜索在线索引，但不能安装、导入或移除。
+
+| 方法                 | params                                                                                                          | 返回                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `components.state`   | `{}`                                                                                                            | `projectRoot`、`manifestPath`、项目 `components`、平台内置 `provided`                   |
+| `components.search`  | `{ "query": "SSD1306" }`                                                                                        | `query`、`entries`、`truncated`；条目含版本列表、最新版本、描述、作者及按版本划分的依赖 |
+| `components.install` | `{ "name": "<搜索结果名称>", "version": "<所选版本>", "expectedProjectRoot": "<当前根目录>", "confirm": true }` | 更新后的组件状态；同时安装缺少的递归依赖                                                |
+| `components.import`  | `{ "path": "<宿主绝对路径>", "kind": "directory", "expectedProjectRoot": "<当前根目录>", "confirm": true }`     | 更新后的组件状态；ZIP 使用 `kind: "archive"`                                            |
+| `components.remove`  | `{ "id": "<组件 id>", "expectedProjectRoot": "<当前根目录>", "confirm": true }`                                 | 更新后的组件状态；拒绝删除有本地变更或仍被依赖的组件                                    |
+
+搜索只在显式请求时联网。`components.state` 读取本地清单与已安装平台库，不隐式搜索。库索引和下载来自 Arduino 官方分发地址；安装会校验归档并解析依赖，错误保留库名、版本或路径等诊断信息。组件导入不执行包内脚本。
+
+目录或 ZIP 通过 `host.browse` 在目标机器上选择。例如，`components.state` 返回 `C:\projects\device` 后，可发送：
+
+```json
+{
+  "method": "components.import",
+  "params": {
+    "path": "E:\\libraries\\Display.zip",
+    "kind": "archive",
+    "expectedProjectRoot": "C:\\projects\\device",
+    "confirm": true
+  }
+}
+```
+
+MCP 对应工具为 `blode_components_state`、`blode_components_search`、`blode_components_install`、`blode_components_import` 和 `blode_components_remove`。使用 `events.poll` 读取安装事件中的 `installation` 状态、阶段及下载字节数；同次操作以 `installation.id` 关联，不拼接其他安装任务的日志。
+
+清单文件为工程根目录的 `blode.components.json`。编译时宿主从清单与实际文件派生 `ProjectBuildInputs.components`；这是运行时构建输入，不是 `be.build` 可配置字段，AI 不应通过 `file.write` 向 `be` 添加 `components`。目录格式与删除保护见[组件库指南](COMPONENT-LIBRARIES.md)，运行时字段见[项目组件构建输入](RUNTIME-PLUGINS.md#项目组件构建输入)。
 
 ## Node.js 直接调用示例
 

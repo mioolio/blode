@@ -12,12 +12,14 @@ import type {
   AiPredictionSuggestion,
 } from '../shared/ai';
 import { aiParameterSchemas } from './ai-schemas';
+import type { LanguageCompletions } from '../../extensions/completions/types';
 
 interface Options {
   dataRoot: string;
   projectRoot: () => string | Promise<string>;
   emit?: (event: LogEvent) => void;
   now?: () => number;
+  builtins?: () => Promise<LanguageCompletions[] | undefined>;
 }
 type StoredState = Omit<AiAssistanceState, 'builtins'>;
 const initial = (): StoredState => ({
@@ -66,7 +68,8 @@ export class AiAssistance implements AiAssistanceApi {
   }
   async aiAssistanceState(): Promise<AiAssistanceState> {
     await this.ready;
-    return structuredClone({ ...this.config, builtins: [...listLanguageCompletions()] });
+    const selected = await this.options.builtins?.();
+    return structuredClone({ ...this.config, builtins: selected ?? [...listLanguageCompletions()] });
   }
   async aiAssistanceConfigure(input: AiAssistanceConfiguration): Promise<AiAssistanceState> {
     const request = aiParameterSchemas['ai.configure'].parse(input);

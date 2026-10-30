@@ -12,6 +12,8 @@ import { mergeText, textChanges } from '../editor/collaborationText';
 import { registerCollaborationFlush } from './collaborationFlush';
 import { registerFileCloseHandler } from './fileClose';
 import { localTabPresence } from './localPresence';
+import { observePageAttention, type AttentionSnapshot } from './attention';
+import { CollaborationResume, retainLocalDocuments } from './collaborationResume';
 import type { Studio } from './useStudio';
 
 export interface EditorPresence {
@@ -90,13 +92,20 @@ export function useCollaboration(studio: Studio) {
   const presenceSequence = useRef(0);
   const receivedPresenceRevision = useRef(-1);
   const paused = useRef(false);
+  const recovering = useRef(false);
+  const attention = useRef<ReturnType<typeof observePageAttention> | undefined>(undefined);
+  const resumeCoordinator = useRef(new CollaborationResume());
+  const retiredSessions = useRef(new Set<string>());
+  const transportAvailable = useRef(true);
   const closingPaths = useRef(new Set<string>());
   const closingTools = useRef(new Set<string>());
   const presenceActive = useRef(false);
   const previousOpenFiles = useRef<string[]>(studio.openFiles);
   const previousOpenTools = useRef<readonly string[]>(studio.openTools);
-  const currentView = useRef<EditorPresence | undefined>(undefined);
+  const currentView = useRef<(EditorPresence & { ownerPath?: string }) | undefined>(undefined);
   const presenceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const editingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const waitingViewport = useRef(false);
   const editedAt = useRef(0);
   const root = studio.state?.projectRoot ?? '';
   const enabled = !!root && studio.syncDrafts && typeof window.blode.collaborationState === 'function';
@@ -106,7 +115,7 @@ export function useCollaboration(studio: Studio) {
     );
   const writeDraft = (path: string, content: string) => {
     const owner = latest.current;
-    owner.setDrafts((drafts) => {
+    owner.setSharedDrafts((drafts) => {
       if (content === owner.state?.files.find((file) => file.path === path)?.content) {
         if (!Object.hasOwn(drafts, path)) return drafts;
         const next = { ...drafts };
@@ -198,6 +207,7 @@ export function useCollaboration(studio: Studio) {
         .collaborationOpen(root, path)
         .then((document) => {
           if (revision !== generation.current || records.current.get(path) !== owner) return;
+          if (session.current && document.session !== session.current) return;
           session.current = document.session;
           adopt(document);
         })
@@ -255,16 +265,36 @@ export function useCollaboration(studio: Studio) {
   const receiveSnapshot = (value: CollaborationSnapshot) => {
     if (
       value.projectRoot !== root ||
-      (value.presenceRevision !== undefined && value.presenceRevision < receivedPresenceRevision.current)
+      retiredSessions.current.has(value.session) ||
+      (value.session === session.current &&
+        value.presenceRevision !== undefined &&
+        value.presenceRevision < receivedPresenceRevision.current)
     )
-      return;
-    if (value.presenceRevision !== undefined) receivedPresenceRevision.current = value.presenceRevision;
+      return false;
     if (session.current && session.current !== value.session) {
-      records.current.clear();
+      retiredSessions.current.add(session.current);
+      if (retiredSessions.current.size > 32)
+        retiredSessions.current.delete(retiredSessions.current.values().next().value!);
+      generation.current++;
+      records.current = retainLocalDocuments(records.current);
+      receivedPresenceRevision.current = -1;
       setConflicts([]);
     }
+    if (value.presenceRevision !== undefined) receivedPresenceRevision.current = value.presenceRevision;
     session.current = value.session;
-    setPeers(value.peers);
+    setPeers(
+      transportAvailable.current
+        ? value.peers
+        : value.peers.map((peer) => ({
+            ...peer,
+            attention: 'inactive',
+            path: '',
+            cursor: undefined,
+            editing: false,
+            activeTool: undefined,
+          })),
+    );
+    return true;
   };
   const leavePresence = () => {
     currentView.current = undefined;
@@ -283,8 +313,8 @@ export function useCollaboration(studio: Studio) {
   };
   const sendPresence = () => {
     const owner = latest.current;
-    if (!enabled || paused.current || owner.state?.projectRoot !== root) return;
-    const selected = localTabPresence(
+    if (!enabled || recovering.current || owner.state?.projectRoot !== root) return;
+    let selected = localTabPresence(
       { ...owner, files: owner.state?.files ?? [] },
       currentView.current,
       closingPaths.current,
@@ -294,7 +324,13 @@ export function useCollaboration(studio: Studio) {
       if (presenceActive.current) leavePresence();
       return;
     }
-    if (selected.path) currentView.current = selected;
+    if (paused.current || attention.current?.snapshot().active === false) {
+      sendInactive(true);
+      return;
+    }
+    if (waitingViewport.current && selected.path)
+      selected = { ...selected, path: '', startLine: 1, endLine: 1, cursor: undefined };
+    if (selected.path) currentView.current = { ...selected, ownerPath: owner.activePath };
     else currentView.current = undefined;
     presenceActive.current = true;
     const revision = generation.current,
@@ -310,6 +346,8 @@ export function useCollaboration(studio: Studio) {
           identity: self,
           actorToken,
           ...selected,
+          attention: 'active',
+          attentionEpoch: attention.current?.snapshot().nativeEpoch,
           editing: !!selected.path && Date.now() - editedAt.current < 1800,
         });
       })
@@ -329,6 +367,47 @@ export function useCollaboration(studio: Studio) {
           setConnectionError(error instanceof Error ? error.message : String(error));
       });
   };
+  const sendInactive = (includeTabs = false) => {
+    clearTimeout(presenceTimer.current);
+    const owner = latest.current;
+    if (!enabled || owner.state?.projectRoot !== root) return;
+    const selected = includeTabs
+      ? localTabPresence(
+          { ...owner, files: owner.state?.files ?? [] },
+          currentView.current,
+          closingPaths.current,
+          closingTools.current,
+        )
+      : undefined;
+    if (includeTabs && !selected) {
+      actions.current.leavePresence();
+      return;
+    }
+    const sequence = ++presenceSequence.current;
+    const revision = generation.current;
+    presenceActive.current = true;
+    void window.blode
+      .collaborationPresence({
+        projectRoot: root,
+        session: session.current || undefined,
+        sequence,
+        identity: self,
+        actorToken,
+        path: '',
+        startLine: 1,
+        endLine: 1,
+        editing: false,
+        attention: 'inactive',
+        attentionEpoch: attention.current?.snapshot().nativeEpoch,
+        clientKind: owner.isWeb ? 'web' : 'desktop',
+        ...(selected ? { openPaths: selected.openPaths, openTools: selected.openTools } : {}),
+      })
+      .then((snapshot) => {
+        if (revision === generation.current && sequence === presenceSequence.current)
+          actions.current.receiveSnapshot(snapshot);
+      })
+      .catch(() => {});
+  };
   const reportPresence = (view: EditorPresence) => {
     const owner = latest.current;
     if (
@@ -343,13 +422,16 @@ export function useCollaboration(studio: Studio) {
       return;
     if (enabled)
       void actions.current.ensureOpen(view.path).catch((error) => setConnectionError(String(error)));
-    currentView.current = view;
+    currentView.current = { ...view, ownerPath: owner.activePath };
+    waitingViewport.current = false;
     clearTimeout(presenceTimer.current);
     presenceTimer.current = setTimeout(sendPresence, 180);
   };
   const reportEdit = (path: string, content: string) => {
     if (!enabled) return;
     editedAt.current = Date.now();
+    clearTimeout(editingTimer.current);
+    editingTimer.current = setTimeout(() => actions.current.sendPresence(), 1900);
     const record = records.current.get(path);
     if (record) {
       record.local = content;
@@ -369,8 +451,24 @@ export function useCollaboration(studio: Studio) {
           setConnectionError(error instanceof Error ? error.message : String(error));
       });
   };
-  const actions = useRef({ adopt, ensureOpen, flushOne, sendPresence, receiveSnapshot, leavePresence });
-  actions.current = { adopt, ensureOpen, flushOne, sendPresence, receiveSnapshot, leavePresence };
+  const actions = useRef({
+    adopt,
+    ensureOpen,
+    flushOne,
+    sendPresence,
+    sendInactive,
+    receiveSnapshot,
+    leavePresence,
+  });
+  actions.current = {
+    adopt,
+    ensureOpen,
+    flushOne,
+    sendPresence,
+    sendInactive,
+    receiveSnapshot,
+    leavePresence,
+  };
 
   useEffect(() => {
     generation.current++;
@@ -379,13 +477,26 @@ export function useCollaboration(studio: Studio) {
     closingTools.current.clear();
     presenceActive.current = false;
     receivedPresenceRevision.current = -1;
-    paused.current = false;
+    retiredSessions.current.clear();
+    transportAvailable.current = true;
+    editedAt.current = 0;
+    paused.current = true;
+    recovering.current = false;
     session.current = '';
     setPeers([]);
     setConflicts([]);
     setConnectionError('');
     if (!enabled) return;
     let disposed = false;
+    const observer = observePageAttention(
+      window,
+      document,
+      navigator,
+      window.blode.onWindowAttention?.bind(window.blode),
+    );
+    const transport = observer.registerSource('transport', true);
+    attention.current = observer;
+    paused.current = !observer.snapshot().active;
     const snapshot = (value: CollaborationSnapshot) => {
       if (disposed || value.projectRoot !== root) return;
       actions.current.receiveSnapshot(value);
@@ -404,13 +515,6 @@ export function useCollaboration(studio: Studio) {
           conflict(event.document.path, record, event.document, event.reason, event.diskContent);
       }
     });
-    const initialGeneration = generation.current;
-    void window.blode
-      .collaborationState()
-      .then((value) => {
-        if (initialGeneration === generation.current) snapshot(value);
-      })
-      .catch((error) => setConnectionError(String(error)));
     const heartbeat = setInterval(() => {
       actions.current.sendPresence();
       for (const [path, record] of records.current)
@@ -430,44 +534,141 @@ export function useCollaboration(studio: Studio) {
       return Object.fromEntries([...records.current.entries()].map(([path, record]) => [path, record.local]));
     });
     const leave = () => {
+      resumeCoordinator.current.invalidate();
       paused.current = true;
+      recovering.current = false;
       leavePresence();
     };
     const resume = () => {
+      if (disposed || !observer.snapshot().active) return;
       paused.current = false;
-      const sequence = ++presenceSequence.current;
+      recovering.current = true;
+      const expectedSession = session.current;
+      const owns = (path: string) =>
+        !closingPaths.current.has(path) &&
+        !!latest.current.state?.files.some((file) => file.path === path) &&
+        (latest.current.openFiles.includes(path) ||
+          latest.current.activePath === path ||
+          Object.hasOwn(latest.current.drafts, path));
+      void resumeCoordinator.current.run({
+        active: () => !disposed && !paused.current && observer.snapshot().active,
+        snapshot: () => window.blode.collaborationState(),
+        adoptSnapshot: (value) => {
+          if (session.current !== expectedSession && value.session !== session.current) return false;
+          return actions.current.receiveSnapshot(value);
+        },
+        documents: (value) => {
+          const versions = new Map(value.documents.map((item) => [item.path, item.revision]));
+          return [
+            ...new Set([
+              latest.current.activePath,
+              ...Object.keys(latest.current.drafts),
+              ...records.current.keys(),
+            ]),
+          ].filter((path) => {
+            const record = records.current.get(path);
+            return (
+              owns(path) &&
+              (!record?.document ||
+                record.document.session !== value.session ||
+                record.document.revision !== versions.get(path) ||
+                !!record.request ||
+                !!record.conflict)
+            );
+          });
+        },
+        owns,
+        open: async (path) => {
+          if (!records.current.get(path)?.document) {
+            const record = await actions.current.ensureOpen(path);
+            if (!record.document) throw new Error('rpc.fileNotFound');
+            return record.document;
+          }
+          return window.blode.collaborationOpen(root, path);
+        },
+        adoptDocument: (value) => actions.current.adopt(value),
+        publish: () => {
+          recovering.current = false;
+          waitingViewport.current = latest.current.isWeb && latest.current.view === 'code';
+          setConnectionError('');
+          actions.current.sendPresence();
+          window.dispatchEvent(new Event('blode:attention-restored'));
+          for (const [path, record] of records.current)
+            if (
+              owns(path) &&
+              !record.sending &&
+              !record.conflict &&
+              (record.request || (record.document && record.local !== record.document.content))
+            )
+              void actions.current.flushOne(path).catch((error) => setConnectionError(String(error)));
+        },
+        failed: (error) => {
+          recovering.current = false;
+          setConnectionError(String(error));
+        },
+      });
+    };
+    let previousAttention: AttentionSnapshot = observer.snapshot();
+    const unsubscribeAttention = observer.subscribe((value) => {
+      const previous = previousAttention;
+      previousAttention = value;
+      if (!value.active) {
+        if (previous.active) {
+          resumeCoordinator.current.invalidate();
+          paused.current = true;
+          recovering.current = false;
+          actions.current.sendInactive();
+        }
+      } else if (!previous.active || value.nativeEpoch !== previous.nativeEpoch) resume();
+    });
+    if (observer.snapshot().active) resume();
+    else
       void window.blode
         .collaborationState()
         .then((value) => {
-          if (disposed || sequence !== presenceSequence.current || value.projectRoot !== root) return;
-          // A restarted host has a new session and restarts its snapshot counter.
-          if (session.current && session.current !== value.session) {
-            generation.current++;
-            receivedPresenceRevision.current = -1;
-            records.current.clear();
-            setConflicts([]);
-          }
-          actions.current.receiveSnapshot(value);
-          actions.current.sendPresence();
+          if (!disposed && (!session.current || value.session === session.current)) snapshot(value);
         })
         .catch((error) => {
           if (!disposed) setConnectionError(String(error));
         });
+    const disconnected = () => {
+      transportAvailable.current = false;
+      transport.update(false);
+      setPeers((values) =>
+        values.map((peer) => ({
+          ...peer,
+          attention: 'inactive',
+          path: '',
+          cursor: undefined,
+          editing: false,
+          activeTool: undefined,
+        })),
+      );
+    };
+    const reconnected = () => {
+      const active = observer.snapshot().active;
+      transportAvailable.current = true;
+      transport.update(true);
+      if (active) resume();
     };
     window.addEventListener('pagehide', leave);
-    window.addEventListener('pageshow', resume);
-    window.addEventListener('blode:collaboration-reconnect', resume);
+    window.addEventListener('blode:collaboration-reconnect', reconnected);
+    window.addEventListener('blode:collaboration-disconnect', disconnected);
     return () => {
       disposed = true;
       generation.current++;
       unsubscribe();
       unregister();
       leave();
+      unsubscribeAttention();
+      observer.close();
+      attention.current = undefined;
       window.removeEventListener('pagehide', leave);
-      window.removeEventListener('pageshow', resume);
-      window.removeEventListener('blode:collaboration-reconnect', resume);
+      window.removeEventListener('blode:collaboration-reconnect', reconnected);
+      window.removeEventListener('blode:collaboration-disconnect', disconnected);
       clearInterval(heartbeat);
       clearTimeout(presenceTimer.current);
+      clearTimeout(editingTimer.current);
     };
   }, [root, enabled, self.peerId, studio.isWeb]);
   useEffect(() => {
@@ -538,6 +739,16 @@ export function useCollaboration(studio: Studio) {
       if (currentView.current?.path === detail.path) actions.current.leavePresence();
       actions.current.sendPresence();
     };
+    const opened = (event: Event) => {
+      const detail = (event as CustomEvent<{ root: string; path: string }>).detail;
+      if (detail?.root !== root) return;
+      closingPaths.current.delete(detail.path);
+      void actions.current
+        .ensureOpen(detail.path)
+        .then(() => actions.current.sendPresence())
+        .catch((error) => setConnectionError(String(error)));
+    };
+    window.addEventListener('blode:file-opened', opened);
     window.addEventListener('blode:file-closed', closed);
     const toolClosed = (event: Event) => {
       const detail = (event as CustomEvent<{ root: string; id: string }>).detail;
@@ -549,13 +760,14 @@ export function useCollaboration(studio: Studio) {
     return () => {
       unregister();
       window.removeEventListener('blode:file-closed', closed);
+      window.removeEventListener('blode:file-opened', opened);
       window.removeEventListener('blode:tool-closed', toolClosed);
     };
   }, [root, enabled]);
 
   return {
-    peers: peers.filter((peer) => peer.peerId !== self.peerId),
-    allPeers: peers,
+    peers: peers.filter((peer) => peer.peerId !== self.peerId && peer.attention !== 'inactive'),
+    allPeers: peers.filter((peer) => peer.attention !== 'inactive'),
     self,
     conflicts,
     connectionError,

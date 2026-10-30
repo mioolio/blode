@@ -9,8 +9,8 @@ import { supportsLayout, supportsPartitionEditing } from '../src/renderer/worksp
 import { resizeAppRegion, resizeFixedLayout } from '../src/renderer/workspace/layout';
 
 test('STM32 exposes a fixed allocation layout while ESP32 keeps partition editing', () => {
-  const stm32 = getBoardAdapter('stm32').definition;
-  const esp32 = getBoardAdapter('esp32-s3').definition;
+  const stm32 = getBoardAdapter('STM32F103C8T6').definition;
+  const esp32 = getBoardAdapter('Esp32_S3_CAM').definition;
   const auto = getBoardAdapter('auto').definition;
 
   assert.equal(supportsLayout(stm32), true);
@@ -28,7 +28,7 @@ test('STM32 exposes a fixed allocation layout while ESP32 keeps partition editin
 });
 
 test('fixed layout resizing keeps the single application in sync and records an override', () => {
-  const config = getBoardAdapter('stm32').createConfigForFlash!(128 * 1024);
+  const config = getBoardAdapter('STM32F103C8T6').createConfigForFlash!(128 * 1024);
   const resized = resizeFixedLayout(config, 64 * 1024);
   assert.equal(resized.flashSize, 64 * 1024);
   assert.equal(resized.partitions[0]?.size, 64 * 1024);
@@ -49,7 +49,7 @@ test('fixed layout resizing keeps the single application in sync and records an 
 });
 
 test('STM32 layout renders absolute Flash addresses and measured firmware usage', () => {
-  const config = getBoardAdapter('stm32').createConfigForFlash!(128 * 1024);
+  const config = getBoardAdapter('STM32F103C8T6').createConfigForFlash!(128 * 1024);
   const html = renderToStaticMarkup(
     createElement(I18nProvider, {
       children: createElement(ResourceLayout, {
@@ -57,7 +57,7 @@ test('STM32 layout renders absolute Flash addresses and measured firmware usage'
         baseAddress: 0x08000000,
         firmwareUsed: 2136,
         firmwareStale: false,
-        flashSizes: getBoardAdapter('stm32').definition.flashSizes,
+        flashSizes: getBoardAdapter('STM32F103C8T6').definition.flashSizes,
         customFlashSize: true,
         onResize: () => {},
         onAllocate: () => {},
@@ -80,7 +80,7 @@ test('STM32 layout renders absolute Flash addresses and measured firmware usage'
 });
 
 test('STM32 layout states that firmware usage is unknown before a build', () => {
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   const html = renderToStaticMarkup(
     createElement(I18nProvider, {
       children: createElement(ResourceLayout, {
@@ -88,7 +88,7 @@ test('STM32 layout states that firmware usage is unknown before a build', () => 
         baseAddress: 0x08000000,
         firmwareUsed: null,
         firmwareStale: false,
-        flashSizes: getBoardAdapter('stm32').definition.flashSizes,
+        flashSizes: getBoardAdapter('STM32F103C8T6').definition.flashSizes,
         customFlashSize: true,
         onResize: () => {},
         onAllocate: () => {},
@@ -106,7 +106,7 @@ test('STM32 layout states that firmware usage is unknown before a build', () => 
 
 test('a manual STM32 capacity is shown against the probe report', () => {
   const config = {
-    ...getBoardAdapter('stm32').createConfigForFlash!(64 * 1024),
+    ...getBoardAdapter('STM32F103C8T6').createConfigForFlash!(64 * 1024),
     flashSizeOverride: true,
   };
   const html = renderToStaticMarkup(
@@ -116,7 +116,7 @@ test('a manual STM32 capacity is shown against the probe report', () => {
         baseAddress: 0x08000000,
         firmwareUsed: null,
         firmwareStale: false,
-        flashSizes: getBoardAdapter('stm32').definition.flashSizes,
+        flashSizes: getBoardAdapter('STM32F103C8T6').definition.flashSizes,
         customFlashSize: true,
         detectedFlashSize: 128 * 1024,
         onResize: () => {},
@@ -135,7 +135,10 @@ test('a manual STM32 capacity is shown against the probe report', () => {
 });
 
 test('application allocation bounds the build and reports reserved Flash plus RAM usage', () => {
-  const config = resizeAppRegion(getBoardAdapter('stm32').createConfigForFlash!(128 * 1024), 48 * 1024);
+  const config = resizeAppRegion(
+    getBoardAdapter('STM32F103C8T6').createConfigForFlash!(128 * 1024),
+    48 * 1024,
+  );
   const render = (firmwareUsed: number) =>
     renderToStaticMarkup(
       createElement(I18nProvider, {
@@ -144,7 +147,7 @@ test('application allocation bounds the build and reports reserved Flash plus RA
           baseAddress: 0x08000000,
           firmwareUsed,
           firmwareStale: false,
-          flashSizes: getBoardAdapter('stm32').definition.flashSizes,
+          flashSizes: getBoardAdapter('STM32F103C8T6').definition.flashSizes,
           customFlashSize: true,
           onResize: () => {},
           onAllocate: () => {},
@@ -171,7 +174,7 @@ test('application allocation bounds the build and reports reserved Flash plus RA
 });
 
 test('a stale build without measured RAM shows a placeholder instead of undefined', () => {
-  const config = getBoardAdapter('stm32').createConfigForFlash!(64 * 1024);
+  const config = getBoardAdapter('STM32F103C8T6').createConfigForFlash!(64 * 1024);
   const html = renderToStaticMarkup(
     createElement(I18nProvider, {
       children: createElement(ResourceLayout, {
@@ -179,7 +182,7 @@ test('a stale build without measured RAM shows a placeholder instead of undefine
         baseAddress: 0x08000000,
         firmwareUsed: 2136,
         firmwareStale: true,
-        flashSizes: getBoardAdapter('stm32').definition.flashSizes,
+        flashSizes: getBoardAdapter('STM32F103C8T6').definition.flashSizes,
         customFlashSize: true,
         onResize: () => {},
         onAllocate: () => {},
@@ -195,7 +198,7 @@ test('a stale build without measured RAM shows a placeholder instead of undefine
 });
 
 test('user data regions keep custom names/colors and warn when firmware overlaps them', () => {
-  const config = getBoardAdapter('stm32').createConfigForFlash!(64 * 1024);
+  const config = getBoardAdapter('STM32F103C8T6').createConfigForFlash!(64 * 1024);
   config.partitions = [
     { ...config.partitions[0]!, size: 32 * 1024 },
     { id: 'logs', name: 'logs', type: 'data', offset: 32 * 1024, size: 32 * 1024, color: '#112233' },
@@ -207,7 +210,7 @@ test('user data regions keep custom names/colors and warn when firmware overlaps
         baseAddress: 0x08000000,
         firmwareUsed: 40 * 1024,
         firmwareStale: false,
-        flashSizes: getBoardAdapter('stm32').definition.flashSizes,
+        flashSizes: getBoardAdapter('STM32F103C8T6').definition.flashSizes,
         customFlashSize: true,
         onResize: () => {},
         onAllocate: () => {},

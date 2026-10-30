@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import { useEffect, useState } from 'react';
 import { Download, Flame, RefreshCw, X } from 'lucide-react';
 import { getBoardAdapter } from '../../../extensions/registry';
@@ -41,20 +42,21 @@ export function FirmwareTools() {
         .getState()
         .then((next) => {
           setState(next);
-          if (next.config.boardId !== 'stm32') setFormat((current) => (current === 'elf' ? 'bin' : current));
+          if (next.config.boardId !== 'STM32F103C8T6')
+            setFormat((current) => (current === 'elf' ? 'bin' : current));
           const target =
             next.config.boardId === 'auto'
               ? {
-                  ...getBoardAdapter('stm32').createConfig(),
+                  ...getBoardAdapter('STM32F103C8T6').createConfig(),
                   toolchain: {
-                    ...getBoardAdapter('stm32').createConfig().toolchain,
+                    ...getBoardAdapter('STM32F103C8T6').createConfig().toolchain,
                     stlinkDirectory: next.config.toolchain.stlinkDirectory,
                     armCompilerDirectory: next.config.toolchain.armCompilerDirectory,
                   },
                 }
               : structuredClone(next.config);
           setConfig(target);
-          setAddress(target.boardId === 'stm32' ? '0x08000000' : '0x0');
+          setAddress(target.boardId === 'STM32F103C8T6' ? '0x08000000' : '0x0');
         })
         .catch((error) => {
           setNotice(explain(error));
@@ -68,7 +70,7 @@ export function FirmwareTools() {
 
   if (!mode) return null;
   const standalone = mode === 'flash';
-  const stlink = config?.boardId === 'stm32';
+  const stlink = config?.boardId === 'STM32F103C8T6';
   const selectedConnected = stlink
     ? !!state?.debugProbes.some(
         (probe) => probe.serialNumber.toLowerCase() === config?.programmer?.serialNumber.toLowerCase(),
@@ -130,7 +132,7 @@ export function FirmwareTools() {
       };
     setConfig(next);
     setConfirmed(false);
-    if (!image || image.format === 'bin') setAddress(id === 'stm32' ? '0x08000000' : '0x0');
+    if (!image || image.format === 'bin') setAddress(id === 'STM32F103C8T6' ? '0x08000000' : '0x0');
   };
 
   return (
@@ -163,10 +165,9 @@ export function FirmwareTools() {
         </div>
         {!standalone ? (
           <>
-            <p>{t('firmware.exportDescription')}</p>
             <label>
               {t('firmware.format')}
-              <select
+              <ModernSelect
                 value={format}
                 disabled={busy}
                 onChange={(event) => setFormat(event.target.value as FirmwareFormat)}
@@ -174,30 +175,28 @@ export function FirmwareTools() {
                 <option value="bin">Binary (.bin)</option>
                 <option value="hex">Intel HEX (.hex)</option>
                 <option value="srec">Motorola S-record (.srec)</option>
-                <option value="elf" disabled={state?.config.boardId !== 'stm32'}>
+                <option value="elf" disabled={state?.config.boardId !== 'STM32F103C8T6'}>
                   ARM ELF (.elf) · STM32
                 </option>
-              </select>
+              </ModernSelect>
             </label>
             <p className="firmware-format-description">{t(`firmware.formatNote.${format}`)}</p>
-            <p className="subtle-note">{t('firmware.exportAddressNote')}</p>
             {(!state?.lastBuild?.success || state.buildStale) && (
               <p className="layout-warning">{t('firmware.buildRequired')}</p>
             )}
           </>
         ) : (
           <>
-            <p>{t('firmware.standaloneDescription')}</p>
             <label>
               {t('firmware.platform')}
-              <select
-                value={config?.boardId ?? 'stm32'}
+              <ModernSelect
+                value={config?.boardId ?? 'STM32F103C8T6'}
                 disabled={busy}
                 onChange={(event) => changeBoard(event.target.value)}
               >
-                <option value="stm32">STM32 / ST-Link</option>
-                <option value="esp32-s3">ESP32-S3</option>
-              </select>
+                <option value="STM32F103C8T6">STM32 / ST-Link</option>
+                <option value="Esp32_S3_CAM">ESP32-S3</option>
+              </ModernSelect>
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
               <button
@@ -251,7 +250,7 @@ export function FirmwareTools() {
             <label>
               {t(stlink ? 'device.debugProbe' : 'device.port')}
               <div style={{ display: 'flex', gap: 8 }}>
-                <select
+                <ModernSelect
                   value={
                     stlink
                       ? selectedConnected
@@ -293,7 +292,7 @@ export function FirmwareTools() {
                           {port.path} · {port.manufacturer}
                         </option>
                       ))}
-                </select>
+                </ModernSelect>
                 <button
                   className="secondary"
                   disabled={busy}

@@ -1,0 +1,164 @@
+.modern-select {
+  display: inline-flex;
+  min-width: 0;
+  width: 100%;
+  position: relative;
+  vertical-align: middle;
+}
+.modern-select-native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  clip-path: inset(50%);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+button.modern-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 11px;
+  text-align: left;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+.modern-select-trigger > span {
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.modern-select-trigger > svg {
+  flex-shrink: 0;
+  transition: transform 140ms ease;
+  color: var(--text-dim);
+}
+.modern-select-trigger[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+.modern-select-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.modern-select-trigger:disabled,
+fieldset:disabled .modern-select-trigger {
+  opacity: 0.55;
+  cursor: default;
+}
+.modern-select-popup {
+  position: fixed;
+  z-index: 13000;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 9px;
+  background: var(--surface-1, var(--bg));
+  box-shadow: 0 8px 26px #0002;
+  color: var(--text);
+  outline: none;
+  animation: select-open 100ms ease-out;
+  box-sizing: border-box;
+  font-size: 12px;
+}
+.modern-select-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 9px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  margin: 0 0 4px;
+}
+.modern-select-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  border: 0;
+  outline: none;
+  padding: 2px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.modern-select-options {
+  overflow: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+.modern-select-options button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 33px;
+  border: 0;
+  border-radius: 5px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.modern-select-options button span {
+  overflow-wrap: anywhere;
+}
+.modern-select-options button svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.modern-select-options button.is-active {
+  background: var(--hover, var(--surface-2));
+}
+.modern-select-options button[aria-selected='true'] {
+  color: var(--accent);
+}
+.modern-select-options button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.modern-select-group {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  padding: 10px 10px 5px;
+}
+.modern-select-empty {
+  margin: 0;
+  padding: 16px 12px;
+  color: var(--text-dim);
+}
+@keyframes select-open {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modern-select-popup {
+    animation: none;
+  }
+  .modern-select-trigger > svg {
+    transition: none;
+  }
+}

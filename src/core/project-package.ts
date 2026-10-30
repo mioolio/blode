@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { DOMParser } from '../../extensions/boards/stm32/vendor/xml.cjs';
+import { DOMParser } from '../../extensions/boards/STM32F103C8T6/compiler/vendor/xml.cjs';
 import { writeZip, type ZipEntry } from './zip';
 import type { ProjectPackagePlan, ProjectPackageResult, PackageWarning } from '../shared/project-package';
 
@@ -326,7 +326,7 @@ export async function collectProjectPackage(projectRoot: string): Promise<Scanne
     const settings = descriptor.build?.settings;
     if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
       portableCompilerChoice(settings.common, 'common');
-      for (const platform of ['stm32', 'esp32-s3']) {
+      for (const platform of ['STM32F103C8T6', 'Esp32_S3_CAM']) {
         const choices = settings.platforms?.[platform];
         if (!choices || typeof choices !== 'object' || Array.isArray(choices)) continue;
         for (const language of ['common', 'c', 'cpp'])

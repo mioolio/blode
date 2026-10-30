@@ -22,7 +22,7 @@ export function MemoryUsage({
   const build = state?.lastBuild?.success ? state.lastBuild : null;
   const board = state?.boards.find((item) => item.id === config?.boardId);
   const validatesFirmware = validatesExistingFirmware(board, state?.build);
-  const isStm32 = config?.boardId === 'stm32';
+  const isStm32 = config?.boardId === 'STM32F103C8T6';
   const needsDetection = config?.boardId === 'auto';
   const detectedRam = isStm32
     ? state?.debugProbes?.find(

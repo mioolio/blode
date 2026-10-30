@@ -57,13 +57,18 @@ export function classifyDebugShortcut(config: DebugConfig, input: DebugShortcutI
 }
 
 /** Main must gate enabled with !app.isPackaged before installing these controls. */
-export function installDebugControls(window: BrowserWindow, config: DebugConfig): () => void {
+export function installDebugControls(
+  window: BrowserWindow,
+  config: DebugConfig,
+  terminalFocused: () => boolean = () => false,
+): () => void {
   if (!config.enabled) return () => {};
   const contents = window.webContents;
   let disposed = false;
   const onInput = (event: Event, input: Input) => {
     if (disposed || window.isDestroyed() || contents.isDestroyed()) return;
     const shortcut = classifyDebugShortcut(config, input);
+    if (shortcut && shortcut !== 'toggleDevTools' && terminalFocused()) return;
     if (!shortcut) return;
     event.preventDefault();
     if (shortcut === 'toggleDevTools') contents.toggleDevTools();

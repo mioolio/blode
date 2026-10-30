@@ -5,7 +5,7 @@ import { parseProjectDescriptor } from '../src/core/config';
 import { readProjectSettings, writeProjectSettings } from '../src/renderer/workspace/projectSettings';
 
 test('advanced settings preserve tool paths and explicit files while changing the C standard and entry', () => {
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   config.toolchain.armCompilerDirectory = 'C:/tools/compiler';
   const draft = readProjectSettings(
     JSON.stringify({ ...config, build: { sketch: 'old.c', files: ['old.c'] } }),
@@ -26,23 +26,23 @@ test('advanced settings preserve tool paths and explicit files while changing th
 });
 
 test('advanced settings reject malformed descriptors and do not overwrite their text', () => {
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   for (const text of ['{', '{}', '[]', JSON.stringify({ ...config, build: { files: 'main.c' } })])
     assert.throws(() => readProjectSettings(text, config, {}));
 });
 
 test('advanced and compile settings preserve each other across a descriptor round trip', () => {
-  const config = getBoardAdapter('stm32').createConfig();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
   const settings = {
     mode: 'debug' as const,
     optimizeForSize: false,
     common: { family: 'auto' as const },
     platforms: {
-      stm32: {
+      STM32F103C8T6: {
         c: { family: 'gnu-arm' as const, version: '13.3.1-1.1' },
         cpp: { family: 'gnu-arm' as const, version: '14.2.1-1.1' },
       },
-      'esp32-s3': { common: { family: 'arduino' as const, version: '2.0.17' } },
+      Esp32_S3_CAM: { common: { family: 'arduino' as const, version: '2.0.17' } },
     },
   };
   const draft = readProjectSettings(

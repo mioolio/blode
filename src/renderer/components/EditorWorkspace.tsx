@@ -1,3 +1,4 @@
+import { ModernSelect } from './ModernSelect';
 import {
   Fragment,
   lazy,
@@ -235,9 +236,13 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
         path: file.path,
         content: drafts[file.path] ?? file.content,
       })),
-      { projectRoot: state?.projectRoot ?? '', cStandard: state?.build?.cStandard },
+      {
+        projectRoot: state?.projectRoot ?? '',
+        cStandard: state?.build?.cStandard,
+        language: state?.language,
+      },
     );
-  }, [drafts, state?.files, state?.projectRoot, state?.build?.cStandard]);
+  }, [drafts, state?.files, state?.projectRoot, state?.build?.cStandard, state?.language]);
   useEffect(() => {
     if (!state?.workspaceOpen || !window.blode.languageIndex) return;
     // Saved-source cache is maintained off the typing path; buffers stay local.
@@ -459,7 +464,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                       <div className="editor-pane">
                         <div className="split-pane-header">
                           <span>{t('action.splitEditor')}</span>
-                          <select
+                          <ModernSelect
                             value={secondaryPath}
                             aria-label={t('action.splitEditor')}
                             onChange={(event) => {
@@ -472,7 +477,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                                 {file.path}
                               </option>
                             ))}
-                          </select>
+                          </ModernSelect>
                         </div>
                         <div className="monaco-container">{renderEditor(secondaryPath)}</div>
                       </div>

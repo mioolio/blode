@@ -2,9 +2,36 @@
 
 English | [简体中文](../README.md)
 
-Blode Studio is a modular embedded development workbench for ESP32-S3 and STM32, covering code editing, collaboration, offline builds, firmware export, serial communication and hardware debugging.
+Blode Studio is a modular embedded development workbench for editing, collaboration, offline builds, firmware export, serial communication and hardware debugging. The current source on `main` includes the specific `Esp32_S3_CAM` and `STM32F103C8T6` runtime profiles.
 
 **Current release: 0.2.3.6** · [Release notes](releases/0.2.3.6.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
+
+## Internal development preview: runtime plugins
+
+The development preview from `codex/runtime-plugins-internal` has been merged into `main`. It introduces runtime identity migration, API v2 package declarations, execution consent, replaceable compilers, and custom device/debug views. The source retains its `0.2.3.6-internal` preview status. Existing 0.2.3.6 release packages are the earlier builds; this merge produces no new desktop or Web release binaries. See the [internal update and acceptance checklist](internal/runtime-plugins.md) for validation status.
+
+The latest internal update adds an interactive PowerShell terminal, extension windows and bottom-panel views, save-on-exit decisions and an optional system tray. Collaboration follows foreground attention and refreshes on return. Hardware debugging, Preferences and device controls share more compact wording and controls. See the [workbench interaction update](internal/workbench-interaction.md) for setup and validation details.
+
+The debugger now groups connection and tool settings in a top menu, offers batch breakpoints, and previews single Cortex-M3 instructions from assembly or hex bytes. SRAM instructions can be patched while stopped, or with an explicit pause/write/verify/resume transaction while running. Flash editing still requires rebuilding and flashing firmware. Normal development-window exits no longer trigger a sandbox restart. See the [debugger update](internal/debugger-editing.md) for usage and verification boundaries.
+
+The latest internal update also adds ESP32-S3 native USB-JTAG debugging with Xtensa GDB and Espressif OpenOCD. Windows tool downloads, hashes and version execution were verified; physical JTAG acceptance and Linux testing remain pending. Xtensa instruction editing is not enabled. See [hardware debugging](HARDWARE-DEBUGGING.md).
+
+Both standard modules now use ten responsibility directories: support, device, runtime, constraints, UI, compiler, debugger, layout, languages and tools. Modules own their language declarations and JSON data. `package:runtime` produces standalone JavaScript packages for compatible binary hosts; users install them under the host data directory's `plugins/<id>/`, without host source code or TypeScript. New manifest fields require a host containing this internal update; this change does not produce a new release binary. See the [module guide](RUNTIME-PLUGINS.md) and [module language contract](MODULE-LANGUAGES.md).
+
+**Run → Component libraries** now separates project dependencies from platform-provided libraries. Search the official Arduino library index, select a version and install its dependencies, or import a folder or ZIP from the host computer. Managed sources live in `libraries/` or `components/`, alongside a portable `blode.components.json` manifest. Removal refuses modified libraries or libraries still required by another component. ESP32 uses Arduino libraries and native components; STM32 native builds accept native C/C++ components, not Arduino framework libraries. See the [component library guide](COMPONENT-LIBRARIES.md).
+
+This update also fixes ESP32-S3 debug connections with an empty USB serial selection and preserves platform compiler flags, including `-c`, when appending project `extra_flags`. Physical USB-JTAG acceptance remains pending; no new release binaries are produced by this source update.
+
+To try the source build:
+
+```sh
+git clone --branch main --single-branch https://github.com/mioolio/blode.git
+cd blode
+npm ci
+npm run dev
+```
+
+For the standalone Web host, run `npm run web:build`, then `npm run web:start` in the source directory. Extension authors should start with the [runtime plugin guide](RUNTIME-PLUGINS.md). Legacy `esp32-s3` and `stm32` project identifiers and compiler pins migrate when loaded.
 
 ## Choose an edition
 
@@ -36,9 +63,11 @@ The editor supports preview and pinned tabs, horizontal scrolling, split views a
 
 Build a selected file or directory without connecting a device. Firmware operations include BIN, Intel HEX and S-record export, STM32 ELF export, Flash layout editing and prepared firmware programming without opening a project. Connect and identify the physical target for programming.
 
-Serial communication supports UTF-8/HEX, configurable framing, flow control and line endings. The STM32/ST-Link/GDB workbench opens a separate desktop window or browser tab with registers, disassembly, stack, breakpoints, memory and local ELF inspection.
+Serial communication supports UTF-8/HEX, configurable framing, flow control and line endings. The debugger opens a separate desktop window or browser tab for STM32/ST-Link or ESP32-S3 USB-JTAG, with registers, disassembly, stack, breakpoints, memory and local ELF inspection.
 
 Portable project ZIP export collects supported external dependencies, rewrites archive-copy paths and includes a dependency manifest. JSON-RPC and MCP expose validated project, Git, build, firmware, debugger, language-index and UI actions.
+
+Component library APIs add explicit search, installation, host-folder/ZIP import and guarded removal. Every mutation requires `expectedProjectRoot` and `confirm: true`. Build inputs are derived by the host from the component manifest; `build.components` is not a `be` configuration field.
 
 ## Installation
 
@@ -91,7 +120,7 @@ Restart after changing main-process, preload or platform code. Renderer developm
 
 ## Language and project configuration
 
-Built-in data lives in `extensions/completions/C/<standard>/` and `extensions/completions/C++/arduino/`. C version directories are independent; projects can override a selected standard in `languages/C/<standard>/`.
+Standard board modules declare their own data under `extensions/boards/<id>/languages/`, with separate C99/C11/C17/C23 catalogs and C++ contributions. Host defaults in `extensions/completions/` remain available for legacy modules without a language declaration. Projects can add selected-standard rules in `languages/C/<standard>/`; workspace symbols and user AI entries remain available.
 
 Right-click `be` → **Advanced settings** to change the build entry, source list and `build.cStandard`. C17 is the default. Compiler support for a selected standard depends on the installed tool version. Legacy `blode.completions.json` and `.blode/project.json` inputs remain compatible.
 
@@ -103,8 +132,8 @@ JSON structure/version errors produce file and line diagnostics. Source rules ca
 
 | Embedded platform | Build path                                                        | Hardware operations                            |
 | ----------------- | ----------------------------------------------------------------- | ---------------------------------------------- |
-| ESP32-S3          | Arduino CLI + Arduino-ESP32                                       | esptool UART flashing and serial communication |
-| STM32F1           | GNU Arm GCC or licensed Arm Compiler 6; supported project imports | ST-Link/SWD flashing and ST-Link/GDB debugging |
+| Esp32_S3_CAM      | Arduino CLI + Arduino-ESP32                                       | esptool UART flashing and serial communication |
+| STM32F103C8T6     | GNU Arm GCC or licensed Arm Compiler 6; supported project imports | ST-Link/SWD flashing and ST-Link/GDB debugging |
 | Automatic         | Infer a supported project platform or select it manually          | Identify a connected target                    |
 
 Windows x64 is the current desktop distribution and main development environment. Linux x64/ARM64 Node paths and selected GNU/Arduino downloads are implemented, but **Linux installation, compilation, USB access and desktop packaging have not been verified on real Linux machines**. macOS custom tool paths also remain unverified. See the [support matrix](PLATFORM-SUPPORT.md) and [hardware records](HARDWARE-VALIDATION.md).
@@ -127,8 +156,8 @@ The desktop command aliases the lightweight `package:lite` flow. The Web build c
 
 - [0.2.3.6 release notes](releases/0.2.3.6.md) and [changelog](../CHANGELOG.md)
 - [Language rules](LANGUAGE-RULES.md), [AI completion](AI-COMPLETIONS.md), [collaboration](COLLABORATION.md)
-- [Git](GIT.md), [project and build settings](PROJECTS.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
-- [STM32](STM32.md), [ESP32-S3](../extensions/boards/esp32-s3/README.md), [toolchains](TOOLCHAINS.md)
+- [Git](GIT.md), [project and build settings](PROJECTS.md), [component libraries](COMPONENT-LIBRARIES.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
+- [STM32](STM32.md), [ESP32-S3](../extensions/boards/Esp32_S3_CAM/README.md), [toolchains](TOOLCHAINS.md)
 - [Web host](WEB-HOST.md), [development](DEVELOPMENT.md), [architecture](ARCHITECTURE.md)
 - [Platform support](PLATFORM-SUPPORT.md), [roadmap](ROADMAP.md), [feature guide](NEW-FEATURES.md)
 - [Contributing](../CONTRIBUTING.md), [security policy](../SECURITY.md), [license](../LICENSE)

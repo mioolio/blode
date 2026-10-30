@@ -55,7 +55,11 @@ export function createWorkbenchAutomation(options: Options) {
           'window.action',
           'tools.installVersion',
           'terminal.run',
+          'terminal.open',
+          'terminal.write',
+          'terminal.close',
           'git.action',
+          'runtime.trust',
         ].includes(method),
       })),
       uiActions: [
@@ -70,6 +74,7 @@ export function createWorkbenchAutomation(options: Options) {
         'console',
         'consolePanel',
         'devicePanel',
+        'runtimeView',
         'editor',
         'splitEditor',
         'language',
@@ -119,7 +124,7 @@ export function createWorkbenchAutomation(options: Options) {
     },
     'firmware.flash': (p) =>
       firmware.withImage(p.id, p.config.boardId, p.address, (image) => core.flashPrepared(p.config, image)),
-    'debugger.state': () => debug.state(),
+    'debugger.state': (p) => debug.state(p.config),
     'debugger.open': () => options.openDebugger(),
     'debugger.symbols.set': (p) =>
       core.runHardwareAction(async () => {
@@ -129,14 +134,22 @@ export function createWorkbenchAutomation(options: Options) {
     'debugger.action': (p) => debug.action(p.action),
     'debugger.breakpoint': (p) => debug.breakpoint(p.location, p.removeId),
     'debugger.memory': (p) => debug.memory(p.address, p.length),
+    'debugger.breakpoints': (p) => debug.breakpoints(p.locations),
+    'debugger.patch': (p) => debug.patch(p),
+    'debugger.assemble': (p) => debug.assemble(p.address, p.source),
     'debugger.storage': () => debug.storage(),
-    'debugger.tools.install': () =>
-      core.runInstallation('GNU Arm GCC / GDB', ({ progress, log, fetcher, signal }) =>
-        debug.install(progress, log, { fetcher, signal }),
+    'debugger.tools.install': (p) =>
+      core.runInstallation('GDB / debug server', ({ progress, log, fetcher, signal }) =>
+        debug.install(progress, log, { fetcher, signal, config: p.config }),
       ),
     'debugger.gdb.set': (p) => debug.selectGdb(absolute(p.path)),
     'ui.state': () => ui.state(),
     'ui.command': (p) => ui.command(p),
+    'runtime.view.open': async (p) => {
+      if (!options.hostServices) throw new Error('rpc.methodNotFound');
+      await options.hostServices.invoke('runtimePluginViewInfo', [p.id, p.viewId]);
+      return ui.command({ action: 'runtimeView', pluginId: p.id, viewId: p.viewId, target: p.target });
+    },
     'window.action': (p) => options.windowAction(p.action),
     'logs.latest': () => logs.snapshot(),
     'collaboration.state': () => collaboration.state(),

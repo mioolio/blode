@@ -54,3 +54,9 @@
   color: var(--amber);
   line-height: 1.6;
 }
+.ai-catalog-help {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -9px;
+  margin-bottom: 9px;
+}

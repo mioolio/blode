@@ -10,12 +10,16 @@ import { GitService, createGitRoutes } from './git';
 import { ToolVersions } from './tool-versions';
 import { ProjectPackages } from './project-package';
 import { HostTerminal } from './terminal';
+import { ComponentLibraries } from './components';
+import type { ComponentLibrariesState } from '../shared/components';
 import { browseHost } from './host-files';
 import { runCommand } from './process';
 import { configSchema, parseProjectBuild } from './config';
 import { toolVersionSchemas } from './tool-version-schemas';
 import { hostParameterSchemas } from './host-service-schemas';
 import { LanguageIndexService } from './language-index';
+import type { RuntimeDebugger } from './runtime-debugger';
+import { isRuntimeViewKind, type RuntimeViewContribution, type RuntimeViewKind } from '../shared/plugins';
 
 interface Options {
   core: CoreService;
@@ -29,6 +33,12 @@ interface Options {
   toolchainEnv?: NodeJS.ProcessEnv;
   reloadProject?: () => Promise<void>;
   savePackage?: (file: { path: string; name: string }) => Promise<boolean>;
+  runtimeDebugger?: () => RuntimeDebugger | undefined;
+  runtimeViewDocument?: (id: string, kind: RuntimeViewKind) => string;
+  openRuntimeView?: (
+    id: string,
+    view: RuntimeViewContribution,
+  ) => Promise<{ destination: 'window' | 'browser'; url?: string }>;
 }
 const absolute = (value: string) => {
   if (!path.isAbsolute(value) || /[\0\r\n]/.test(value)) throw new Error('error.invalidPath');
@@ -40,6 +50,43 @@ export function createHostServices(options: Options) {
   const language = new LanguageIndexService(core);
   const git = new GitService({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
   const terminal = new HostTerminal({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
+  const projectBuild = async () => {
+    const marker = (await core.workspaceSnapshot()).files.find((file) => file.path === 'be');
+    if (!marker?.content.trim()) return {};
+    try {
+      return parseProjectBuild(JSON.parse(marker.content).build);
+    } catch {
+      return {};
+    }
+  };
+  const components = new ComponentLibraries({
+    projectRoot: () => core.currentProjectRoot(),
+    config: () => core.currentConfig(),
+    build: projectBuild,
+    dataRoot: options.dataRoot,
+    toolchainRoot: options.toolchainRoot,
+    fetcher: options.fetcher,
+    env: options.toolchainEnv,
+  });
+  const componentAction = async (
+    action: (
+      hooks: Parameters<Parameters<CoreService['runInstallation']>[1]>[0],
+    ) => Promise<ComponentLibrariesState>,
+  ) =>
+    collaboration.workspaceAction(async () => {
+      let result!: ComponentLibrariesState;
+      await core.runInstallation('components', async (hooks) => {
+        result = await action(hooks);
+      });
+      await core.workspaceSnapshot(true);
+      options.emit({
+        kind: 'status',
+        level: 'success',
+        message: 'status.workspaceChanged',
+        time: new Date().toISOString(),
+      });
+      return result;
+    });
   const packages = new ProjectPackages({
     dataRoot: options.dataRoot,
     projectRoot: () => core.currentProjectRoot(),
@@ -50,15 +97,7 @@ export function createHostServices(options: Options) {
     root: options.toolchainRoot,
     dataRoot: options.dataRoot,
     config: () => core.currentConfig(),
-    build: async () => {
-      const marker = (await core.workspaceSnapshot()).files.find((file) => file.path === 'be');
-      if (!marker?.content.trim()) return {};
-      try {
-        return parseProjectBuild(JSON.parse(marker.content).build);
-      } catch {
-        return {};
-      }
-    },
+    build: projectBuild,
     runner: toolRunner,
     env: options.toolchainEnv,
     fetcher: options.fetcher,
@@ -67,6 +106,154 @@ export function createHostServices(options: Options) {
   const noArgs = z.tuple([]),
     nativePath = z.string().min(1).max(4096);
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
+    componentsState: { args: noArgs, run: () => components.list() },
+    componentsSearch: {
+      args: z.tuple([hostParameterSchemas['components.search'].shape.query]),
+      run: (query) => components.search(query),
+    },
+    componentsInstall: {
+      args: z.tuple([hostParameterSchemas['components.install']]),
+      run: (request) => componentAction((hooks) => components.install(request, hooks)),
+    },
+    componentsImport: {
+      args: z.tuple([hostParameterSchemas['components.import']]),
+      run: (request) =>
+        componentAction((hooks) =>
+          request.kind === 'archive'
+            ? components.importArchive(request.path, request.expectedProjectRoot, hooks)
+            : components.importDirectory(request.path, request.expectedProjectRoot, hooks),
+        ),
+    },
+    componentsRemove: {
+      args: z.tuple([hostParameterSchemas['components.remove']]),
+      run: (request) => componentAction(() => components.remove(request)),
+    },
+    runtimePluginViewInfo: {
+      args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80)]),
+      run: async (id, viewId) => {
+        await core.runtimePlugins.view(id, `view:${viewId}`);
+        const view = (await core.runtimePlugins.state()).plugins
+          .find((plugin) => plugin.id === id)
+          ?.manifest.ui.views?.find((view) => view.id === viewId);
+        if (!view) throw new Error('error.runtimePluginCapability');
+        return view;
+      },
+    },
+    runtimePluginOpenView: {
+      args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80)]),
+      run: async (id, viewId) => {
+        const view = (await routes.runtimePluginViewInfo.run(id, viewId)) as RuntimeViewContribution;
+        if (view.location === 'panel') return { destination: 'panel' };
+        return options.openRuntimeView?.(id, view) ?? { destination: 'browser' };
+      },
+    },
+    runtimePluginsState: { args: noArgs, run: () => core.runtimePlugins.state() },
+    runtimePluginTrust: {
+      args: z.tuple([
+        z
+          .object({
+            id: z.string().min(1).max(80),
+            fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+            confirm: z.literal(true),
+            permanent: z.boolean(),
+          })
+          .strict(),
+      ]),
+      run: async (request) => {
+        let result;
+        await core.runHardwareAction(async () => {
+          result = await core.runtimePlugins.trust(request);
+        });
+        options.emit({
+          kind: 'status',
+          level: 'info',
+          message: 'status.runtimePluginTrusted',
+          time: new Date().toISOString(),
+        });
+        core.notifyDevicesChanged();
+        return result;
+      },
+    },
+    runtimePluginView: {
+      args: z.tuple([z.string().min(1).max(80), z.custom<RuntimeViewKind>(isRuntimeViewKind)]),
+      run: (id, kind) => core.runtimePlugins.view(id, kind),
+    },
+    runtimePluginViewDocument: {
+      args: z.tuple([z.string().min(1).max(80), z.custom<RuntimeViewKind>(isRuntimeViewKind)]),
+      run: async (id, kind) => {
+        const html = await core.runtimePlugins.view(id, kind);
+        return html ? (options.runtimeViewDocument?.(id, kind) ?? null) : null;
+      },
+    },
+    runtimePluginDebug: {
+      args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80), z.array(z.unknown()).max(8)]),
+      run: async (id, method, args) => {
+        const debug = options.runtimeDebugger?.();
+        if (!debug) throw new Error('error.runtimeDebuggerUnsupported');
+        if (['state', 'storage'].includes(method)) return debug.invokePlugin(id, method, args);
+        let result;
+        await core.runDebuggerAction(async () => {
+          result = await debug.invokePlugin(id, method, args);
+        });
+        return result;
+      },
+    },
+    runtimePluginContext: {
+      args: z.tuple([z.string().min(1).max(80)]),
+      run: async (id) => {
+        const plugin = (await core.runtimePlugins.state()).plugins.find((item) => item.id === id);
+        if (!plugin) throw new Error('error.runtimePluginMissing');
+        const config = core.currentConfig();
+        const defaults = Object.fromEntries(
+          plugin.manifest.ui.fields
+            .filter((field) => field.default !== undefined)
+            .map((field) => [field.id, field.default]),
+        );
+        return {
+          deviceId: config.boardId === id ? (config.runtime?.deviceId ?? '') : '',
+          values: { ...defaults, ...(config.boardId === id ? config.runtime?.values : {}) },
+          capabilities: plugin.manifest.capabilities,
+          support: plugin.manifest.support,
+          layout: plugin.manifest.layout,
+        };
+      },
+    },
+    runtimePluginConfigure: {
+      args: z.tuple([
+        z.string().min(1).max(80),
+        configSchema.shape.runtime
+          .unwrap()
+          .pick({ deviceId: true, values: true, disabledCapabilities: true }),
+      ]),
+      run: async (id, value) => {
+        const config = core.currentConfig();
+        if (config.boardId !== id) throw new Error('error.runtimePluginConfig');
+        await core.saveConfig({
+          ...config,
+          runtime: {
+            ...config.runtime,
+            ...value,
+            ...(value.values ? { values: { ...config.runtime?.values, ...value.values } } : {}),
+          },
+        });
+      },
+    },
+    runtimePluginDevice: {
+      args: z.tuple([
+        z.string().min(1).max(80),
+        z.string().min(1).max(80),
+        z.array(z.unknown()).max(8),
+        z.literal(true).optional(),
+      ]),
+      run: async (id, method, args, confirm) => {
+        if (core.currentConfig().boardId !== id) throw new Error('error.runtimePluginConfig');
+        let result;
+        await core.runHardwareAction(async () => {
+          result = await core.runtimePlugins.invokeDevice(id, method, args, confirm);
+        });
+        return result;
+      },
+    },
     languageIndex: { args: noArgs, run: () => language.snapshot() },
     ...createGitRoutes(git).routes,
     toolVersionsState: { args: noArgs, run: () => tools.toolVersionsState() },
@@ -128,7 +315,23 @@ export function createHostServices(options: Options) {
         return options.savePackage(packages.download(id));
       },
     },
-    terminalState: { args: noArgs, run: () => terminal.state() },
+    terminalState: {
+      args: z.tuple([hostParameterSchemas['terminal.state'].optional()]),
+      run: (cursor) => terminal.state(cursor),
+    },
+    terminalOpen: {
+      args: z.tuple([hostParameterSchemas['terminal.open'].omit({ confirm: true }).optional()]),
+      run: (size) => terminal.open(size),
+    },
+    terminalWrite: {
+      args: z.tuple([hostParameterSchemas['terminal.write'].omit({ confirm: true })]),
+      run: (request) => terminal.write(request),
+    },
+    terminalResize: {
+      args: z.tuple([hostParameterSchemas['terminal.resize']]),
+      run: (request) => terminal.resize(request),
+    },
+    terminalClose: { args: noArgs, run: () => terminal.close() },
     terminalRun: {
       args: z.tuple([z.object({ command: z.string().trim().min(1).max(16384) }).strict()]),
       run: (request) => terminal.run(request.command),
@@ -207,6 +410,19 @@ export function createHostServices(options: Options) {
     return route.run(...(parsed.data as unknown[]));
   };
   const aliases: Record<string, [string, (params: any) => unknown[]]> = {
+    'components.state': ['componentsState', () => []],
+    'components.search': ['componentsSearch', (p) => [p.query]],
+    'components.install': ['componentsInstall', (p) => [p]],
+    'components.import': ['componentsImport', (p) => [p]],
+    'components.remove': ['componentsRemove', (p) => [p]],
+    'runtime.plugins': ['runtimePluginsState', () => []],
+    'runtime.context': ['runtimePluginContext', (p) => [p.id]],
+    'runtime.configure': ['runtimePluginConfigure', (p) => [p.id, p.value]],
+    'runtime.device': ['runtimePluginDevice', (p) => [p.id, p.method, p.args, p.confirm]],
+    'runtime.trust': ['runtimePluginTrust', (p) => [p]],
+    'runtime.view': ['runtimePluginView', (p) => [p.id, p.kind]],
+    'runtime.view.info': ['runtimePluginViewInfo', (p) => [p.id, p.viewId]],
+    'runtime.debug': ['runtimePluginDebug', (p) => [p.id, p.method, p.args]],
     'language.index': ['languageIndex', () => []],
     'git.status': ['gitStatus', () => []],
     'git.diff': ['gitDiff', (p) => [p]],
@@ -217,9 +433,13 @@ export function createHostServices(options: Options) {
     'host.browse': ['hostBrowse', (p) => (p.path ? [p.path] : [])],
     'project.package.preview': ['projectPackagePreview', () => []],
     'project.package.export': ['projectPackageExport', (p) => [p]],
-    'terminal.state': ['terminalState', () => []],
+    'terminal.state': ['terminalState', (p) => [{ sessionId: p.sessionId, after: p.after }]],
+    'terminal.open': ['terminalOpen', (p) => [{ cols: p.cols, rows: p.rows }]],
     'terminal.run': ['terminalRun', (p) => [{ command: p.command }]],
     'terminal.stop': ['terminalStop', () => []],
+    'terminal.write': ['terminalWrite', (p) => [{ data: p.data, sessionId: p.sessionId }]],
+    'terminal.resize': ['terminalResize', (p) => [{ cols: p.cols, rows: p.rows, sessionId: p.sessionId }]],
+    'terminal.close': ['terminalClose', () => []],
   };
   return {
     routes,

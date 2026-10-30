@@ -1,6 +1,8 @@
 import type { CollaborationToolTab } from '../../shared/collaboration';
 
 interface Viewport {
+  /** Local-only tab context in which this editor reported its viewport. */
+  ownerPath?: string;
   path: string;
   startLine: number;
   endLine: number;
@@ -44,14 +46,19 @@ export function localTabPresence(
   if (!openPaths.length && !openTools.length) return null;
   const selected =
     owner.isWeb && owner.view === 'code'
-      ? viewport && openPaths.includes(viewport.path)
+      ? viewport &&
+        (viewport.ownerPath ?? viewport.path) === owner.activePath &&
+        openPaths.includes(viewport.path)
         ? viewport
         : openPaths.includes(owner.activePath)
           ? { path: owner.activePath, startLine: 1, endLine: 1 }
           : undefined
       : undefined;
   return {
-    ...(selected ?? { path: '', startLine: 1, endLine: 1 }),
+    path: selected?.path ?? '',
+    startLine: selected?.startLine ?? 1,
+    endLine: selected?.endLine ?? 1,
+    ...(selected?.cursor ? { cursor: selected.cursor } : {}),
     openPaths: selected
       ? [selected.path, ...openPaths.filter((path) => path !== selected.path)].slice(0, 256)
       : openPaths.slice(0, 256),

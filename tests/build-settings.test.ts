@@ -7,16 +7,16 @@ import { parseProjectBuild } from '../src/core/config';
 import {
   compilerChoice as stmChoice,
   optimizationFlags as stmFlags,
-} from '../extensions/boards/stm32/build-settings';
+} from '../extensions/boards/STM32F103C8T6/compiler/build-settings';
 import {
   compilerChoice as espChoice,
   compilerConfig,
   compilerIdentity,
   optimizationFlags as espFlags,
-} from '../extensions/boards/esp32-s3/build-settings';
-import { esp32S3Adapter } from '../extensions/boards/esp32-s3/adapter';
-import { createEsp32S3Runtime } from '../extensions/boards/esp32-s3/runtime';
-import { Toolchains } from '../extensions/boards/esp32-s3/toolchain';
+} from '../extensions/boards/Esp32_S3_CAM/compiler/build-settings';
+import { esp32S3Adapter } from '../extensions/boards/Esp32_S3_CAM/device/adapter';
+import { createEsp32S3Runtime } from '../extensions/boards/Esp32_S3_CAM/runtime/index';
+import { Toolchains } from '../extensions/boards/Esp32_S3_CAM/tools/toolchain';
 import type { RuntimeHost } from '../extensions/runtime';
 import type { BuildSettings } from '../src/shared/build-settings';
 
@@ -26,8 +26,8 @@ test('build settings validate, inherit by language, and explicit auto removes in
     optimizeForSize: true,
     common: { family: 'gnu-arm', version: '15.2.1-1.1', directory: '/tools/common' },
     platforms: {
-      stm32: { common: { family: 'inherit', directory: '/tools/platform' }, cpp: { family: 'auto' } },
-      'esp32-s3': { common: { family: 'arduino', version: '3.3.2' } },
+      STM32F103C8T6: { common: { family: 'inherit', directory: '/tools/platform' }, cpp: { family: 'auto' } },
+      Esp32_S3_CAM: { common: { family: 'arduino', version: '3.3.2' } },
     },
   };
   assert.deepEqual(parseProjectBuild({ settings }).settings, settings);
@@ -38,8 +38,8 @@ test('build settings validate, inherit by language, and explicit auto removes in
   });
   assert.deepEqual(stmChoice(settings, 'cpp'), { family: 'auto' });
   assert.deepEqual(espChoice(settings, 'cpp'), { family: 'arduino', version: '3.3.2' });
-  settings.platforms!.stm32!.c = { family: 'gnu-arm', version: '14.2.1' };
-  settings.platforms!['esp32-s3']!.cpp = { family: 'arduino', version: '3.3.1' };
+  settings.platforms!.STM32F103C8T6!.c = { family: 'gnu-arm', version: '14.2.1' };
+  settings.platforms!['Esp32_S3_CAM']!.cpp = { family: 'arduino', version: '3.3.1' };
   assert.deepEqual(stmChoice(settings, 'c'), { family: 'gnu-arm', version: '14.2.1' });
   assert.deepEqual(espChoice(settings, 'cpp'), { family: 'arduino', version: '3.3.1' });
   for (const flags of [stmFlags, espFlags]) {
@@ -52,7 +52,8 @@ test('build settings validate, inherit by language, and explicit auto removes in
     { optimizeForSize: 'true' },
     { common: { family: 'shell' } },
     { common: { family: 'gnu-arm', version: '../bad' } },
-    { platforms: { unknown: {} } },
+    { platforms: { unknown: { unexpected: true } } },
+    { platforms: { '../outside': {} } },
   ])
     assert.throws(() => parseProjectBuild({ settings: invalid }), /invalidProjectDescriptor/);
 });
@@ -115,7 +116,7 @@ test('Arduino resolves existing CLI/core selections without downloading and reje
     runtime.build(config, {
       settings: {
         platforms: {
-          'esp32-s3': { c: { family: 'arduino', directory: cliDirectory }, cpp: { family: 'auto' } },
+          Esp32_S3_CAM: { c: { family: 'arduino', directory: cliDirectory }, cpp: { family: 'auto' } },
         },
       },
     }),

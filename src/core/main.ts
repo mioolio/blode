@@ -1,4 +1,15 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  net,
+  powerMonitor,
+  protocol,
+  session,
+  shell,
+} from 'electron';
 import { appendFileSync, mkdirSync, promises as fs, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import * as z from 'zod';
@@ -14,7 +25,7 @@ import {
   type ReopenProjectResult,
 } from '../shared/contracts';
 import { loadAppConfig, installDebugControls } from './debug';
-import { parseConfig } from './config';
+import { parseConfig, configSchema } from './config';
 import { PROJECT_MARKER, safeWorkspacePath } from './workspace';
 import { startWebServer, type WebServerHandle } from './web';
 import { exportProbeLog } from './log-export';
@@ -22,6 +33,17 @@ import { MAX_PROBE_LOG_BYTES } from '../shared/probe-log';
 import { RecentProjects } from './recent-projects';
 import { FirmwareStore, prepareBuildExport } from './firmware';
 import { HardwareDebugger } from './hardware-debugger';
+import { RuntimeDebugger } from './runtime-debugger';
+import {
+  breakpointLocationsSchema,
+  debuggerPatchSchema,
+  debuggerAssembleSchema,
+} from '../shared/debugger-edit';
+import { RuntimeWindows } from './runtime-windows';
+import { DesktopLifecycle } from './desktop-lifecycle';
+import { currentRendererFrame, sendToRenderer } from './renderer-delivery';
+import { IPC_CANCELLED, withIpcCancellation } from '../shared/ipc-response';
+import { isRuntimeViewKind } from '../shared/plugins';
 import { createWebDebugger } from './web-debugger';
 import { AiAssistance } from './ai-assistance';
 import { CollaborationService } from './collaboration';
@@ -34,6 +56,11 @@ import { COLLABORATION_CHANNEL, UI_COMMAND_CHANNEL } from '../shared/contracts';
 import { createHostServices, type HostServices } from './host-services';
 import { protectSharedWorkspace } from './shared-workspace';
 import { RELEASE_VERSION } from '../shared/version';
+import { renderRuntimeView, RUNTIME_VIEW_CSP } from '../shared/runtime-view';
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'blode-runtime-ui', privileges: { standard: true, secure: true } },
+]);
 
 app.setName('Blode Studio');
 // Keep drafts in Local Storage, but avoid persistent GPU/Dawn cache handles.
@@ -112,6 +139,10 @@ let hardwareDebugger: HardwareDebugger | null = null;
 let collaboration: CollaborationService | undefined;
 let uiCommands: UiCommands | undefined;
 let hostServices: HostServices | undefined;
+let runtimeWindows: RuntimeWindows | undefined;
+let desktopLifecycle: DesktopLifecycle | undefined;
+let rendererMounted = false;
+const terminalFocus = new Set<number>();
 const allowReleaseLink = ({ url }: { url: string }) => {
   try {
     const link = new URL(url);
@@ -157,6 +188,7 @@ app.on('child-process-gone', (_event, details) => {
 });
 app.on('second-instance', () => {
   if (window?.isMinimized()) window.restore();
+  window?.show();
   window?.focus();
 });
 
@@ -184,6 +216,27 @@ async function bootstrap(): Promise<void> {
   // Begin rendering while local services initialize. RPC calls wait for the same
   // validated route table, so an early frame cannot observe a half-created core.
   let nativePresence: NativePresenceOwner | undefined;
+  let screenLocked = false;
+  let suspended = false;
+  const windowAttention = async () => {
+    const visible =
+      !!window &&
+      !window.isDestroyed() &&
+      window.isVisible() &&
+      !window.isMinimized() &&
+      !screenLocked &&
+      !suspended;
+    const focused = visible && !!window?.isFocused();
+    const epoch = await nativePresence?.setAttention(focused);
+    return { visible, focused, epoch };
+  };
+  const publishAttention = () => {
+    void windowAttention()
+      .then((value) => {
+        if (!closing) sendToRenderer(window, 'blode:window-attention', value);
+      })
+      .catch((error) => logBoot(`window-attention ${String(error)}`));
+  };
   type RendererRoutes = Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }>;
   let resolveRendererRoutes!: (routes: RendererRoutes | null) => void;
   const rendererRoutes = new Promise<RendererRoutes | null>((resolve) => {
@@ -210,6 +263,34 @@ async function bootstrap(): Promise<void> {
     },
   });
   window.removeMenu();
+  for (const name of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore'] as const)
+    window.on(name as 'focus', publishAttention);
+  const lock = () => {
+    screenLocked = true;
+    publishAttention();
+  };
+  const unlock = () => {
+    screenLocked = false;
+    publishAttention();
+  };
+  const suspend = () => {
+    suspended = true;
+    publishAttention();
+  };
+  const resume = () => {
+    suspended = false;
+    publishAttention();
+  };
+  powerMonitor.on('lock-screen', lock);
+  powerMonitor.on('unlock-screen', unlock);
+  powerMonitor.on('suspend', suspend);
+  powerMonitor.on('resume', resume);
+  window.once('closed', () => {
+    powerMonitor.removeListener('lock-screen', lock);
+    powerMonitor.removeListener('unlock-screen', unlock);
+    powerMonitor.removeListener('suspend', suspend);
+    powerMonitor.removeListener('resume', resume);
+  });
   if (process.platform === 'win32') {
     // Windows broadcasts topology changes to top-level windows. No polling of USB/SWD is needed.
     window.hookWindowMessage(0x0219, (wParam) => {
@@ -219,14 +300,19 @@ async function bootstrap(): Promise<void> {
     });
   }
   const onRendererReady = (event: Electron.IpcMainEvent) => {
+    const frame = currentRendererFrame(event.sender);
     if (
-      windowShown ||
+      closing ||
       !window ||
       window.isDestroyed() ||
       event.sender !== window.webContents ||
-      event.senderFrame !== event.sender.mainFrame
+      !frame ||
+      event.senderFrame !== frame
     )
       return;
+    rendererMounted = true;
+    publishAttention();
+    if (windowShown) return;
     windowShown = true;
     window.show();
     logBoot('window ready interface=mounted');
@@ -254,6 +340,8 @@ async function bootstrap(): Promise<void> {
     logBoot(`did-fail-load ${code} ${description} ${url}`);
   });
   window.webContents.on('render-process-gone', (_event, details) => {
+    rendererMounted = false;
+    terminalFocus.clear();
     void nativePresence?.clear();
     logBoot(`render-process-gone ${details.reason} exit=${details.exitCode}`);
     if (closing || !windowShown || window?.isDestroyed()) return;
@@ -263,17 +351,25 @@ async function bootstrap(): Promise<void> {
       window?.webContents.reloadIgnoringCache();
     } else app.quit();
   });
-  const disposeDebugControls = installDebugControls(window, {
-    ...applicationConfig.debug,
-    enabled: !app.isPackaged && applicationConfig.debug.enabled,
-  });
+  const disposeDebugControls = installDebugControls(
+    window,
+    {
+      ...applicationConfig.debug,
+      enabled: !app.isPackaged && applicationConfig.debug.enabled,
+    },
+    () => closing || terminalFocus.has(window!.webContents.id) || !!desktopLifecycle?.state().pendingClose,
+  );
   window.on('closed', disposeDebugControls);
   const syncWindowBackground = () => window?.setBackgroundColor(windowBackground());
   nativeTheme.on('updated', syncWindowBackground);
   window.on('closed', () => nativeTheme.off('updated', syncWindowBackground));
   window.webContents.setWindowOpenHandler(allowReleaseLink);
   window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) void nativePresence?.clear();
+    if (isMainFrame && !isInPlace) {
+      rendererMounted = false;
+      terminalFocus.clear();
+      void nativePresence?.clear();
+    }
   });
   window.webContents.once('destroyed', () => {
     void nativePresence?.clear();
@@ -283,38 +379,78 @@ async function bootstrap(): Promise<void> {
     callback(false),
   );
 
-  ipcMain.handle(IPC_CHANNEL, async (event, method: unknown, args: unknown) => {
-    const secondary = event.sender === debuggerWindow?.webContents;
-    if ((event.sender !== window?.webContents && !secondary) || event.senderFrame !== event.sender.mainFrame)
-      throw new Error('error.unauthorized');
-    if (
-      secondary &&
-      method !== 'getState' &&
-      method !== 'listDebugProbes' &&
-      method !== 'windowAction' &&
-      method !== 'hostBrowse' &&
-      !(typeof method === 'string' && method.startsWith('debugger'))
-    )
-      throw new Error('error.unauthorized');
-    // Frameless controls must remain responsive even while a service is starting.
-    if (method === 'windowAction') {
-      const parsed = windowActionArgs.safeParse(args);
+  ipcMain.handle(IPC_CHANNEL, (event, method: unknown, args: unknown) =>
+    withIpcCancellation(async () => {
+      if (closing) return IPC_CANCELLED;
+      const secondary = event.sender === debuggerWindow?.webContents;
+      const runtimeOwner = runtimeWindows?.owner(event.sender);
+      if (event.sender !== window?.webContents && !secondary && !runtimeOwner)
+        throw new Error('error.unauthorized');
+      const frame = currentRendererFrame(event.sender);
+      if (!frame) return IPC_CANCELLED;
+      if (event.senderFrame !== frame) throw new Error('error.unauthorized');
+      if (
+        runtimeOwner &&
+        method !== 'windowAction' &&
+        method !== 'runtimePluginsState' &&
+        !(
+          typeof method === 'string' &&
+          method.startsWith('runtimePlugin') &&
+          Array.isArray(args) &&
+          (args[0] === runtimeOwner.pluginId ||
+            (method === 'runtimePluginTrust' && args[0]?.id === runtimeOwner.pluginId))
+        )
+      )
+        throw new Error('error.unauthorized');
+      if (method === 'terminalFocus') {
+        if (
+          event.sender !== window?.webContents ||
+          !Array.isArray(args) ||
+          args.length !== 1 ||
+          typeof args[0] !== 'boolean'
+        )
+          throw new Error('error.unauthorized');
+        if (args[0]) terminalFocus.add(event.sender.id);
+        else terminalFocus.delete(event.sender.id);
+        return;
+      }
+      if (method === 'windowAttention') {
+        if (event.sender !== window?.webContents || !Array.isArray(args) || args.length)
+          throw new Error('error.unauthorized');
+        return windowAttention();
+      }
+      if (
+        secondary &&
+        method !== 'getState' &&
+        method !== 'listDebugProbes' &&
+        method !== 'windowAction' &&
+        method !== 'hostBrowse' &&
+        !(typeof method === 'string' && method.startsWith('runtimePlugin')) &&
+        !(typeof method === 'string' && method.startsWith('debugger'))
+      )
+        throw new Error('error.unauthorized');
+      // Frameless controls must remain responsive even while a service is starting.
+      if (method === 'windowAction') {
+        const parsed = windowActionArgs.safeParse(args);
+        if (!parsed.success) throw new Error('error.invalidArguments');
+        controlWindow(runtimeOwner?.window ?? (secondary ? debuggerWindow : window), parsed.data[0]);
+        return;
+      }
+      const routes = await rendererRoutes;
+      if (!routes || closing || event.senderFrame !== currentRendererFrame(event.sender))
+        throw new Error('error.operationCancelled');
+      if (typeof method !== 'string' || !Object.hasOwn(routes, method))
+        throw new Error('error.unknownMethod');
+      const route = routes[method];
+      const parsed = route.args.safeParse(args);
       if (!parsed.success) throw new Error('error.invalidArguments');
-      controlWindow(secondary ? debuggerWindow : window, parsed.data[0]);
-      return;
-    }
-    const routes = await rendererRoutes;
-    if (!routes || closing || event.sender.isDestroyed() || event.senderFrame !== event.sender.mainFrame)
-      throw new Error('error.operationCancelled');
-    if (typeof method !== 'string' || !Object.hasOwn(routes, method)) throw new Error('error.unknownMethod');
-    const route = routes[method];
-    const parsed = route.args.safeParse(args);
-    if (!parsed.success) throw new Error('error.invalidArguments');
-    return route.run(...(parsed.data as unknown[]));
-  });
+      return route.run(...(parsed.data as unknown[]));
+    }),
+  );
   window.once('ready-to-show', () => {
     // index.html already contains a themed, lightweight startup surface.
-    window?.show();
+    if (closing || !window || window.isDestroyed()) return;
+    window.show();
     logBoot('window first paint');
   });
   window.once('closed', () => debuggerWindow?.close());
@@ -331,6 +467,12 @@ async function bootstrap(): Promise<void> {
     (error: unknown) => ({ ok: false as const, error }),
   );
   const dataRoot = process.env.BLODE_DATA_ROOT || app.getPath('userData');
+  runtimeWindows = new RuntimeWindows({
+    preload: path.join(__dirname, 'preload.cjs'),
+    rendererFile: path.join(__dirname, 'renderer', 'index.html'),
+    rendererUrl: developmentUrl,
+    background: windowBackground,
+  });
   logBoot(`dataRoot=${dataRoot}`);
   const recentProjectFile = path.join(dataRoot, 'recent-project.json');
   const recentHistory = new RecentProjects(recentProjectFile);
@@ -367,9 +509,10 @@ async function bootstrap(): Promise<void> {
   const recentLogs = new RecentLogs();
   const emit = (input: LogEvent) => {
     const event = recentLogs.publish(input);
-    if (window && !window.isDestroyed()) window.webContents.send(EVENT_CHANNEL, event);
-    if (debuggerWindow && !debuggerWindow.isDestroyed())
-      debuggerWindow.webContents.send(EVENT_CHANNEL, event);
+    if (!closing) {
+      sendToRenderer(window, EVENT_CHANNEL, event);
+      sendToRenderer(debuggerWindow, EVENT_CHANNEL, event);
+    }
     pipe?.publish(event);
     web?.publish(event);
   };
@@ -398,6 +541,15 @@ async function bootstrap(): Promise<void> {
     .catch(() => false);
   logBoot(`bundledTools=${bundledToolsReady} ${bundledTools}`);
   core = await createCore({
+    openRuntimeView: async (pluginId, view) => {
+      if (closing) throw new Error('error.operationCancelled');
+      if (view.location === 'window') await runtimeWindows!.open(pluginId, view);
+      else {
+        if (!uiCommands) throw new Error('error.uiUnavailable');
+        await uiCommands.command({ action: 'runtimeView', pluginId, viewId: view.id });
+      }
+    },
+    pluginRoots: [path.join(app.getAppPath(), 'extensions', 'boards'), path.join(dataRoot, 'plugins')],
     projectRoot,
     dataRoot,
     onEvent: emit,
@@ -418,28 +570,75 @@ async function bootstrap(): Promise<void> {
     await core.shutdown();
     return;
   }
+  protocol.handle('blode-runtime-ui', async (request) => {
+    try {
+      const url = new URL(request.url);
+      const [id, kind, ...rest] = url.pathname.slice(1).split('/').map(decodeURIComponent);
+      if (url.hostname !== 'view' || rest.length || !isRuntimeViewKind(kind) || !core || closing)
+        return new Response('Not found', { status: 404 });
+      const html = await core.runtimePlugins.view(id, kind);
+      if (!html) return new Response('Not found', { status: 404 });
+      return new Response(renderRuntimeView(html), {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': RUNTIME_VIEW_CSP,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    } catch {
+      return new Response('Runtime view unavailable', { status: 403 });
+    }
+  });
   const originalSaveFile = core.saveFile.bind(core);
   collaboration = new CollaborationService({
     workspace: () => core!.workspaceSnapshot(),
     freshWorkspace: () => core!.workspaceSnapshot(true),
     saveFile: originalSaveFile,
     publish: (event) => {
-      if (window && !window.isDestroyed()) window.webContents.send(COLLABORATION_CHANNEL, event);
+      if (!closing) sendToRenderer(window, COLLABORATION_CHANNEL, event);
       web?.publishCollaboration(event);
     },
   });
-  const ai = new AiAssistance({ dataRoot, projectRoot: () => core!.currentProjectRoot(), emit });
+  const ai = new AiAssistance({
+    dataRoot,
+    projectRoot: () => core!.currentProjectRoot(),
+    emit,
+    builtins: async () =>
+      (await core?.languageConfiguration())?.entries.flatMap((entry) => entry.contributions),
+  });
   uiCommands = new UiCommands((request) => {
-    if (window && !window.isDestroyed()) window.webContents.send(UI_COMMAND_CHANNEL, request);
+    if (!closing) sendToRenderer(window, UI_COMMAND_CHANNEL, request);
     web?.publishUiCommand(request);
   });
   const assistance = createAssistanceRoutes(ai, collaboration, uiCommands, true);
   nativePresence = new NativePresenceOwner(collaboration);
+  publishAttention();
+  desktopLifecycle = new DesktopLifecycle({
+    window,
+    dataRoot,
+    rendererCommit: true,
+    rendererReady: () => rendererMounted,
+    sharedDirty: async () => (await collaboration!.state()).documents.some((document) => document.dirty),
+    prepareShutdown: async (decision) => {
+      await collaboration!.prepareShutdown(decision);
+    },
+    cancelShutdown: () => collaboration!.cancelShutdown(),
+    exit: shutdownApplication,
+  });
+  await desktopLifecycle.initialize();
+  if (closing) return;
   assistance.routes.collaborationPresence.run = (input) => nativePresence!.presence(input);
   assistance.routes.collaborationLeave.run = (input) => nativePresence!.leave(input);
   const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
   const protection = protectSharedWorkspace(core, collaboration);
   hostServices = createHostServices({
+    openRuntimeView: async (id, view) => {
+      await runtimeWindows!.open(id, view);
+      return { destination: 'window' };
+    },
+    runtimeViewDocument: (id, kind) => `blode-runtime-ui://view/${encodeURIComponent(id)}/${kind}`,
+    runtimeDebugger: () => (hardwareDebugger instanceof RuntimeDebugger ? hardwareDebugger : undefined),
     core,
     collaboration,
     firmware: firmwareStore,
@@ -485,23 +684,26 @@ async function bootstrap(): Promise<void> {
       },
     };
   };
-  hardwareDebugger = new HardwareDebugger(
+  hardwareDebugger = new RuntimeDebugger(
     process.env.BLODE_TOOLCHAIN_ROOT ||
       (bundledToolsReady ? bundledTools : path.join(dataRoot, 'toolchains')),
     path.join(dataRoot, 'debugger'),
     (message) => emit({ kind: 'status', level: 'info', message, time: new Date().toISOString() }),
+    () => core?.runtimePlugins,
+    () => core?.currentConfig(),
   );
   await hardwareDebugger.restore();
   if (closing) return;
   if (projectRoot) await recentHistory.remember(projectRoot).catch(() => {});
   const openDebugger = async () => {
+    if (closing) throw new Error('error.operationCancelled');
     if (debuggerWindow && !debuggerWindow.isDestroyed()) {
       debuggerWindow.show();
       debuggerWindow.focus();
       return;
     }
     debuggerWindow = new BrowserWindow({
-      title: 'Blode Studio · 硬件仿真',
+      title: 'Blode Studio · 硬件调试',
       frame: false,
       width: 1280,
       height: 850,
@@ -522,7 +724,9 @@ async function bootstrap(): Promise<void> {
     secondary.removeMenu();
     secondary.webContents.setWindowOpenHandler(allowReleaseLink);
     secondary.webContents.on('will-navigate', (e) => e.preventDefault());
-    secondary.once('ready-to-show', () => secondary.show());
+    secondary.once('ready-to-show', () => {
+      if (!closing && !secondary.isDestroyed()) secondary.show();
+    });
     secondary.once('closed', () => {
       debuggerWindow = null;
       void hardwareDebugger?.disconnect();
@@ -585,6 +789,25 @@ async function bootstrap(): Promise<void> {
   const routes: Record<string, { args: z.ZodType; run: (...args: any[]) => unknown }> = {
     ...assistance.routes,
     ...hostServices.routes,
+    desktopLifecycleState: { args: noArgs, run: () => desktopLifecycle!.state() },
+    desktopLifecycleConfigure: {
+      args: z.tuple([
+        z.object({ closeToTray: z.boolean(), locale: z.enum(['zh-CN', 'en']).optional() }).strict(),
+      ]),
+      run: (request) => desktopLifecycle!.configure(request),
+    },
+    desktopCloseReply: {
+      args: z.tuple([
+        z
+          .object({
+            id: z.string().uuid(),
+            decision: z.enum(['clean', 'saved', 'discard', 'cancel', 'committed', 'commitFailed']),
+            error: z.string().max(512).optional(),
+          })
+          .strict(),
+      ]),
+      run: (request) => desktopLifecycle!.reply(request),
+    },
     listRecentProjects: { args: noArgs, run: () => recentHistory.list() },
     openRecentProject: {
       args: z.tuple([z.string().min(1).max(4096)]),
@@ -653,7 +876,10 @@ async function bootstrap(): Promise<void> {
       },
     },
     openDebugger: { args: noArgs, run: openDebugger },
-    debuggerState: { args: noArgs, run: () => hardwareDebugger!.state() },
+    debuggerState: {
+      args: z.tuple([configSchema.optional()]),
+      run: (config) => hardwareDebugger!.state(config),
+    },
     debuggerStorage: { args: noArgs, run: () => hardwareDebugger!.storage() },
     debuggerSymbols: {
       args: noArgs,
@@ -661,7 +887,7 @@ async function bootstrap(): Promise<void> {
         const result = await dialog.showOpenDialog(debuggerWindow ?? window!, {
           title: '选择调试符号 / ELF symbols',
           properties: ['openFile'],
-          filters: [{ name: 'ARM ELF', extensions: ['elf', 'axf'] }],
+          filters: [{ name: 'ELF symbols', extensions: ['elf', 'axf'] }],
         });
         return result.canceled || !result.filePaths[0]
           ? null
@@ -682,27 +908,40 @@ async function bootstrap(): Promise<void> {
       args: z.tuple([z.string().max(1024), z.string().regex(/^\d+$/).optional()]),
       run: (location, id) => hardwareDebugger!.breakpoint(location, id),
     },
+    debuggerBreakpoints: {
+      args: z.tuple([breakpointLocationsSchema]),
+      run: (locations) => hardwareDebugger!.breakpoints(locations),
+    },
+    debuggerPatch: {
+      args: z.tuple([debuggerPatchSchema]),
+      run: (request) => hardwareDebugger!.patch(request),
+    },
+    debuggerAssemble: {
+      args: z.tuple([debuggerAssembleSchema.shape.address, debuggerAssembleSchema.shape.source]),
+      run: (address, source) => hardwareDebugger!.assemble(address, source),
+    },
     debuggerMemory: {
       args: z.tuple([z.number().int().nonnegative().max(0xffffffff), z.number().int().min(1).max(4096)]),
       run: (address, length) => hardwareDebugger!.memory(address, length),
     },
     debuggerInstallTools: {
-      args: noArgs,
-      run: () =>
-        core!.runInstallation('GNU Arm GCC / GDB', ({ progress, log, fetcher, signal }) =>
-          hardwareDebugger!.install(progress, log, { fetcher, signal }),
+      args: z.tuple([configSchema.optional()]),
+      run: (config) =>
+        core!.runInstallation('GDB / debug server', ({ progress, log, fetcher, signal }) =>
+          hardwareDebugger!.install(progress, log, { fetcher, signal, config }),
         ),
     },
     debuggerChooseGdb: {
       args: noArgs,
       run: async () => {
+        const profileId = (await hardwareDebugger!.state()).profile?.id;
         const result = await dialog.showOpenDialog(debuggerWindow ?? window!, {
-          title: '选择 arm-none-eabi-gdb',
+          title: '选择 GDB / Choose GDB',
           properties: ['openFile'],
           filters: [{ name: 'GDB', extensions: process.platform === 'win32' ? ['exe'] : ['*'] }],
         });
         if (result.canceled || !result.filePaths[0]) return false;
-        await hardwareDebugger!.selectGdb(result.filePaths[0]);
+        await hardwareDebugger!.selectGdb(result.filePaths[0], profileId);
         return true;
       },
     },
@@ -859,6 +1098,10 @@ if (ownLock)
     .whenReady()
     .then(bootstrap)
     .catch((error) => {
+      if (closing) {
+        logBoot(`bootstrap cancelled during shutdown: ${String(error)}`);
+        return;
+      }
       logBoot(`fatal ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
       // The launcher decides whether this attempt is recoverable and reports
       // the complete startup log only if recovery ultimately fails.
@@ -869,10 +1112,12 @@ if (ownLock)
       app.quit();
     });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', (event) => {
+async function shutdownApplication() {
   if (closing) return;
-  event.preventDefault();
   closing = true;
+  logBoot('shutdown requested');
+  desktopLifecycle?.dispose();
+  runtimeWindows?.close();
   collaboration?.dispose();
   uiCommands?.dispose();
   const deadline = setTimeout(() => {
@@ -880,14 +1125,14 @@ app.on('before-quit', (event) => {
     app.exit(0);
   }, 5000);
   deadline.unref();
-  void Promise.allSettled([
-    pipe?.close(),
-    web?.close(),
-    core?.shutdown(),
-    hardwareDebugger?.disconnect(),
-    hostServices?.close(),
-  ]).then(() => {
-    clearTimeout(deadline);
-    app.quit();
-  });
+  await hardwareDebugger?.disconnect().catch((error) => logBoot(`debugger shutdown ${String(error)}`));
+  await Promise.allSettled([pipe?.close(), web?.close(), core?.shutdown(), hostServices?.close()]);
+  clearTimeout(deadline);
+  app.quit();
+}
+app.on('before-quit', (event) => {
+  if (closing) return;
+  event.preventDefault();
+  const quit = desktopLifecycle ? desktopLifecycle.requestQuit() : shutdownApplication();
+  void quit.catch((error) => logBoot(`quit cancelled ${String(error)}`));
 });

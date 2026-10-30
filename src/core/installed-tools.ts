@@ -153,7 +153,7 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
           version: actual,
           directory,
           source: candidate.source,
-          platforms: ['stm32'],
+          platforms: ['STM32F103C8T6'],
         });
       }
     }
@@ -230,7 +230,7 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
           arduinoCli: cli.file,
           packageDirectory: store.directory,
           source,
-          platforms: ['esp32-s3'],
+          platforms: ['Esp32_S3_CAM'],
         });
       }
     }

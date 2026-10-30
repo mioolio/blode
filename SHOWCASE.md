@@ -66,7 +66,7 @@ Found 1 stlink programmers
 
 ### 2.2 工程配置
 
-示例工程位于 [examples/stm32f103-128k](examples/stm32f103-128k/README.md)。核心配置：
+以下配置来自早期 STM32 演示，原 `examples/stm32f103-128k` 目录已移除。当前平台范围与工程配置见 [STM32 使用说明](docs/STM32.md)。历史核心配置：
 
 ```json
 {
@@ -210,8 +210,8 @@ STM32 固定布局现在支持：
 ```text
 extensions/boards/my-board/
   manifest.json    # id、入口、runtime、能力
-  adapter.ts       # 默认配置、容量、布局元数据、校验
-  runtime.ts       # 探测、构建、烧录、工具链状态
+  device/adapter.ts  # 默认配置、容量、布局元数据、校验
+  runtime/index.ts   # 探测、构建、烧录、工具链状态
   layout.ts        # 可选的地址范围/应用区逻辑
   compiler.ts      # 可选：平台自己的编译器集成
   programmer.ts    # 可选：平台自己的烧录器
@@ -223,8 +223,8 @@ extensions/boards/my-board/
 ```json
 {
   "id": "my-board",
-  "entry": "adapter.ts",
-  "runtime": "runtime.ts",
+  "entry": "device/adapter.ts",
+  "runtime": "runtime/index.ts",
   "runtimeApiVersion": 1,
   "capabilities": ["compile", "flash", "probe", "serial", "layout", "partitions"]
 }
@@ -267,7 +267,7 @@ npm ci
 npm run dev
 ```
 
-打开 [examples/stm32f103-128k/be](examples/stm32f103-128k/be)，连接 ST-Link，识别芯片，构建并烧录。
+打开与当前目标匹配的 STM32 工程，按 [STM32 使用说明](docs/STM32.md) 选择编译入口、连接 ST-Link、识别芯片，再构建和烧录。
 
 更多细节：
 

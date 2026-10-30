@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { createWorkbenchBridge } from '../shared/workbench-bridge';
+import { unwrapIpcResponse } from '../shared/ipc-response';
+import { createWindowAttentionChannel, type WindowAttention } from './window-attention';
 import {
   DRAFTS_CHANNEL,
   EVENT_CHANNEL,
@@ -10,9 +12,22 @@ import {
 } from '../shared/contracts';
 
 // Only this typed, explicit surface crosses the sandbox boundary.
-const call = (method: string, ...args: unknown[]) => ipcRenderer.invoke(IPC_CHANNEL, method, args);
+const call = (method: string, ...args: unknown[]) =>
+  ipcRenderer.invoke(IPC_CHANNEL, method, args).then(unwrapIpcResponse);
+const windowAttention = createWindowAttentionChannel({
+  listen: (callback) => {
+    const listener = (_: unknown, value: WindowAttention) => callback(value);
+    ipcRenderer.on('blode:window-attention', listener);
+    return () => ipcRenderer.removeListener('blode:window-attention', listener);
+  },
+  snapshot: () => call('windowAttention'),
+});
 const bridge: DesktopApi = {
+  setTerminalFocus: (focused) => {
+    void call('terminalFocus', focused).catch(() => {});
+  },
   rendererReady: () => ipcRenderer.send(RENDERER_READY_CHANNEL),
+  onWindowAttention: windowAttention.subscribe,
   ...createWorkbenchBridge(
     (method, args) => call(method, ...args),
     (channel, callback) => {
@@ -29,13 +44,17 @@ const bridge: DesktopApi = {
   firmwareChoose: () => call('firmwareChoose'),
   firmwareFlash: (request) => call('firmwareFlash', request),
   openDebugger: () => call('openDebugger'),
-  debuggerState: () => call('debuggerState'),
+  debuggerState: (config) => (config ? call('debuggerState', config) : call('debuggerState')),
   debuggerSymbols: () => call('debuggerSymbols'),
   debuggerConnect: (config) => call('debuggerConnect', config),
   debuggerAction: (action) => call('debuggerAction', action),
   debuggerBreakpoint: (location, removeId) => call('debuggerBreakpoint', location, removeId),
+  debuggerBreakpoints: (locations) => call('debuggerBreakpoints', locations),
+  debuggerPatch: (request) => call('debuggerPatch', request),
+  debuggerAssemble: (address, source) => call('debuggerAssemble', address, source),
   debuggerMemory: (address, length) => call('debuggerMemory', address, length),
-  debuggerInstallTools: () => call('debuggerInstallTools'),
+  debuggerInstallTools: (config) =>
+    config ? call('debuggerInstallTools', config) : call('debuggerInstallTools'),
   debuggerChooseGdb: () => call('debuggerChooseGdb'),
   debuggerStorage: () => call('debuggerStorage'),
   exportProbeLog: (content) => call('exportProbeLog', content),
@@ -79,9 +98,10 @@ const bridge: DesktopApi = {
     };
   },
   windowAction: (action) => {
-    void call('windowAction', action);
+    void call('windowAction', action).catch(() => {});
   },
 };
-contextBridge.exposeInMainWorld('blode', bridge);
-// Describe the window that actually exists, rather than assuming HMR restarted Electron.
-contextBridge.exposeInMainWorld('__blodeFrameless', process.argv.includes('--blode-frameless'));
+if (process.isMainFrame) {
+  contextBridge.exposeInMainWorld('blode', bridge);
+  contextBridge.exposeInMainWorld('__blodeFrameless', process.argv.includes('--blode-frameless'));
+}

@@ -1,0 +1,269 @@
+.component-libraries-dialog {
+  width: min(1080px, calc(100vw - 32px));
+  max-width: none;
+  height: min(760px, calc(100dvh - 40px));
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.component-heading,
+.component-library-heading,
+.component-search,
+.component-import-actions,
+.component-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.component-heading {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.component-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 0 0;
+  font-size: 15px;
+}
+.component-project {
+  padding: 10px 18px;
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.component-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 18px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.component-tabs button {
+  border-color: transparent;
+  background: transparent;
+}
+.component-tabs button.active,
+.component-results button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.component-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+  scrollbar-gutter: stable;
+}
+.component-message {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 0 0 14px;
+}
+.component-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.component-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 18px 0;
+}
+.component-installed-list {
+  display: grid;
+  gap: 10px;
+}
+.component-library {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 13px 15px;
+}
+.component-library-heading h3 {
+  font-size: 13px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+.component-library-heading :is(span, small) {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.component-library-heading button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.component-origin {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.component-origin code {
+  overflow-wrap: anywhere;
+}
+.component-dependencies {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.component-dependencies ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  padding-left: 17px;
+  margin: 6px 0 0;
+}
+.component-confirm {
+  flex-wrap: wrap;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.component-confirm > span {
+  flex: 1 1 220px;
+}
+.component-provided {
+  margin-top: 20px;
+  font-size: 12px;
+}
+.component-provided summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 6px 0;
+}
+.component-provided > div {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.component-provided code {
+  margin-left: auto;
+  max-width: 65%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+}
+.component-search {
+  margin-bottom: 16px;
+}
+.component-search input {
+  flex: 1;
+  min-width: 0;
+}
+.component-catalog {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.4fr);
+  min-height: 300px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.component-results {
+  max-height: 390px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+}
+.component-results button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 10px;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.component-results strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.component-results small {
+  grid-column: 1;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.component-results span {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.component-detail {
+  padding: 18px;
+  min-width: 0;
+}
+.component-detail h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+.component-detail p {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+}
+.component-detail label,
+.component-import label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+.component-detail .component-dependencies {
+  margin-bottom: 18px;
+}
+.component-detail > button {
+  margin-top: 12px;
+}
+.component-import {
+  max-width: 760px;
+}
+.component-import-actions {
+  flex-wrap: wrap;
+}
+.component-import-actions .primary {
+  margin-left: auto;
+}
+.component-install-output {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 650px) {
+  .component-libraries-dialog {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 24px);
+  }
+  .component-catalog {
+    grid-template-columns: 1fr;
+  }
+  .component-results {
+    max-height: 210px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .component-content {
+    padding: 12px;
+  }
+  .component-import-actions .primary {
+    margin-left: 0;
+  }
+}

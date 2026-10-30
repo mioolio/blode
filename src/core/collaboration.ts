@@ -22,6 +22,7 @@ const MAX_DOCUMENTS = 128;
 const MAX_TOTAL_TEXT = 8_000_000;
 const MAX_HISTORY = 256;
 const PEER_TTL = 45_000;
+const INACTIVE_TTL = 24 * 60 * 60 * 1000;
 interface HistoryEntry {
   revision: number;
   changes: CollaborationChange[];
@@ -115,6 +116,7 @@ export class CollaborationService {
   private presenceOrder = new Map<string, { sequence: number; departed: boolean }>();
   private presenceRevision = 0;
   private documentRevisions = new Map<string, number>();
+  private shutdownPrepared = false;
   private queue: Promise<unknown> = Promise.resolve();
   private readonly timer: ReturnType<typeof setInterval>;
   constructor(private readonly options: CollaborationOptions) {
@@ -131,6 +133,9 @@ export class CollaborationService {
   }
   private publish(event: CollaborationEvent) {
     this.options.publish(structuredClone(event));
+  }
+  private requireWritable() {
+    if (this.shutdownPrepared) throw new Error('error.shutdownInProgress');
   }
   private snapshot(): CollaborationSnapshot {
     return {
@@ -152,7 +157,7 @@ export class CollaborationService {
       const openPaths = (peer.openPaths ?? (path ? [path] : [])).filter((entry) => this.files.has(entry));
       if (
         (!path && !openPaths.length && !peer.openTools?.length) ||
-        Date.parse(peer.seenAt) < this.now() - PEER_TTL
+        Date.parse(peer.seenAt) < this.now() - (peer.attention === 'inactive' ? INACTIVE_TTL : PEER_TTL)
       ) {
         this.peers.delete(id);
         changed = true;
@@ -390,19 +395,29 @@ export class CollaborationService {
         return this.snapshot();
       if (parsed.sequence !== undefined)
         this.presenceOrder.set(parsed.identity.peerId, { sequence: parsed.sequence, departed: false });
+      const inactive = parsed.attention === 'inactive';
+      const existing = this.peers.get(parsed.identity.peerId);
       const path =
-        parsed.activeTool || parsed.clientKind === 'desktop'
+        inactive || parsed.activeTool || parsed.clientKind === 'desktop'
           ? ''
           : parsed.path
             ? normalizeCollaborationPath(parsed.path)
             : '';
       if (path && !this.files.has(path)) throw new Error('rpc.fileNotFound');
-      const openPaths = [...new Set([...(path ? [path] : []), ...(parsed.openPaths ?? [])])]
+      const openPaths = [
+        ...new Set([
+          ...(path ? [path] : []),
+          ...(parsed.openPaths ?? (inactive ? existing?.openPaths : []) ?? []),
+        ]),
+      ]
         .map(normalizeCollaborationPath)
         .filter((entry) => this.files.has(entry))
         .slice(0, 256);
       const openTools = [
-        ...new Set([...(parsed.openTools ?? []), ...(parsed.activeTool ? [parsed.activeTool] : [])]),
+        ...new Set([
+          ...(parsed.openTools ?? (inactive ? existing?.openTools : []) ?? []),
+          ...(!inactive && parsed.activeTool ? [parsed.activeTool] : []),
+        ]),
       ];
       if (!path && !openPaths.length && !openTools.length) {
         if (this.peers.delete(parsed.identity.peerId)) {
@@ -429,9 +444,10 @@ export class CollaborationService {
         editing: !!path && parsed.editing,
         seenAt: new Date(this.now()).toISOString(),
         openPaths,
-        ...(parsed.openTools || parsed.activeTool ? { openTools } : {}),
-        ...(parsed.activeTool ? { activeTool: parsed.activeTool } : {}),
+        ...(parsed.openTools || parsed.activeTool || (inactive && existing?.openTools) ? { openTools } : {}),
+        ...(!inactive && parsed.activeTool ? { activeTool: parsed.activeTool } : {}),
         ...(parsed.clientKind ? { clientKind: parsed.clientKind } : {}),
+        ...(parsed.attention ? { attention: parsed.attention } : {}),
       });
       this.presenceRevision++;
       const snapshot = this.snapshot();
@@ -439,8 +455,35 @@ export class CollaborationService {
       return snapshot;
     });
   }
+  /** Native window state can revoke attention even when its renderer is suspended. */
+  setAttention(peerIds: readonly string[]) {
+    return this.exclusive(async () => {
+      let changed = false;
+      for (const id of peerIds) {
+        const peer = this.peers.get(id);
+        if (!peer || peer.attention === 'inactive') continue;
+        this.peers.set(id, {
+          ...peer,
+          attention: 'inactive',
+          path: '',
+          startLine: 1,
+          endLine: 1,
+          cursor: undefined,
+          editing: false,
+          activeTool: undefined,
+        });
+        changed = true;
+      }
+      if (changed) {
+        this.presenceRevision++;
+        this.publish({ type: 'presence', snapshot: this.snapshot() });
+      }
+      return this.snapshot();
+    });
+  }
   edit(input: CollaborationEditRequest, trustedLocal = true) {
     return this.exclusive(async (): Promise<CollaborationEditResult> => {
+      this.requireWritable();
       const request = collaborationSchemas.edit.parse(input);
       if (request.changes.reduce((sum, change) => sum + change.text.length, 0) > MAX_TEXT)
         throw new Error('rpc.limitExceeded');
@@ -517,6 +560,7 @@ export class CollaborationService {
   }
   undo(input: CollaborationUndoRequest, trustedLocal = false) {
     return this.exclusive(async (): Promise<CollaborationEditResult> => {
+      this.requireWritable();
       const request = collaborationSchemas.undo.parse(input);
       if (request.scope === 'global' && !trustedLocal)
         throw new Error('error.collaborationGlobalUndoForbidden');
@@ -634,6 +678,7 @@ export class CollaborationService {
   }
   save(input: CollaborationSaveRequest) {
     return this.exclusive(async () => {
+      this.requireWritable();
       const request = collaborationSchemas.save.parse(input);
       await this.sync(true);
       this.requireProject(request.projectRoot, request.session);
@@ -643,6 +688,7 @@ export class CollaborationService {
   /** Legacy/AI writes may save current shared text, but cannot replace another user's draft. */
   writeFile(projectRoot: string, path: string, content: string) {
     return this.exclusive(async () => {
+      this.requireWritable();
       await this.sync(true);
       this.requireProject(projectRoot);
       const normalized = normalizeCollaborationPath(path);
@@ -685,11 +731,15 @@ export class CollaborationService {
     for (const doc of dirty) await this.persist(doc);
   }
   flush() {
-    return this.exclusive(() => this.flushDocuments());
+    return this.exclusive(() => {
+      this.requireWritable();
+      return this.flushDocuments();
+    });
   }
   /** File moves/deletes and project transitions cannot race queued shared edits. */
   workspaceAction<T>(action: () => Promise<T>): Promise<T> {
     return this.exclusive(async () => {
+      this.requireWritable();
       await this.flushDocuments();
       let result: T;
       try {
@@ -705,6 +755,7 @@ export class CollaborationService {
   }
   resolve(input: CollaborationResolveRequest) {
     return this.exclusive(async () => {
+      this.requireWritable();
       const request = collaborationSchemas.resolve.parse(input);
       await this.sync(true);
       this.requireProject(request.projectRoot, request.session);
@@ -722,7 +773,30 @@ export class CollaborationService {
       return structuredClone(doc.value);
     });
   }
+  /** Close decisions and queued peer writes share the same serialized boundary. */
+  prepareShutdown(decision: 'clean' | 'saved' | 'discard') {
+    return this.exclusive(async () => {
+      this.requireWritable();
+      await this.sync(true);
+      if (decision === 'clean' && [...this.documents.values()].some((doc) => doc.value.dirty))
+        throw new Error('error.unsavedChanges');
+      this.shutdownPrepared = true;
+      try {
+        if (decision === 'saved') await this.flushDocuments();
+        return this.snapshot();
+      } catch (error) {
+        this.shutdownPrepared = false;
+        throw error;
+      }
+    });
+  }
+  cancelShutdown() {
+    return this.exclusive(async () => {
+      this.shutdownPrepared = false;
+    });
+  }
   dispose() {
+    this.shutdownPrepared = true;
     clearInterval(this.timer);
   }
 }

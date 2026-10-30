@@ -19,7 +19,7 @@ Blode Studio 将工程描述、编译器选择和构建模式保存在工程根�
 `be.build.settings` 按以下顺序解析，每一层可以选择跟随上级，或选择自己的编译器：
 
 1. **通用**：`common`，作为两个平台的公共起点。
-2. **平台通用**：`platforms.stm32.common` 或 `platforms["esp32-s3"].common`。
+2. **平台通用**：`platforms.STM32F103C8T6.common` 或 `platforms["Esp32_S3_CAM"].common`。
 3. **语言**：同一平台的 `c` 或 `cpp`。
 
 | `family`   | 含义                                            |
@@ -64,12 +64,12 @@ GNU Arm 链接使用 `--gc-sections` 清理未引用段。Arm Compiler 6 在调�
     "optimizeForSize": true,
     "common": { "family": "inherit" },
     "platforms": {
-      "stm32": {
+      "STM32F103C8T6": {
         "common": { "family": "gnu-arm", "version": "14.2.1-1.1" },
         "c": { "family": "inherit" },
         "cpp": { "family": "inherit" }
       },
-      "esp32-s3": {
+      "Esp32_S3_CAM": {
         "common": { "family": "auto" },
         "c": { "family": "inherit" },
         "cpp": { "family": "inherit" }
@@ -95,6 +95,6 @@ GNU Arm 链接使用 `--gc-sections` 清理未引用段。Arm Compiler 6 在调�
 
 - [工具版本与下载](TOOL-VERSIONS.md)
 - [STM32 构建与调试](STM32.md)
-- [ESP32-S3 平台](../extensions/boards/esp32-s3/README.md)
+- [ESP32-S3 平台](../extensions/boards/Esp32_S3_CAM/README.md)
 - [C/C++ 语言规则](LANGUAGE-RULES.md)
 - [0.2.3.6 发行说明](releases/0.2.3.6.md)

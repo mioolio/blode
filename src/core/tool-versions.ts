@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import type { InstallationProgress, ProjectConfig, ProjectBuildInputs } from '../shared/contracts';
 import type { ToolVersionEntry, ToolVersionsApi, ToolVersionsState } from '../shared/tool-versions';
 import type { RuntimeHost } from '../../extensions/runtime';
-import { GnuArmToolchain, gnuRelease } from '../../extensions/boards/stm32/gnu';
+import { GnuArmToolchain, gnuRelease } from '../../extensions/boards/STM32F103C8T6/tools/gnu';
 import { toolVersionSchemas } from './tool-version-schemas';
 import { discoverInstalledBuildTools } from './installed-tools';
 

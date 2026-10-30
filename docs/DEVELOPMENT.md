@@ -1,5 +1,7 @@
 # 开发约定
 
+最新开发源码位于 `main`，包含从 `codex/runtime-plugins-internal` 合入的内部预览更新。0.2.3.6 发行包仍对应此前构建；本次源码合并不生成新发行包。克隆与启动命令见 [README](../README.md#快速开始)。
+
 ## 本地循环与运行数据
 
 执行 npm ci 后使用 npm run dev。启动脚本先构建 main、preload 与 MCP 桥，再启动 Vite 和 Electron。renderer 可热更新；core、shared、automation、preload、平台包或构建脚本修改后需重启开发进程，当前没有主进程自动重启 watch。
@@ -7,6 +9,8 @@
 启动准备阶段合并 Electron 与旧 Vite 孤儿进程查询。进程恢复与关键运行时权限检查并行；权限检查完成后再并行构建和创建 Vite，避免低完整性 esbuild 在修复完成前执行。开发启动只检查实际使用的 Electron 与 esbuild 可执行文件，不递归 SDK/tools；`postinstall` 和 `npm run repair:permissions` 仍执行完整工具目录检查，并覆盖 esbuild。全部准备成功后才启动 Electron，原有孤儿进程恢复与单实例保护保持有效。
 
 Vite 依赖扫描入口固定为 `index.html`，文件监听忽略 `.tools/`、`tools/`、`dist/`、`release/` 和 `.git/`。工具目录里的 HTML 文档不属于前端入口，新增工具链不应增加开发服务器的扫描范围。
+
+模块语言校验使用的 `zod` 与编辑器依赖一同显式预优化，避免首次请求语言规则时追加依赖优化并刷新页面。冷缓存测试通过真实 Vite HTTP 请求检查首页、语言规则和延迟编辑器，验证加载过程中依赖 hash 稳定、没有优化触发的整页刷新。
 
 终端逐项显示权限检查、进程恢复、构建、Vite 初始化与监听、Electron 尝试的耗时；超过 5 秒会继续报告等待阶段。启动器记录位于 `.tools/dev-launcher.log`，每次 Electron 尝试退出后另存主进程日志为 `.tools/dev-main.log.attempt-N.log`，重试不会覆盖前次失败证据。GPU overlay 警告本身不代表窗口启动失败，仍以界面就绪及退出状态判定。
 
@@ -44,6 +48,20 @@ Web ZIP 解压后执行 `npm ci --omit=dev` 安装目标平台的 serialport 依
 
 Windows 工作区文件可能继承 Low 完整性标签，使可执行文件以低完整性运行而不能写桌面、下载或 AppData。依赖安装及开发启动前检查已知本地运行时，必要时将低于 Medium 的可执行文件标签恢复为 Medium；也可执行 npm run repair:permissions。该修复保留 DACL 和更高的完整性级别。普通权限、锁或初始化错误不触发 sandbox 降级；仅已知的 Windows 断点启动/渲染崩溃允许一次兼容重试。
 
+### Windows 开发启动兼容
+
+当沙箱中的渲染进程以 `0x80000003` 崩溃时，Electron 主进程可能在处理加载失败后以 `0` 退出。启动器同时检查主进程与渲染器日志，区分正常关闭和真实的启动崩溃。AMD `GetGpuDriverOverlayInfo` 诊断不单独触发重试。
+
+默认 `BLODE_DEV_SANDBOX=auto`。首次发生已知沙箱崩溃后，启动器尝试一次 `--no-sandbox`；只有兼容尝试收到主进程的界面挂载标记，才把结果保存在 `.tools/dev-sandbox-<profile-hash>.json`。之后相同 Electron 版本、程序路径和配置目录直接采用已经成功的模式，减少每次启动前的失败与清理。普通关闭、超时、软件渲染回退或没有显示界面的尝试不生成记录。
+
+| 设置              | 行为                                            |
+| ----------------- | ----------------------------------------------- |
+| `auto` 或未设置   | 首次使用沙箱，复用已验证的 Windows 开发兼容记录 |
+| `1` 或 `required` | 强制使用沙箱，不自动追加 `--no-sandbox`         |
+| `0` 或 `disabled` | 显式使用 `--no-sandbox`                         |
+
+记录只影响开发启动器，不改变发行应用的设置。更换 Electron 版本、程序路径或配置目录后重新检测；删除对应记录可重新尝试默认模式。记录损坏或不可写时，启动流程继续。
+
 开发服务器现在通过 Vite API 在启动器进程内运行。按 profile 获取操作系统级独占会话后，启动器只回收精确匹配本机 Electron 路径和 user-data-dir 的孤儿进程树；仍有活启动器的窗口和其他 profile 不被清理。旧 Vite 子进程也仅在 Node 路径、脚本路径精确匹配且父进程已消失时回收，不全局终止 Electron 或 Node。
 
 每次 Electron 尝试有独立启动日志和 30 秒可见窗口期限；重试前停止本次拥有的进程树。主进程通过 IPC/父进程存活检查随开发启动器退出，关闭资源有 5 秒期限，避免不可见实例长期占用 profile。开发模式禁用有争用风险的 GPU 持久缓存/Graphite 路径，必要时再尝试软件渲染；不删除用户数据、Local Storage 或工程。AMD 视频处理器等 GPU 警告不能单独视为启动失败，最终以窗口就绪和进程状态验证。
@@ -58,7 +76,7 @@ Windows 工作区文件可能继承 Low 完整性标签，使可执行文件以�
 
 ## 平台边界
 
-当前只有 auto、esp32-s3、stm32。auto 是中性检测配置，容量为 0、分区为空；不显示某厂商编译目标、分区或虚构资源。候选连接和已识别芯片分开，多候选需明确选择。
+当前只有 auto、Esp32_S3_CAM、stm32。auto 是中性检测配置，容量为 0、分区为空；不显示某厂商编译目标、分区或虚构资源。候选连接和已识别芯片分开，多候选需明确选择。
 
 厂商的默认配置、识别、工具链、构建、烧录、布局和驱动事实放在 extensions/boards/<platform>/。核心保留通用锁、工程路径、配置、输入/产物哈希、构建缓存、串口及进程宿主，不增加厂商分支。平台 runtime 只依赖本目录、公共类型和 extensions/runtime.ts 宿主 SDK，不导入 core 或另一平台。
 

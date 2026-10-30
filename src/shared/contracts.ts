@@ -8,6 +8,14 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { ComponentLibrariesApi } from './components';
+import type { DesktopLifecycleApi } from './desktop-lifecycle';
+import type {
+  RuntimePluginManifest,
+  RuntimePluginsApi,
+  RuntimePluginsState,
+  RuntimeTransport,
+} from './plugins';
 import type { BuildSettings } from './build-settings';
 export interface Partition {
   id: string;
@@ -30,10 +38,24 @@ export interface ProjectConfig {
    * replace the value with a probe report on re-identification.
    */
   flashSizeOverride?: boolean;
+  runtime?: {
+    deviceId?: string;
+    values?: Record<string, string | number | boolean>;
+    forceCompiler?: boolean;
+    compilerRuntime?: string;
+    disabledCapabilities?: string[];
+  };
   partitions: Partition[];
+  debugger?: {
+    gdbPath?: string;
+    serverPath?: string;
+    scriptsPath?: string;
+    serialNumber?: string;
+    frequencyKhz?: number;
+  };
   /** Debug transport is separate from the COM port used by the serial monitor. */
   programmer?: {
-    transport: 'auto' | 'serial' | 'stlink';
+    transport: 'auto' | RuntimeTransport;
     serialNumber: string;
     frequencyKhz: number;
     targetChipId?: string;
@@ -95,7 +117,8 @@ export interface DebugProbeInfo {
 export interface DetectionCandidate {
   id: string;
   platformId: string;
-  transport: 'serial' | 'stlink';
+  transport: RuntimeTransport;
+  deviceId?: string;
   name: string;
   port?: string;
   serialNumber?: string;
@@ -106,6 +129,14 @@ export interface DetectionScan {
   unavailablePlatforms: string[];
 }
 export interface ProjectBuildInputs {
+  /** Host-derived component paths; not a be field or executable hook. */
+  components?: {
+    roots: string[];
+    sources: string[];
+    includeDirectories: string[];
+    arduinoLibraries: string[];
+    inputs: string[];
+  };
   settings?: BuildSettings;
   /** C language rules and compiler dialect. C++ keeps its own platform settings. */
   cStandard?: 'c99' | 'c11' | 'c17' | 'c23';
@@ -115,6 +146,8 @@ export interface ProjectBuildInputs {
   files?: string[];
 }
 export interface BoardDefinition {
+  pluginId?: string;
+  runtimePlugin?: RuntimePluginManifest;
   id: string;
   name: string;
   family: string;
@@ -203,6 +236,8 @@ export interface InstallationState extends InstallationProgress {
   logs: LogEvent[];
 }
 export interface AppState {
+  language?: import('./module-languages').ModuleLanguageState;
+  runtimePlugins?: RuntimePluginsState;
   /** Initial desktop discovery is running; tool/driver absence is not yet known. */
   initializing?: boolean;
   recentLogs?: LogEvent[];
@@ -286,11 +321,23 @@ export interface FirmwareExportResult {
   path?: string;
 }
 export interface DebuggerState {
-  instructions?: { address: string; function?: string; offset?: string; instruction: string }[];
+  profile?: import('./debugger-profiles').DebuggerProfile;
+  sessionId?: string;
+  instructions?: {
+    address: string;
+    function?: string;
+    offset?: string;
+    instruction: string;
+    opcodes?: string;
+  }[];
   updatedAt?: string;
   programCounter?: string;
   connection: 'disconnected' | 'connecting' | 'stopped' | 'running' | 'error';
-  tools: { gdb: boolean; server: boolean };
+  tools: {
+    gdb: boolean;
+    server: boolean;
+    paths?: { gdb: string | null; server: string | null; scripts?: string | null };
+  };
   message: string;
   symbols: string;
   registers: { name: string; value: string }[];
@@ -317,9 +364,16 @@ export interface DesktopApi
     HostWorkspaceApi,
     ProjectPackageApi,
     LanguageApi,
+    DesktopLifecycleApi,
+    RuntimePluginsApi,
+    ComponentLibrariesApi,
     TerminalApi {
   /** Notify the native shell after the first workspace frame has mounted. */
+  setTerminalFocus?(focused: boolean): void;
   rendererReady?(): void;
+  onWindowAttention?(
+    callback: (state: { visible: boolean; focused: boolean; epoch?: number }) => void,
+  ): () => void;
   listRecentProjects(): Promise<RecentProject[]>;
   openRecentProject(path: string): Promise<ReopenProjectResult>;
   removeRecentProject(path: string): Promise<void>;
@@ -328,13 +382,18 @@ export interface DesktopApi
   firmwareChoose(): Promise<PreparedFirmware | null>;
   firmwareFlash(request: FirmwareFlashRequest): Promise<void>;
   openDebugger(): Promise<void>;
-  debuggerState(): Promise<DebuggerState>;
+  debuggerState(config?: ProjectConfig): Promise<DebuggerState>;
   debuggerSymbols(): Promise<string | null>;
   debuggerConnect(config: ProjectConfig): Promise<void>;
   debuggerAction(action: DebuggerAction): Promise<void>;
   debuggerBreakpoint(location: string, removeId?: string): Promise<void>;
+  debuggerBreakpoints(locations: string[]): Promise<import('./debugger-edit').DebuggerBreakpointResult[]>;
+  debuggerPatch(
+    request: import('./debugger-edit').DebuggerPatchRequest,
+  ): Promise<import('./debugger-edit').DebuggerPatchResult>;
+  debuggerAssemble(address: number, source: string): Promise<string>;
   debuggerMemory(address: number, length: number): Promise<string>;
-  debuggerInstallTools(): Promise<void>;
+  debuggerInstallTools(config?: ProjectConfig): Promise<void>;
   debuggerChooseGdb(): Promise<boolean>;
   debuggerStorage(): Promise<DebuggerStorage | null>;
   /** Native save dialog on desktop; browser clients initiate a download. */

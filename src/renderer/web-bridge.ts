@@ -23,7 +23,9 @@ if (!scope.blode) {
         'x-blode-client': client,
       },
       body: JSON.stringify({ method, args }),
-      keepalive: method === 'collaborationLeave',
+      keepalive:
+        method === 'collaborationLeave' ||
+        (method === 'collaborationPresence' && (args[0] as { attention?: string })?.attention === 'inactive'),
     });
     const body = (await response.json().catch(() => null)) as { error?: string } | null;
     if (!response.ok) throw new Error(body?.error ?? `HTTP ${response.status}`);
@@ -38,6 +40,9 @@ if (!scope.blode) {
         `${apiBase}/events?client=${client}${token ? `&token=${encodeURIComponent(token)}` : ''}`,
       );
       stream.addEventListener('open', () => window.dispatchEvent(new Event('blode:collaboration-reconnect')));
+      stream.addEventListener('error', () =>
+        window.dispatchEvent(new Event('blode:collaboration-disconnect')),
+      );
     }
     if (!listeners.has(channel)) {
       const callbacks = new Set<(event: any) => void>();
@@ -64,6 +69,17 @@ if (!scope.blode) {
   };
   const bridge: DesktopApi = {
     ...createWorkbenchBridge(call, subscribe),
+    runtimePluginOpenView: async (id, viewId) => {
+      const result = (await call('runtimePluginOpenView', [id, viewId])) as Awaited<
+        ReturnType<DesktopApi['runtimePluginOpenView']>
+      >;
+      if (result.url) {
+        const next = new URL(result.url, window.location.href);
+        if (token) next.searchParams.set('token', token);
+        return { ...result, url: next.href };
+      }
+      return result;
+    },
     listRecentProjects: () => call('listRecentProjects', []) as ReturnType<DesktopApi['listRecentProjects']>,
     openRecentProject: (root) =>
       call('openRecentProject', [root]) as ReturnType<DesktopApi['openRecentProject']>,
@@ -119,7 +135,8 @@ if (!scope.blode) {
       if (!tab) throw new Error('error.debuggerPopupBlocked');
       tab.opener = null;
     },
-    debuggerState: () => call('debuggerState', []) as ReturnType<DesktopApi['debuggerState']>,
+    debuggerState: (config) =>
+      call('debuggerState', config ? [config] : []) as ReturnType<DesktopApi['debuggerState']>,
     debuggerSymbols: async () => {
       const file = await pickHostPath({ kind: 'file', extensions: ['elf', 'axf'] });
       return file ? (call('debuggerSymbolsPath', [file]) as Promise<string>) : null;
@@ -129,7 +146,11 @@ if (!scope.blode) {
     debuggerBreakpoint: (location, id) =>
       call('debuggerBreakpoint', id === undefined ? [location] : [location, id]) as Promise<void>,
     debuggerMemory: (address, length) => call('debuggerMemory', [address, length]) as Promise<string>,
-    debuggerInstallTools: () => call('debuggerInstallTools', []) as Promise<void>,
+    debuggerBreakpoints: (locations) =>
+      call('debuggerBreakpoints', [locations]) as ReturnType<DesktopApi['debuggerBreakpoints']>,
+    debuggerPatch: (request) => call('debuggerPatch', [request]) as ReturnType<DesktopApi['debuggerPatch']>,
+    debuggerAssemble: (address, source) => call('debuggerAssemble', [address, source]) as Promise<string>,
+    debuggerInstallTools: (config) => call('debuggerInstallTools', config ? [config] : []) as Promise<void>,
     debuggerChooseGdb: async () => {
       const file = await pickHostPath({ kind: 'file' });
       return file ? (call('debuggerChooseGdbPath', [file]) as Promise<boolean>) : false;

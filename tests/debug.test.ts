@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { EventEmitter } from 'node:events';
+import type { BrowserWindow } from 'electron';
 import {
   classifyDebugShortcut,
+  installDebugControls,
   loadAppConfig,
   type DebugConfig,
   type DebugShortcutInput,
@@ -18,6 +21,48 @@ const input = (key: string, modifiers: Partial<DebugShortcutInput> = {}): DebugS
 });
 
 describe('explicit debug shortcuts', () => {
+  it('leaves Ctrl+R and function keys with a focused terminal, then restores reload after blur', () => {
+    const calls: string[] = [];
+    const contents = Object.assign(new EventEmitter(), {
+      isDestroyed: () => false,
+      reload: () => calls.push('reload'),
+      reloadIgnoringCache: () => calls.push('reloadIgnoringCache'),
+      toggleDevTools: () => calls.push('devtools'),
+    });
+    const window = Object.assign(new EventEmitter(), { webContents: contents, isDestroyed: () => false });
+    let terminalFocused = true;
+    const dispose = installDebugControls(window as unknown as BrowserWindow, enabled, () => terminalFocused);
+    const fire = (event: DebugShortcutInput) => {
+      let prevented = false;
+      contents.emit(
+        'before-input-event',
+        {
+          preventDefault: () => {
+            prevented = true;
+          },
+        },
+        event,
+      );
+      return prevented;
+    };
+    for (const event of [
+      input('r', { control: true }),
+      input('r', { control: true, shift: true }),
+      input('F5'),
+    ])
+      assert.equal(fire(event), false, 'terminal input must reach its shell');
+    assert.deepEqual(calls, []);
+    assert.equal(fire(input('F12')), true);
+    assert.deepEqual(calls, ['devtools']);
+    terminalFocused = false;
+    assert.equal(fire(input('r', { control: true })), true);
+    assert.equal(fire(input('r', { control: true, shift: true })), true);
+    assert.deepEqual(calls, ['devtools', 'reload', 'reloadIgnoringCache']);
+    dispose();
+    assert.equal(contents.listenerCount('before-input-event'), 0);
+    assert.equal(window.listenerCount('closed'), 0);
+    assert.equal(fire(input('r', { control: true })), false);
+  });
   it('distinguishes ordinary reload, forced reload and developer tools', () => {
     assert.equal(classifyDebugShortcut(enabled, input('F12')), 'toggleDevTools');
     assert.equal(classifyDebugShortcut(enabled, input('F5')), 'reload');

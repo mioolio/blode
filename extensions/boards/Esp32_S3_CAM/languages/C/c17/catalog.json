@@ -1,0 +1,1388 @@
+{
+  "schemaVersion": 1,
+  "language": "cpp",
+  "triggerCharacters": ["#", "."],
+  "symbols": [
+    {
+      "name": "atoi",
+      "kind": "function",
+      "detail": "int atoi(const char *text)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "atoi(${1:})"
+    },
+    {
+      "name": "atol",
+      "kind": "function",
+      "detail": "long atol(const char *text)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "atol(${1:})"
+    },
+    {
+      "name": "atoll",
+      "kind": "function",
+      "detail": "long long atoll(const char *text)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "atoll(${1:})"
+    },
+    {
+      "name": "atof",
+      "kind": "function",
+      "detail": "double atof(const char *text)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "atof(${1:})"
+    },
+    {
+      "name": "abs",
+      "kind": "function",
+      "detail": "int abs(int value)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "abs(${1:})"
+    },
+    {
+      "name": "abort",
+      "kind": "function",
+      "detail": "void abort(void)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "abort(${1:})"
+    },
+    {
+      "name": "atexit",
+      "kind": "function",
+      "detail": "int atexit(void (*handler)(void))",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "atexit(${1:})"
+    },
+    {
+      "name": "aligned_alloc",
+      "kind": "function",
+      "detail": "void *aligned_alloc(size_t alignment, size_t size)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "aligned_alloc(${1:})"
+    },
+    {
+      "name": "at_quick_exit",
+      "kind": "function",
+      "detail": "int at_quick_exit(void (*handler)(void))",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "at_quick_exit(${1:})"
+    },
+    {
+      "name": "asin",
+      "kind": "function",
+      "detail": "double asin(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "asin(${1:})"
+    },
+    {
+      "name": "acos",
+      "kind": "function",
+      "detail": "double acos(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "acos(${1:})"
+    },
+    {
+      "name": "atan",
+      "kind": "function",
+      "detail": "double atan(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "atan(${1:})"
+    },
+    {
+      "name": "atan2",
+      "kind": "function",
+      "detail": "double atan2(double y, double x)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "atan2(${1:})"
+    },
+    {
+      "name": "assert",
+      "kind": "function",
+      "detail": "void assert(expression)",
+      "documentation": "`<assert.h>` · C17",
+      "insertText": "assert(${1:})"
+    },
+    {
+      "name": "atomic_init",
+      "kind": "function",
+      "detail": "void atomic_init(volatile atomic_type *object, value_type value)",
+      "documentation": "`<stdatomic.h>` · C17",
+      "insertText": "atomic_init(${1:})"
+    },
+    {
+      "name": "atomic_load",
+      "kind": "function",
+      "detail": "value_type atomic_load(const volatile atomic_type *object)",
+      "documentation": "`<stdatomic.h>` · C17",
+      "insertText": "atomic_load(${1:})"
+    },
+    {
+      "name": "atomic_store",
+      "kind": "function",
+      "detail": "void atomic_store(volatile atomic_type *object, value_type value)",
+      "documentation": "`<stdatomic.h>` · C17",
+      "insertText": "atomic_store(${1:})"
+    },
+    {
+      "name": "atomic_exchange",
+      "kind": "function",
+      "detail": "value_type atomic_exchange(volatile atomic_type *object, value_type desired)",
+      "documentation": "`<stdatomic.h>` · C17",
+      "insertText": "atomic_exchange(${1:})"
+    },
+    {
+      "name": "bsearch",
+      "kind": "function",
+      "detail": "void *bsearch(const void *key, const void *base, size_t count, size_t size, int (*compare)(const void *, const void *))",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "bsearch(${1:})"
+    },
+    {
+      "name": "clearerr",
+      "kind": "function",
+      "detail": "void clearerr(FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "clearerr(${1:})"
+    },
+    {
+      "name": "calloc",
+      "kind": "function",
+      "detail": "void *calloc(size_t count, size_t size)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "calloc(${1:})"
+    },
+    {
+      "name": "cos",
+      "kind": "function",
+      "detail": "double cos(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "cos(${1:})"
+    },
+    {
+      "name": "cosh",
+      "kind": "function",
+      "detail": "double cosh(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "cosh(${1:})"
+    },
+    {
+      "name": "cbrt",
+      "kind": "function",
+      "detail": "double cbrt(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "cbrt(${1:})"
+    },
+    {
+      "name": "ceil",
+      "kind": "function",
+      "detail": "double ceil(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "ceil(${1:})"
+    },
+    {
+      "name": "exit",
+      "kind": "function",
+      "detail": "void exit(int status)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "exit(${1:})"
+    },
+    {
+      "name": "exp",
+      "kind": "function",
+      "detail": "double exp(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "exp(${1:})"
+    },
+    {
+      "name": "fopen",
+      "kind": "function",
+      "detail": "FILE *fopen(const char *filename, const char *mode)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fopen(${1:})"
+    },
+    {
+      "name": "fclose",
+      "kind": "function",
+      "detail": "int fclose(FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fclose(${1:})"
+    },
+    {
+      "name": "fflush",
+      "kind": "function",
+      "detail": "int fflush(FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fflush(${1:})"
+    },
+    {
+      "name": "fread",
+      "kind": "function",
+      "detail": "size_t fread(void *ptr, size_t size, size_t count, FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fread(${1:})"
+    },
+    {
+      "name": "fwrite",
+      "kind": "function",
+      "detail": "size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fwrite(${1:})"
+    },
+    {
+      "name": "fprintf",
+      "kind": "function",
+      "detail": "int fprintf(FILE *stream, const char *format, ...)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fprintf(${1:})"
+    },
+    {
+      "name": "fgets",
+      "kind": "function",
+      "detail": "char *fgets(char *buffer, int count, FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fgets(${1:})"
+    },
+    {
+      "name": "fputs",
+      "kind": "function",
+      "detail": "int fputs(const char *text, FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fputs(${1:})"
+    },
+    {
+      "name": "fgetc",
+      "kind": "function",
+      "detail": "int fgetc(FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fgetc(${1:})"
+    },
+    {
+      "name": "fputc",
+      "kind": "function",
+      "detail": "int fputc(int ch, FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fputc(${1:})"
+    },
+    {
+      "name": "feof",
+      "kind": "function",
+      "detail": "int feof(FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "feof(${1:})"
+    },
+    {
+      "name": "ferror",
+      "kind": "function",
+      "detail": "int ferror(FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "ferror(${1:})"
+    },
+    {
+      "name": "fseek",
+      "kind": "function",
+      "detail": "int fseek(FILE *stream, long offset, int origin)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "fseek(${1:})"
+    },
+    {
+      "name": "ftell",
+      "kind": "function",
+      "detail": "long ftell(FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "ftell(${1:})"
+    },
+    {
+      "name": "free",
+      "kind": "function",
+      "detail": "void free(void *ptr)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "free(${1:})"
+    },
+    {
+      "name": "floor",
+      "kind": "function",
+      "detail": "double floor(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "floor(${1:})"
+    },
+    {
+      "name": "fabs",
+      "kind": "function",
+      "detail": "double fabs(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "fabs(${1:})"
+    },
+    {
+      "name": "fmod",
+      "kind": "function",
+      "detail": "double fmod(double x, double y)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "fmod(${1:})"
+    },
+    {
+      "name": "fmax",
+      "kind": "function",
+      "detail": "double fmax(double x, double y)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "fmax(${1:})"
+    },
+    {
+      "name": "fmin",
+      "kind": "function",
+      "detail": "double fmin(double x, double y)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "fmin(${1:})"
+    },
+    {
+      "name": "getchar",
+      "kind": "function",
+      "detail": "int getchar(void)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "getchar(${1:})"
+    },
+    {
+      "name": "getenv",
+      "kind": "function",
+      "detail": "char *getenv(const char *name)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "getenv(${1:})"
+    },
+    {
+      "name": "isalnum",
+      "kind": "function",
+      "detail": "int isalnum(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isalnum(${1:})"
+    },
+    {
+      "name": "isalpha",
+      "kind": "function",
+      "detail": "int isalpha(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isalpha(${1:})"
+    },
+    {
+      "name": "isblank",
+      "kind": "function",
+      "detail": "int isblank(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isblank(${1:})"
+    },
+    {
+      "name": "iscntrl",
+      "kind": "function",
+      "detail": "int iscntrl(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "iscntrl(${1:})"
+    },
+    {
+      "name": "isdigit",
+      "kind": "function",
+      "detail": "int isdigit(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isdigit(${1:})"
+    },
+    {
+      "name": "isgraph",
+      "kind": "function",
+      "detail": "int isgraph(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isgraph(${1:})"
+    },
+    {
+      "name": "islower",
+      "kind": "function",
+      "detail": "int islower(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "islower(${1:})"
+    },
+    {
+      "name": "isprint",
+      "kind": "function",
+      "detail": "int isprint(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isprint(${1:})"
+    },
+    {
+      "name": "ispunct",
+      "kind": "function",
+      "detail": "int ispunct(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "ispunct(${1:})"
+    },
+    {
+      "name": "isspace",
+      "kind": "function",
+      "detail": "int isspace(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isspace(${1:})"
+    },
+    {
+      "name": "isupper",
+      "kind": "function",
+      "detail": "int isupper(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isupper(${1:})"
+    },
+    {
+      "name": "isxdigit",
+      "kind": "function",
+      "detail": "int isxdigit(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "isxdigit(${1:})"
+    },
+    {
+      "name": "auto",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "auto"
+    },
+    {
+      "name": "break",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "break"
+    },
+    {
+      "name": "case",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "case"
+    },
+    {
+      "name": "char",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "char"
+    },
+    {
+      "name": "const",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "const"
+    },
+    {
+      "name": "continue",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "continue"
+    },
+    {
+      "name": "default",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "default"
+    },
+    {
+      "name": "do",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "do"
+    },
+    {
+      "name": "double",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "double"
+    },
+    {
+      "name": "else",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "else"
+    },
+    {
+      "name": "enum",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "enum"
+    },
+    {
+      "name": "extern",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "extern"
+    },
+    {
+      "name": "float",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "float"
+    },
+    {
+      "name": "for",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "for"
+    },
+    {
+      "name": "goto",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "goto"
+    },
+    {
+      "name": "if",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "if"
+    },
+    {
+      "name": "inline",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "inline"
+    },
+    {
+      "name": "int",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "int"
+    },
+    {
+      "name": "long",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "long"
+    },
+    {
+      "name": "register",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "register"
+    },
+    {
+      "name": "restrict",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "restrict"
+    },
+    {
+      "name": "return",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "return"
+    },
+    {
+      "name": "short",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "short"
+    },
+    {
+      "name": "signed",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "signed"
+    },
+    {
+      "name": "sizeof",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "sizeof"
+    },
+    {
+      "name": "static",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "static"
+    },
+    {
+      "name": "struct",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "struct"
+    },
+    {
+      "name": "switch",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "switch"
+    },
+    {
+      "name": "typedef",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "typedef"
+    },
+    {
+      "name": "union",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "union"
+    },
+    {
+      "name": "unsigned",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "unsigned"
+    },
+    {
+      "name": "void",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "void"
+    },
+    {
+      "name": "volatile",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "volatile"
+    },
+    {
+      "name": "while",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "while"
+    },
+    {
+      "name": "_Bool",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Bool"
+    },
+    {
+      "name": "_Complex",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Complex"
+    },
+    {
+      "name": "_Imaginary",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Imaginary"
+    },
+    {
+      "name": "_Alignas",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Alignas"
+    },
+    {
+      "name": "_Alignof",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Alignof"
+    },
+    {
+      "name": "_Atomic",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Atomic"
+    },
+    {
+      "name": "_Generic",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Generic"
+    },
+    {
+      "name": "_Noreturn",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Noreturn"
+    },
+    {
+      "name": "_Static_assert",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Static_assert"
+    },
+    {
+      "name": "_Thread_local",
+      "kind": "keyword",
+      "detail": "C17 keyword",
+      "insertText": "_Thread_local"
+    },
+    {
+      "name": "labs",
+      "kind": "function",
+      "detail": "long labs(long value)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "labs(${1:})"
+    },
+    {
+      "name": "llabs",
+      "kind": "function",
+      "detail": "long long llabs(long long value)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "llabs(${1:})"
+    },
+    {
+      "name": "log",
+      "kind": "function",
+      "detail": "double log(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "log(${1:})"
+    },
+    {
+      "name": "log10",
+      "kind": "function",
+      "detail": "double log10(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "log10(${1:})"
+    },
+    {
+      "name": "log2",
+      "kind": "function",
+      "detail": "double log2(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "log2(${1:})"
+    },
+    {
+      "name": "malloc",
+      "kind": "function",
+      "detail": "void *malloc(size_t size)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "malloc(${1:})"
+    },
+    {
+      "name": "memcpy",
+      "kind": "function",
+      "detail": "void *memcpy(void *dest, const void *src, size_t count)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "memcpy(${1:})"
+    },
+    {
+      "name": "memmove",
+      "kind": "function",
+      "detail": "void *memmove(void *dest, const void *src, size_t count)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "memmove(${1:})"
+    },
+    {
+      "name": "memset",
+      "kind": "function",
+      "detail": "void *memset(void *dest, int value, size_t count)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "memset(${1:})"
+    },
+    {
+      "name": "memcmp",
+      "kind": "function",
+      "detail": "int memcmp(const void *left, const void *right, size_t count)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "memcmp(${1:})"
+    },
+    {
+      "name": "memchr",
+      "kind": "function",
+      "detail": "void *memchr(const void *buffer, int ch, size_t count)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "memchr(${1:})"
+    },
+    {
+      "name": "printf",
+      "kind": "function",
+      "detail": "int printf(const char *format, ...)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "printf(${1:})"
+    },
+    {
+      "name": "putchar",
+      "kind": "function",
+      "detail": "int putchar(int ch)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "putchar(${1:})"
+    },
+    {
+      "name": "puts",
+      "kind": "function",
+      "detail": "int puts(const char *text)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "puts(${1:})"
+    },
+    {
+      "name": "perror",
+      "kind": "function",
+      "detail": "void perror(const char *text)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "perror(${1:})"
+    },
+    {
+      "name": "pow",
+      "kind": "function",
+      "detail": "double pow(double base, double exponent)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "pow(${1:})"
+    },
+    {
+      "name": "qsort",
+      "kind": "function",
+      "detail": "void qsort(void *base, size_t count, size_t size, int (*compare)(const void *, const void *))",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "qsort(${1:})"
+    },
+    {
+      "name": "quick_exit",
+      "kind": "function",
+      "detail": "void quick_exit(int status)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "quick_exit(${1:})"
+    },
+    {
+      "name": "rewind",
+      "kind": "function",
+      "detail": "void rewind(FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "rewind(${1:})"
+    },
+    {
+      "name": "remove",
+      "kind": "function",
+      "detail": "int remove(const char *filename)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "remove(${1:})"
+    },
+    {
+      "name": "rename",
+      "kind": "function",
+      "detail": "int rename(const char *oldName, const char *newName)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "rename(${1:})"
+    },
+    {
+      "name": "realloc",
+      "kind": "function",
+      "detail": "void *realloc(void *ptr, size_t size)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "realloc(${1:})"
+    },
+    {
+      "name": "rand",
+      "kind": "function",
+      "detail": "int rand(void)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "rand(${1:})"
+    },
+    {
+      "name": "round",
+      "kind": "function",
+      "detail": "double round(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "round(${1:})"
+    },
+    {
+      "name": "sprintf",
+      "kind": "function",
+      "detail": "int sprintf(char *buffer, const char *format, ...)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "sprintf(${1:})"
+    },
+    {
+      "name": "snprintf",
+      "kind": "function",
+      "detail": "int snprintf(char *buffer, size_t count, const char *format, ...)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "snprintf(${1:})"
+    },
+    {
+      "name": "scanf",
+      "kind": "function",
+      "detail": "int scanf(const char *format, ...)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "scanf(${1:})"
+    },
+    {
+      "name": "sscanf",
+      "kind": "function",
+      "detail": "int sscanf(const char *buffer, const char *format, ...)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "sscanf(${1:})"
+    },
+    {
+      "name": "strtol",
+      "kind": "function",
+      "detail": "long strtol(const char *text, char **end, int base)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "strtol(${1:})"
+    },
+    {
+      "name": "strtoul",
+      "kind": "function",
+      "detail": "unsigned long strtoul(const char *text, char **end, int base)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "strtoul(${1:})"
+    },
+    {
+      "name": "strtoll",
+      "kind": "function",
+      "detail": "long long strtoll(const char *text, char **end, int base)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "strtoll(${1:})"
+    },
+    {
+      "name": "strtoull",
+      "kind": "function",
+      "detail": "unsigned long long strtoull(const char *text, char **end, int base)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "strtoull(${1:})"
+    },
+    {
+      "name": "strtod",
+      "kind": "function",
+      "detail": "double strtod(const char *text, char **end)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "strtod(${1:})"
+    },
+    {
+      "name": "strtof",
+      "kind": "function",
+      "detail": "float strtof(const char *text, char **end)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "strtof(${1:})"
+    },
+    {
+      "name": "strtold",
+      "kind": "function",
+      "detail": "long double strtold(const char *text, char **end)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "strtold(${1:})"
+    },
+    {
+      "name": "srand",
+      "kind": "function",
+      "detail": "void srand(unsigned int seed)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "srand(${1:})"
+    },
+    {
+      "name": "system",
+      "kind": "function",
+      "detail": "int system(const char *command)",
+      "documentation": "`<stdlib.h>` · C17",
+      "insertText": "system(${1:})"
+    },
+    {
+      "name": "strlen",
+      "kind": "function",
+      "detail": "size_t strlen(const char *text)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strlen(${1:})"
+    },
+    {
+      "name": "strcpy",
+      "kind": "function",
+      "detail": "char *strcpy(char *dest, const char *src)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strcpy(${1:})"
+    },
+    {
+      "name": "strncpy",
+      "kind": "function",
+      "detail": "char *strncpy(char *dest, const char *src, size_t count)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strncpy(${1:})"
+    },
+    {
+      "name": "strcat",
+      "kind": "function",
+      "detail": "char *strcat(char *dest, const char *src)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strcat(${1:})"
+    },
+    {
+      "name": "strncat",
+      "kind": "function",
+      "detail": "char *strncat(char *dest, const char *src, size_t count)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strncat(${1:})"
+    },
+    {
+      "name": "strcmp",
+      "kind": "function",
+      "detail": "int strcmp(const char *left, const char *right)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strcmp(${1:})"
+    },
+    {
+      "name": "strncmp",
+      "kind": "function",
+      "detail": "int strncmp(const char *left, const char *right, size_t count)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strncmp(${1:})"
+    },
+    {
+      "name": "strchr",
+      "kind": "function",
+      "detail": "char *strchr(const char *text, int ch)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strchr(${1:})"
+    },
+    {
+      "name": "strrchr",
+      "kind": "function",
+      "detail": "char *strrchr(const char *text, int ch)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strrchr(${1:})"
+    },
+    {
+      "name": "strstr",
+      "kind": "function",
+      "detail": "char *strstr(const char *text, const char *needle)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strstr(${1:})"
+    },
+    {
+      "name": "strtok",
+      "kind": "function",
+      "detail": "char *strtok(char *text, const char *delimiters)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strtok(${1:})"
+    },
+    {
+      "name": "strerror",
+      "kind": "function",
+      "detail": "char *strerror(int code)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strerror(${1:})"
+    },
+    {
+      "name": "strspn",
+      "kind": "function",
+      "detail": "size_t strspn(const char *text, const char *accept)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strspn(${1:})"
+    },
+    {
+      "name": "strcspn",
+      "kind": "function",
+      "detail": "size_t strcspn(const char *text, const char *reject)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strcspn(${1:})"
+    },
+    {
+      "name": "strpbrk",
+      "kind": "function",
+      "detail": "char *strpbrk(const char *text, const char *accept)",
+      "documentation": "`<string.h>` · C17",
+      "insertText": "strpbrk(${1:})"
+    },
+    {
+      "name": "sin",
+      "kind": "function",
+      "detail": "double sin(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "sin(${1:})"
+    },
+    {
+      "name": "sinh",
+      "kind": "function",
+      "detail": "double sinh(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "sinh(${1:})"
+    },
+    {
+      "name": "sqrt",
+      "kind": "function",
+      "detail": "double sqrt(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "sqrt(${1:})"
+    },
+    {
+      "name": "tolower",
+      "kind": "function",
+      "detail": "int tolower(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "tolower(${1:})"
+    },
+    {
+      "name": "toupper",
+      "kind": "function",
+      "detail": "int toupper(int ch)",
+      "documentation": "`<ctype.h>` · C17",
+      "insertText": "toupper(${1:})"
+    },
+    {
+      "name": "tan",
+      "kind": "function",
+      "detail": "double tan(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "tan(${1:})"
+    },
+    {
+      "name": "tanh",
+      "kind": "function",
+      "detail": "double tanh(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "tanh(${1:})"
+    },
+    {
+      "name": "trunc",
+      "kind": "function",
+      "detail": "double trunc(double value)",
+      "documentation": "`<math.h>` · C17",
+      "insertText": "trunc(${1:})"
+    },
+    {
+      "name": "int8_t",
+      "kind": "type",
+      "detail": "int8_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "int16_t",
+      "kind": "type",
+      "detail": "int16_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "int32_t",
+      "kind": "type",
+      "detail": "int32_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "int64_t",
+      "kind": "type",
+      "detail": "int64_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "uint8_t",
+      "kind": "type",
+      "detail": "uint8_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "uint16_t",
+      "kind": "type",
+      "detail": "uint16_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "uint32_t",
+      "kind": "type",
+      "detail": "uint32_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "uint64_t",
+      "kind": "type",
+      "detail": "uint64_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "intptr_t",
+      "kind": "type",
+      "detail": "intptr_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "uintptr_t",
+      "kind": "type",
+      "detail": "uintptr_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "intmax_t",
+      "kind": "type",
+      "detail": "intmax_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "uintmax_t",
+      "kind": "type",
+      "detail": "uintmax_t · <stdint.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "size_t",
+      "kind": "type",
+      "detail": "size_t · <stddef.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "ptrdiff_t",
+      "kind": "type",
+      "detail": "ptrdiff_t · <stddef.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "wchar_t",
+      "kind": "type",
+      "detail": "wchar_t · <stddef.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "FILE",
+      "kind": "type",
+      "detail": "FILE · <stdio.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "fpos_t",
+      "kind": "type",
+      "detail": "fpos_t · <stdio.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "va_list",
+      "kind": "type",
+      "detail": "va_list · <stdarg.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "bool",
+      "kind": "type",
+      "detail": "bool · <stdbool.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "max_align_t",
+      "kind": "type",
+      "detail": "max_align_t · <stddef.h>",
+      "documentation": "C17"
+    },
+    {
+      "name": "NULL",
+      "kind": "constant",
+      "detail": "NULL"
+    },
+    {
+      "name": "EXIT_SUCCESS",
+      "kind": "constant",
+      "detail": "EXIT_SUCCESS"
+    },
+    {
+      "name": "EXIT_FAILURE",
+      "kind": "constant",
+      "detail": "EXIT_FAILURE"
+    },
+    {
+      "name": "EOF",
+      "kind": "constant",
+      "detail": "EOF"
+    },
+    {
+      "name": "SEEK_SET",
+      "kind": "constant",
+      "detail": "SEEK_SET"
+    },
+    {
+      "name": "SEEK_CUR",
+      "kind": "constant",
+      "detail": "SEEK_CUR"
+    },
+    {
+      "name": "SEEK_END",
+      "kind": "constant",
+      "detail": "SEEK_END"
+    },
+    {
+      "name": "ungetc",
+      "kind": "function",
+      "detail": "int ungetc(int ch, FILE *stream)",
+      "documentation": "`<stdio.h>` · C17",
+      "insertText": "ungetc(${1:})"
+    },
+    {
+      "name": "va_start",
+      "kind": "function",
+      "detail": "void va_start(va_list ap, last)",
+      "documentation": "`<stdarg.h>` · C17",
+      "insertText": "va_start(${1:})"
+    },
+    {
+      "name": "va_arg",
+      "kind": "function",
+      "detail": "type va_arg(va_list ap, type)",
+      "documentation": "`<stdarg.h>` · C17",
+      "insertText": "va_arg(${1:})"
+    },
+    {
+      "name": "va_copy",
+      "kind": "function",
+      "detail": "void va_copy(va_list dest, va_list src)",
+      "documentation": "`<stdarg.h>` · C17",
+      "insertText": "va_copy(${1:})"
+    },
+    {
+      "name": "va_end",
+      "kind": "function",
+      "detail": "void va_end(va_list ap)",
+      "documentation": "`<stdarg.h>` · C17",
+      "insertText": "va_end(${1:})"
+    }
+  ],
+  "snippets": [
+    {
+      "name": "include",
+      "kind": "snippet",
+      "detail": "#include \"header.h\"",
+      "insertText": "#include \"${1:header.h}\""
+    },
+    {
+      "name": "define",
+      "kind": "snippet",
+      "detail": "#define NAME value",
+      "insertText": "#define ${1:NAME} ${2:value}"
+    },
+    {
+      "name": "if",
+      "kind": "snippet",
+      "detail": "if (condition) { ... }",
+      "insertText": "if (${1:condition}) {\n\t${2}\n}"
+    },
+    {
+      "name": "ifelse",
+      "kind": "snippet",
+      "detail": "if / else",
+      "insertText": "if (${1:condition}) {\n\t${2}\n} else {\n\t${3}\n}"
+    },
+    {
+      "name": "for",
+      "kind": "snippet",
+      "detail": "for (init; condition; step)",
+      "insertText": "for (int ${1:i} = 0; ${1:i} < ${2:count}; ${1:i}++) {\n\t${3}\n}"
+    },
+    {
+      "name": "while",
+      "kind": "snippet",
+      "detail": "while (condition) { ... }",
+      "insertText": "while (${1:condition}) {\n\t${2}\n}"
+    },
+    {
+      "name": "do while",
+      "kind": "snippet",
+      "detail": "do { ... } while (condition)",
+      "insertText": "do {\n\t${1}\n} while (${2:condition});"
+    },
+    {
+      "name": "switch",
+      "kind": "snippet",
+      "detail": "switch / case / default",
+      "insertText": "switch (${1:value}) {\n\tcase ${2:0}:\n\t\t${3:break;}\n\tdefault:\n\t\tbreak;\n}"
+    },
+    {
+      "name": "typedef struct",
+      "kind": "snippet",
+      "detail": "typedef struct { ... } Name;",
+      "insertText": "typedef struct {\n\t${1:fields}\n} ${2:Name};"
+    },
+    {
+      "name": "typedef enum",
+      "kind": "snippet",
+      "detail": "typedef enum { ... } Name;",
+      "insertText": "typedef enum {\n\t${1:VALUE} = 0,\n} ${2:Name};"
+    }
+  ],
+  "rules": [
+    {
+      "id": "removed-gets",
+      "kind": "call",
+      "names": ["gets"],
+      "severity": "warning",
+      "message": "gets 已从 C17 标准库移除，请使用 fgets。",
+      "enabled": true
+    },
+    {
+      "id": "c23-syntax",
+      "kind": "call",
+      "names": ["typeof", "typeof_unqual", "_BitInt", "static_assert", "alignof", "alignas"],
+      "severity": "warning",
+      "message": "此标准语法需要 C23；编译器扩展可另行支持。",
+      "enabled": true
+    }
+  ]
+}
