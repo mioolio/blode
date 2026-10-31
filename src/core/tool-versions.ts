@@ -11,6 +11,14 @@ import {
 } from '../shared/tool-versions';
 import type { RuntimeHost } from '../../extensions/runtime';
 import { GnuArmToolchain, gnuRelease } from '../../extensions/boards/STM32F103C8T6/tools/gnu';
+import {
+  StlinkProgrammer,
+  STLINK_WINDOWS_RELEASE,
+} from '../../extensions/boards/STM32F103C8T6/device/programmer';
+import {
+  stlinkBinaryDirectories,
+  stlinkPackageDirectory,
+} from '../../extensions/boards/STM32F103C8T6/tools/stlink-discovery';
 import { toolVersionSchemas } from './tool-version-schemas';
 import { discoverInstalledBuildTools } from './installed-tools';
 import { readToolPackages } from './tool-package-store';
@@ -134,19 +142,37 @@ export class ToolVersions implements Pick<
         directory,
       });
     }
+    const stlinkRoot = path.join(this.options.root, 'stlink');
+    const stlinkOptions = { ...this.options, root: stlinkRoot, platform: this.platform };
+    const custom = (await this.options.config()).toolchain.stlinkDirectory?.trim();
+    const stlinkBins = new Set([
+      ...(custom ? await stlinkBinaryDirectories({ ...stlinkOptions, directory: custom }) : []),
+      ...(await stlinkBinaryDirectories(stlinkOptions)),
+    ]);
+    let stlink: Awaited<ReturnType<StlinkProgrammer['status']>> = { installed: false, version: '' };
+    for (const bin of stlinkBins) {
+      const current = await new StlinkProgrammer(stlinkOptions).status(bin);
+      if (current.installed && current.version === '1.9.0') {
+        stlink = current;
+        break;
+      }
+    }
+    const stlinkSupported = this.platform === 'win32' && this.arch === 'x64';
     entries.push({
       id: 'stlink:1.9.0',
       kind: 'stlink',
       version: '1.9.0',
       name: 'ST-Link 1.9.0',
       releaseUrl: 'https://github.com/stlink-org/stlink/releases/tag/v1.9.0',
-      downloadUrl:
-        this.platform === 'linux' && this.arch === 'x64'
+      downloadUrl: stlinkSupported
+        ? STLINK_WINDOWS_RELEASE.downloadUrl
+        : this.platform === 'linux' && this.arch === 'x64'
           ? 'https://github.com/stlink-org/stlink/releases/download/v1.9.0/stlink_1.9.0-1_amd64.deb'
           : undefined,
-      installable: false,
-      installed: false,
-      note: 'settings.versions.stlinkSystem',
+      installable: stlinkSupported,
+      installed: stlink.installed && stlink.version === '1.9.0',
+      directory:
+        stlink.installed && stlink.version === '1.9.0' ? stlink.directory : this.directory('stlink', '1.9.0'),
     });
     {
       const release = clangdRelease(this.platform, this.arch);
@@ -193,7 +219,7 @@ export class ToolVersions implements Pick<
       return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
     };
     const result: LocalToolchain[] = entries
-      .filter((entry) => entry.installed)
+      .filter((entry) => entry.installed && entry.kind !== 'stlink')
       .map((entry) => ({
         id: entry.id,
         name: entry.name,
@@ -308,33 +334,41 @@ export class ToolVersions implements Pick<
           binaryDirectory,
         });
     }
-    const versionRoot = path.join(this.root, 'stlink');
-    const versions = (await fs.readdir(versionRoot, { withFileTypes: true }).catch(() => []))
-      .filter((item) => item.isDirectory() && !item.isSymbolicLink())
-      .slice(0, 64)
-      .map((item) => path.join(versionRoot, item.name, 'bin'));
+    const stlinkOptions = {
+      ...this.options,
+      root: path.join(this.options.root, 'stlink'),
+      platform: this.platform,
+    };
+    const custom = config.toolchain.stlinkDirectory?.trim();
     const stlinkBins = [
-      config.toolchain.stlinkDirectory?.trim(),
-      path.join(this.options.root, 'stlink', 'bin'),
-      ...versions,
-    ].filter((value): value is string => !!value && path.isAbsolute(value));
+      ...(custom ? await stlinkBinaryDirectories({ ...stlinkOptions, directory: custom }) : []),
+      ...(await stlinkBinaryDirectories(stlinkOptions)),
+    ];
     for (const stlinkBin of new Set(stlinkBins)) {
-      if (!(await this.exists(path.join(stlinkBin, this.executable('st-info'))))) continue;
-      const probe = await this.options
-        .runner(path.join(stlinkBin, this.executable('st-info')), ['--version'], {
-          timeout: 4000,
-          signal: this.options.signal,
-          env: this.options.env,
-        })
-        .catch(() => ({ code: -1, output: '' }));
-      if (probe.code === 0)
+      const directory = stlinkPackageDirectory(stlinkBin);
+      if (
+        result.some(
+          (entry) =>
+            entry.kind === 'stlink' && entry.directory && identity(entry.directory) === identity(directory),
+        )
+      )
+        continue;
+      const probe = await new StlinkProgrammer(stlinkOptions).status(stlinkBin);
+      if (probe.installed)
         add({
           name: 'ST-Link',
-          version: probe.output.match(/\d+\.\d+(?:\.\d+)?/)?.[0] ?? '',
+          version: probe.version,
           kind: 'stlink',
-          directory: path.basename(stlinkBin).toLowerCase() === 'bin' ? path.dirname(stlinkBin) : stlinkBin,
+          directory,
           binaryDirectory: stlinkBin,
-          source: config.toolchain.stlinkDirectory ? 'custom' : 'managed',
+          source:
+            custom && inside(stlinkBin, custom)
+              ? 'custom'
+              : inside(directory, this.root)
+                ? 'versioned'
+                : inside(directory, this.options.root)
+                  ? 'managed'
+                  : 'path',
           exportable: true,
         });
     }
@@ -374,6 +408,7 @@ export class ToolVersions implements Pick<
         arduinoCli: path.join(entry.directory, 'bin', this.executable('arduino-cli')),
       };
     if (entry.kind === 'arduino-esp32') return { packageDirectory: entry.directory };
+    if (entry.kind === 'stlink') return { stlinkDirectory: entry.directory };
     if (entry.kind === 'clangd') return {};
     throw new Error('error.toolVersionUnknown');
   }
@@ -579,6 +614,11 @@ export class ToolVersions implements Pick<
           release: gnuRelease(entry.version, this.platform, this.arch),
         }).install();
       else if (entry.kind === 'arduino-cli') await this.installCli(entry);
+      else if (entry.kind === 'stlink')
+        await new StlinkProgrammer({
+          ...this.options,
+          root: entry.directory!,
+        }).install();
       else if (entry.kind === 'clangd')
         await installClangd({
           directory: entry.directory!,

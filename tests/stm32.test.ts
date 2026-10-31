@@ -303,12 +303,12 @@ test(
     const calls: string[][] = [];
     const runner: typeof runCommand = async (command, args) => {
       calls.push(args);
-      if (command === 'tar' && args[0] === '-tf')
+      if (path.basename(command) === 'tar.exe' && args[0] === '-tf')
         return {
           code: 0,
           output: 'stlink/bin/st-info.exe\nstlink/bin/st-flash.exe\nstlink/share/stlink/chips/F1.chip\n',
         };
-      if (command === 'tar' && args[0] === '-xf') {
+      if (path.basename(command) === 'tar.exe' && args[0] === '-xf') {
         const destination = path.join(args[args.indexOf('-C') + 1], 'stlink');
         await fs.mkdir(path.join(destination, 'bin'), { recursive: true });
         await fs.mkdir(path.join(destination, 'share/stlink/chips'), { recursive: true });

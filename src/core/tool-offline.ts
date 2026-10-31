@@ -6,6 +6,7 @@ import type { PackageApproval, PackageVerification } from '../shared/package-sig
 import { Readable } from 'node:stream';
 import * as z from 'zod';
 import { ToolVersions, arduinoCliAsset } from './tool-versions';
+import { STLINK_WINDOWS_RELEASE } from '../../extensions/boards/STM32F103C8T6/device/programmer';
 import { gnuRelease } from '../../extensions/boards/STM32F103C8T6/tools/gnu';
 import { writeZip, type ZipEntry, type FileZipEntry } from './zip';
 import { repairInstalledToolIntegrity } from './tool-integrity';
@@ -560,11 +561,13 @@ export class OfflineTools {
     };
     try {
       this.progress(entry.name, 'starting');
-      if (entry.kind === 'gnu-arm' || entry.kind === 'arduino-cli') {
+      if (entry.kind === 'gnu-arm' || entry.kind === 'arduino-cli' || entry.kind === 'stlink') {
         const release =
           entry.kind === 'gnu-arm'
             ? gnuRelease(entry.version, this.platform, this.arch)
-            : arduinoCliAsset(entry.version, this.platform, this.arch);
+            : entry.kind === 'stlink'
+              ? STLINK_WINDOWS_RELEASE
+              : arduinoCliAsset(entry.version, this.platform, this.arch);
         if (!release) throw new Error('error.toolVersionUnsupported');
         const { value } = await metadata(release.metadataUrl, 'release.json');
         const asset = value.assets?.find(
@@ -573,6 +576,7 @@ export class OfflineTools {
         if (value.tag_name !== `v${entry.version}` || value.draft || value.prerelease || !asset)
           throw new Error('error.toolVersionRelease');
         let expected = /^sha256:([a-f0-9]{64})$/i.exec(asset.digest ?? '')?.[1];
+        if (!expected && entry.kind === 'stlink') throw new Error('error.toolPackageChecksum');
         if (!expected) {
           const checksumName =
             entry.kind === 'gnu-arm' ? `${release.asset}.sha` : `${entry.version}-checksums.txt`;
@@ -894,6 +898,8 @@ export class OfflineTools {
         if (item.role === 'archive') await this.preflight(file);
       }
       const toolRoot = path.join(stage, 'tools');
+      // Keep staging isolated from configured and PATH installations.
+      const stageConfig = await this.options.config();
       if (entry.kind === 'arduino-esp32') await this.installEsp(entry, manifest, unpack, toolRoot);
       else {
         const fetcher: typeof fetch = async (input) => {
@@ -908,6 +914,8 @@ export class OfflineTools {
         await new ToolVersions({
           ...this.options,
           root: toolRoot,
+          config: () => ({ ...stageConfig, toolchain: { ...stageConfig.toolchain, stlinkDirectory: '' } }),
+          env: entry.kind === 'stlink' ? { ...this.options.env, PATH: '', Path: '' } : this.options.env,
           fetcher,
           onProgress: (progress) =>
             this.options.onProgress?.({
@@ -946,7 +954,8 @@ export class OfflineTools {
   private async validSnapshot(kind: SnapshotManifest['kind'], version: string, directory: string) {
     const executable = (name: string) =>
       path.join(directory, 'bin', name + (this.platform === 'win32' ? '.exe' : ''));
-    if (kind === 'stlink') return this.exists(executable('st-info'));
+    if (kind === 'stlink')
+      return (await this.exists(executable('st-info'))) && (await this.exists(executable('st-flash')));
     if (kind === 'armcc')
       return (
         await Promise.all(

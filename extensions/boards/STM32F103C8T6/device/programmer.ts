@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DebugProbeInfo, InstallationProgress } from '../../../../src/shared/contracts.js';
 import type { RuntimeHost, RuntimeCommandResult } from '../../../runtime.js';
+import { stlinkBinaryDirectories, stlinkPackageDirectory } from '../tools/stlink-discovery.js';
 import {
   buildStlinkFlashArgs,
   buildStlinkProbeArgs,
@@ -20,6 +21,8 @@ export const STLINK_WINDOWS_RELEASE = {
 
 interface StlinkOptions {
   root: string;
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
   onLine?: (line: string) => void;
@@ -33,6 +36,7 @@ const MAX_ARCHIVE_BYTES = 50_000_000;
 export class StlinkProgrammer {
   private readonly root: string;
   private readonly runner: RuntimeHost['runCommand'];
+  private resolved = new Map<string, string>();
 
   constructor(private readonly options: StlinkOptions) {
     this.root = path.resolve(options.root);
@@ -41,9 +45,12 @@ export class StlinkProgrammer {
 
   private async executable(name: 'st-info' | 'st-flash', directory?: string): Promise<string> {
     if (directory && /[\r\n\0]/.test(directory)) throw new Error('errors.stlinkMissing');
-    const filename = `${name}${process.platform === 'win32' ? '.exe' : ''}`;
+    const filename = `${name}${(this.options.platform ?? process.platform) === 'win32' ? '.exe' : ''}`;
     const root = directory ? path.resolve(directory) : this.root;
-    for (const candidate of [path.join(root, 'bin', filename), path.join(root, filename)]) {
+    const bins = await stlinkBinaryDirectories({ ...this.options, directory });
+    const selected = this.resolved.get(directory || '');
+    if (selected && bins.includes(selected)) return path.join(selected, filename);
+    for (const candidate of bins.map((bin) => path.join(bin, filename))) {
       const info = await fs.lstat(candidate).catch(() => null);
       if (info?.isFile() && !info.isSymbolicLink()) return candidate;
     }
@@ -60,20 +67,50 @@ export class StlinkProgrammer {
     return this.runner(command, args, {
       timeout,
       signal: this.options.signal,
+      env: this.options.env,
       onLine: quiet ? undefined : this.options.onLine,
     });
   }
 
-  async status(directory?: string): Promise<{ installed: boolean; version: string }> {
+  async status(directory?: string): Promise<{
+    installed: boolean;
+    version: string;
+    directory?: string;
+    binaryDirectory?: string;
+  }> {
     try {
-      const info = await this.run(await this.executable('st-info', directory), ['--version'], 10_000, true);
-      const flash = await this.run(await this.executable('st-flash', directory), ['--version'], 10_000, true);
-      const version = /\bv?(\d+\.\d+\.\d+)\b/.exec(info.output)?.[1] ?? '';
-      const flashVersion = /\bv?(\d+\.\d+\.\d+)\b/.exec(flash.output)?.[1] ?? '';
-      return {
-        installed: info.code === 0 && flash.code === 0 && !!version && version === flashVersion,
-        version,
-      };
+      const bins = await stlinkBinaryDirectories({ ...this.options, directory });
+      const suffix = (this.options.platform ?? process.platform) === 'win32' ? '.exe' : '';
+      for (const bin of bins.length ? bins : [undefined]) {
+        const results = await Promise.all(
+          ['st-info', 'st-flash'].map((name) =>
+            this.run(
+              bin
+                ? path.join(bin, name + suffix)
+                : directory
+                  ? path.join(directory, name + suffix)
+                  : name + suffix,
+              ['--version'],
+              4000,
+              true,
+            ).catch((error) => {
+              if (this.options.signal?.aborted) throw error;
+              return { code: -1, output: '' };
+            }),
+          ),
+        );
+        const versions = results.map((result) => /\bv?(\d+\.\d+\.\d+)\b/.exec(result.output)?.[1] ?? '');
+        if (results.every((result) => result.code === 0) && versions[0] && versions[0] === versions[1]) {
+          if (bin) this.resolved.set(directory || '', bin);
+          return {
+            installed: true,
+            version: versions[0],
+            ...(bin ? { binaryDirectory: bin, directory: stlinkPackageDirectory(bin) } : {}),
+          };
+        }
+      }
+      this.resolved.delete(directory || '');
+      return { installed: false, version: '' };
     } catch (error) {
       if (this.options.signal?.aborted) throw error;
       return { installed: false, version: '' };
@@ -232,7 +269,12 @@ export class StlinkProgrammer {
       await fs.writeFile(archive, bytes);
       await fs.mkdir(extractionRoot);
       this.options.onProgress?.({ tool: 'stlink-tools', phase: 'extracting' });
-      const listing = await this.run('tar', ['-tf', archive], 30_000, true);
+      const tar = path.join(
+        this.options.env?.SystemRoot || process.env.SystemRoot || 'C:\\Windows',
+        'System32',
+        'tar.exe',
+      );
+      const listing = await this.run(tar, ['-tf', archive], 30_000, true);
       if (
         listing.code !== 0 ||
         listing.output
@@ -240,7 +282,7 @@ export class StlinkProgrammer {
           .some((entry) => /^(?:[\/\\]|[a-z]:)|(?:^|[\/\\])\.\.(?:[\/\\]|$)|\0/i.test(entry))
       )
         throw new Error('errors.stlinkExtract');
-      const extraction = await this.run('tar', ['-xf', archive, '-C', extractionRoot], 60_000);
+      const extraction = await this.run(tar, ['-xf', archive, '-C', extractionRoot], 60_000);
       if (extraction.code !== 0) throw new Error(extraction.output || 'errors.stlinkExtract');
       const binaryDirectory = await findBinaryDirectory(extractionRoot);
       if (!binaryDirectory) throw new Error('errors.stlinkExtract');

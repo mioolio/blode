@@ -519,7 +519,7 @@ test('custom Arm Compiler and ST-Link export/import with dependencies and exclud
     runner: async (cmd: string, args: string[], opts: any = {}) =>
       cmd.includes('armclang')
         ? { code: 0, output: 'Arm Compiler 6.22' }
-        : cmd.includes('st-info')
+        : /st-(?:info|flash)/.test(cmd)
           ? { code: 0, output: 'st-info 1.9.0' }
           : f.options.runner(cmd, args, opts),
   };

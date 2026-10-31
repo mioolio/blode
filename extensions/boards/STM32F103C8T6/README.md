@@ -37,6 +37,8 @@ AC6 内置启动通过标准 __main 完成 scatter 装载、RW/ZI 和 C/C++ 运�
 
 开发 ST-Link 工具默认位于 tools/stlink，Windows 驱动归档位于 tools/STSW-LINK。驱动安装由通用安装执行器处理，工具与固件流程由本平台处理，二者分别检测。
 
+ST-Link 也可通过离线 ZIP 导入到 `tools/versions/stlink/<版本>/`，识别芯片和调试器会自动查找这些目录。自定义路径接受包根目录或 `bin/`，指定后按该路径工作。Windows x64 可在首选项下载或安装官方 ST-Link 工具，导出后的 ZIP 可通过“导入离线包”安装到其他电脑。目录发现代码位于 `tools/stlink-discovery.ts`。
+
 Arm Compiler 6.22 完整工具已从本机 E 盘迁入 tools/armclang，保留原 license_terms。armCompilerDirectory 可覆盖完整工具目录或 bin；未指定时使用平台工具根目录的 armclang。本机版本是 Keil MDK Community 非商业使用环境，工具不进入 Git；完整安装包会把本机该目录一并打包，使用与再分发遵循 Keil MDK 条款，简洁安装包则不含编译器。
 
 未检测到 Arm Compiler 6 时，「安装 / 更新工具链」会下载 GNU Arm GCC v15.2.1-1.1（Windows x64，xPack 重打包的 ARM GNU 工具链）到工具根目录的 armgcc/，安装前校验 GitHub 发行元数据摘要与归档大小。GNU 工具链按自身许可分发；其他平台需手动安装并由 armCompilerDirectory 指定。首选项同时展示 AC6 与 GNU Arm 的状态和版本，实际使用的编译器会写入构建输出。

@@ -12,6 +12,7 @@ import type {
 } from '../shared/contracts';
 import { parseMiValues, type MiValue } from './gdb-mi';
 import { GnuArmToolchain } from '../../extensions/boards/STM32F103C8T6/tools/gnu';
+import { stlinkBinaryDirectories } from '../../extensions/boards/STM32F103C8T6/tools/stlink-discovery';
 import { runCommand } from './process';
 import { assembleThumbInstruction, assemblerToolsFromGdb } from './debugger-assembler';
 import { debuggerProfiles, getDebuggerProfile, type DebuggerProfile } from '../shared/debugger-profiles';
@@ -150,14 +151,20 @@ export class HardwareDebugger {
           path.join(this.root, 'armgcc', 'bin', 'arm-none-eabi-gdb'),
         ]);
     const custom = config?.toolchain.stlinkDirectory;
+    const stlinkBins = await stlinkBinaryDirectories({
+      root: path.join(this.root, 'stlink'),
+      directory: custom,
+      tools: ['st-util'],
+    });
     const server = config?.debugger?.serverPath
       ? await configuredFile(config.debugger.serverPath)
-      : await this.find('st-util', [
-          ...(config?.debugger?.serverPath ? [config.debugger.serverPath] : []),
-          ...(custom ? [path.join(custom, 'st-util.exe'), path.join(custom, 'bin', 'st-util.exe')] : []),
-          path.join(this.root, 'stlink', 'bin', 'st-util.exe'),
-          path.join(this.root, 'stlink', 'bin', 'st-util'),
-        ]);
+      : await (async () => {
+          for (const bin of stlinkBins) {
+            const file = path.join(bin, 'st-util' + (process.platform === 'win32' ? '.exe' : ''));
+            if ((await fs.stat(file).catch(() => null))?.isFile()) return file;
+          }
+          return null;
+        })();
     return { gdb, server, scripts: null };
   }
   private async probeUsbJtag(

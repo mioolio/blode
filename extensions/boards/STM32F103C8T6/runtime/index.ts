@@ -31,6 +31,7 @@ export function createStm32Runtime(host: RuntimeHost, programmerOverride?: Stm32
     programmerOverride ??
     new StlinkProgrammer({
       root: path.join(host.toolchainRoot ?? path.join(host.dataRoot, 'toolchains'), 'stlink'),
+      env: host.env,
       fetcher: host.fetcher,
       signal: host.signal,
       onLine: (line) => host.emit(line),
