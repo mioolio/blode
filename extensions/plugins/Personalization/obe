@@ -5,7 +5,7 @@
   "publisher": "Blode Studio",
   "keyId": "0d671b913aed3ef36eb5cce7d9fc8fff1de3e024cb9f45a5db028afe59ab59eb",
   "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAp/q0QKPgr5OKx7NhQ9DGxjs7WXUbcWigQHioms0MmHU=\n-----END PUBLIC KEY-----\n",
-  "signedAt": "2026-10-31T21:43:48.219Z",
+  "signedAt": "2026-10-31T21:54:36.105Z",
   "subject": {
     "kind": "extension",
     "id": "Personalization",
@@ -19,8 +19,8 @@
     },
     {
       "path": "docs/README.md",
-      "size": 2713,
-      "sha256": "a2230646b2417cc793c0daf5c143fd08a9b7edec7767e6bb521155b4b7d82025"
+      "size": 2686,
+      "sha256": "57bda65530bd634e8572eed5b6e6aa64623baa238662c20d9a092757f2f18fb9"
     },
     {
       "path": "locales/ar.json",
@@ -123,5 +123,5 @@
       "sha256": "b98e4243a46f85fa804605c23bd6c9f3c159c6b9d9909210c73a699d60e1d6dc"
     }
   ],
-  "signature": "O72OLAzEUknFsqwzvE3N2GBlJSfz7seaBG4oydRz7/4dQ7WS/k+uLK2O7K+qxOUiuAksQBQcHgTAq0O6yb9MBQ=="
+  "signature": "LETRTfzmtjs52bhryXSM8C+lpeUlMYNNhxqYbTjtbls/NE420eWvw9QprvXHrAPbsvpnjYs0Ch3KM1lF8avIDQ=="
 }

@@ -1,6 +1,6 @@
 # Blode Studio
 
-简体中文 | [English](docs/README.en.md)
+简体中文 · [繁體中文](docs/README.zh-TW.md) · [English](docs/README.en.md) · [日本語](docs/README.ja.md) · [한국어](docs/README.ko.md) · [Deutsch](docs/README.de.md) · [Français](docs/README.fr.md) · [Español](docs/README.es.md) · [Português](docs/README.pt-BR.md) · [Italiano](docs/README.it.md) · [Русский](docs/README.ru.md) · [العربية](docs/README.ar.md) · [हिन्दी](docs/README.hi.md)
 
 > [!IMPORTANT]
 > **声明**
@@ -11,7 +11,7 @@
 
 面向 多硬件 的模块化开发工作台，集成代码编辑、编译烧录、串口通信、硬件调试、Git 和多人协作。可作为 Windows 桌面应用使用，也可在目标电脑运行独立 Node.js 服务，通过浏览器访问工程与硬件。
 
-**永久免费。** 官方现有功能及后续功能更新均免费，不设订阅、试用到期或付费解锁。源码采用 Apache License 2.0。详见[永久免费承诺](docs/FREE-SOFTWARE.md)。
+**永久免费 · Free forever。** Blode Studio 官方现有功能及后续更新均免费提供，源码采用 Apache License 2.0。
 
 支持 13 种界面语言：简体中文、繁体中文、英语、日语、韩语、德语、法语、西班牙语、葡萄牙语、意大利语、俄语、阿拉伯语和印地语。在首选项切换，语言包支持离线使用。见[国际化](docs/LOCALIZATION.md)。
 

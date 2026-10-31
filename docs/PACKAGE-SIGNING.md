@@ -94,6 +94,6 @@ node --import tsx scripts/sign-native-tools.ts tools/versions/armcc/5.06-u5-b528
 
 2026-11-01，Windows x64：完成签名／清单篡改／文件增删／哈希变更／未知公钥／版本替换／安装确认指纹检查；工具 ZIP 和设备模块 ZIP 已验证导入导出；签署后的 AC5 通过 Blode 实际编译，覆盖 C99、C++、ARMASM、Debug／Release、命名入口和固件导出。0.3.5.9 的桌面便携版、Web EXE 和 Web Node.js ZIP 已完成 OBE 验证，包内两个官方设备模块签名通过。
 
-新增语言文件同样属于模块或扩展签名载荷。更新翻译后需要更新包版本并重新签署；签发过程不改变 Blode Studio 的[永久免费承诺](FREE-SOFTWARE.md)。当前源码的后续修改应重新构建，不回写已校验的旧发行文件。
+新增语言文件同样属于模块或扩展签名载荷。更新翻译后需要更新包版本并重新签署。当前源码的后续修改应重新构建，不回写已校验的旧发行文件。
 
 技术参考：[Node.js Crypto](https://nodejs.org/api/crypto.html#cryptosignalgorithm-data-key-callback)、[Microsoft New-SelfSignedCertificate](https://learn.microsoft.com/en-us/powershell/module/pki/new-selfsignedcertificate)。
