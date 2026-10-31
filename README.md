@@ -20,7 +20,7 @@
 | 编辑器     | C/C++ 补全、悬停、定义、引用、诊断、格式化与代码操作优先由 clangd 提供；`Ctrl+T` 工程符号搜索、`Ctrl+Shift+O` 文件大纲；未安装时回退宿主索引；实际工具链包含目录、只读外部源码；预览标签、拆分编辑与草稿恢复 |
 | VS Code    | 编辑区一键生成工作区并在服务端打开 VS Code；磁盘保存同步，外部改动冲突合并                                                                                                                                   |
 | 资源预览   | 图片缩放；音频与视频播放；二进制文件属性和十六进制预览，桌面与 Web 共用                                                                                                                                      |
-| 语言配置   | C99／C11／C17／C23 分目录 JSON 规则；可编辑补全清单与诊断规则；模块独立声明语言                                                                                                                              |
+| 语言配置   | C99／C11／C17／C23 分目录 JSON 规则；可编辑用户补全条目与诊断规则；模块独立声明语言                                                                                                                          |
 | 编译       | 离线编译；命名的独立子工程入口；通用、平台和语言三级工具版本；调试／发布模式与固件体积优化                                                                                                                   |
 | 固件交付   | BIN／HEX／S-record／ELF 导出；预编译固件烧录；按实际构建依赖迁移工程 ZIP                                                                                                                                     |
 | 组件库     | Arduino 库搜索与依赖安装；目录／ZIP 导入；组件配置、源码与递归依赖的独立 ZIP 分享                                                                                                                            |
@@ -42,7 +42,7 @@ ESP32-S3 + CH340 烧录底座已在 Windows 参考固件上完成断点、单步
 - **AI 使用验收**：手动／自动补全、中文注释与全输入触发、间隔设置和错误反馈已有 46 项相关测试及 18 个真实编辑器场景通过；继续评估不同模型的建议质量、输入法体验、长会话及大型工程修改。
 - **通用扩展生态**：管理、权限审查和个性化示例已通过二进制宿主验证；持续完善更多第三方扩展的适配。见[通用扩展开发](docs/GENERAL-EXTENSIONS.md)。
 - **界面验收**：Git 差异与组件库布局已重排，大列表使用有界渲染；本轮实际视觉与滚动帧率待人工验收。
-- **本地发行准备**：0.3.4.2 桌面便携版与独立 Web 版已构建，附[发行说明](docs/releases/0.3.4.2.md)，由发布者手动创建 GitHub 发行版。构建后的局域网和 STM32 调试修复见[更新记录](CHANGELOG.md)，现有包尚未重新构建。
+- **本地发行准备**：0.3.4.3 桌面便携版与独立 Web 版已构建，附[发行说明](docs/releases/0.3.4.3.md)，由发布者手动创建 GitHub 发行版。构建后的局域网和 STM32 调试修复见[更新记录](CHANGELOG.md)，现有包尚未重新构建为 0.3.4.3。
 - **协作验收**：外部只读标签共享与恢复已补充自动化覆盖；继续扩展跨机器、高延迟网络和长时间场景。
 - **硬件验收**：ESP32-S3 原生 USB-JTAG、现有相机工程的 UART GDB 迁移，以及 STM32 指令修改的实机覆盖。
 
@@ -78,7 +78,7 @@ ESP32-S3 摄像头引脚由工程配置。旧工程的 `esp32-s3`、`stm32` 标�
 | Linux x64／ARM64   | Node.js 宿主与平台工具 | 已做代码适配；安装、USB、编译和桌面打包待实机验证 |
 | macOS              | 自定义工具路径         | 未验证                                            |
 
-发行包、校验和与安装步骤见[下载](https://github.com/mioolio/blode/releases)和[发行说明](docs/releases/0.3.4.2.md)。
+发行包、校验和与安装步骤见[下载](https://github.com/mioolio/blode/releases)和[发行说明](docs/releases/0.3.4.3.md)。
 
 ## 快速开始
 
@@ -171,7 +171,7 @@ npm run package:web
 
 | 任务       | 文档                                                                                                                                                                                                                                                                                 |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 安装与开发 | [Web 宿主](docs/WEB-HOST.md) · [开发说明](docs/DEVELOPMENT.md) · [发行说明](docs/releases/0.3.4.2.md)                                                                                                                                                                                |
+| 安装与开发 | [Web 宿主](docs/WEB-HOST.md) · [开发说明](docs/DEVELOPMENT.md) · [发行说明](docs/releases/0.3.4.3.md)                                                                                                                                                                                |
 | 编译与硬件 | [工程配置](docs/PROJECTS.md) · [命名编译入口](docs/BUILD_TARGETS.md) · [组件库](docs/COMPONENT-LIBRARIES.md) · [硬件调试](docs/HARDWARE-DEBUGGING.md) · [工具版本](docs/TOOL-VERSIONS.md) · [离线交付](docs/OFFLINE-DELIVERY.md)                                                     |
 | 编辑与团队 | [资源预览](docs/ASSET-PREVIEW.md) · [源码定位](docs/SOURCE-NAVIGATION.md) · [clangd 语言服务](docs/CLANGD.md) · [语言规则](docs/LANGUAGE-RULES.md) · [多人协作](docs/COLLABORATION.md) · [VS Code 连接](docs/vscode.md) · [Git](docs/GIT.md) · [工程打包](docs/PROJECT-PACKAGING.md) |
 | AI 与插件  | [AI 接口](docs/AI-PIPE.md) · [AI 补全与模型服务](docs/AI-COMPLETIONS.md) · [通用扩展](docs/GENERAL-EXTENSIONS.md) · [运行时插件](docs/RUNTIME-PLUGINS.md) · [模块语言](docs/MODULE-LANGUAGES.md) · [架构](docs/ARCHITECTURE.md)                                                      |

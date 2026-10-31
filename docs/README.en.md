@@ -4,11 +4,11 @@ English | [简体中文](../README.md)
 
 Blode Studio is a modular embedded development workbench for editing, collaboration, offline builds, firmware export, serial communication and hardware debugging. The current source on `main` includes the specific `Esp32_S3_CAM` and `STM32F103C8T6` runtime profiles.
 
-**Current release: 0.2.3.6** · [Release notes](releases/0.2.3.6.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
+**Current release: 0.3.4.3** · [Release notes](releases/0.3.4.3.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
 
 ## Internal development preview: runtime plugins
 
-The development preview from `codex/runtime-plugins-internal` has been merged into `main`. It introduces runtime identity migration, API v2 package declarations, execution consent, replaceable compilers, and custom device/debug views. The source retains its `0.2.3.6-internal` preview status. Existing 0.2.3.6 release packages are the earlier builds; this merge produces no new desktop or Web release binaries. See the [internal update and acceptance checklist](internal/runtime-plugins.md) for validation status.
+The development preview from `codex/runtime-plugins-internal` has been merged into `main`. It introduces runtime identity migration, API v2 package declarations, execution consent, replaceable compilers, and custom device/debug views. The runtime-plugin preview remains part of `main`; release binaries for this source line are listed below. See the [internal update and acceptance checklist](internal/runtime-plugins.md) for validation status.
 
 The latest internal update adds an interactive PowerShell terminal, extension windows and bottom-panel views, save-on-exit decisions and an optional system tray. Collaboration follows foreground attention and refreshes on return. Hardware debugging, Preferences and device controls share more compact wording and controls. See the [workbench interaction update](internal/workbench-interaction.md) for setup and validation details.
 
@@ -37,25 +37,21 @@ For the standalone Web host, run `npm run web:build`, then `npm run web:start` i
 
 | Edition          | Intended use                                                                  | Requirements                                          | Release artifact                           |
 | ---------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
-| Desktop portable | Local editing, builds and connected hardware                                  | Windows x64; Electron runtime included                | `Blode.Studio-0.2.3.6-desktop-win-x64.exe` |
-| Standalone Web   | A target computer hosts projects and hardware; users connect through browsers | Node.js 24+ and npm on the host; a browser on clients | `Blode.Studio-0.2.3.6-web.zip`             |
+| Desktop portable | Local editing, builds and connected hardware                                  | Windows x64; Electron runtime included                | `Blode.Studio-0.3.4.3-desktop-win-x64.exe` |
+| Standalone Web   | A target computer hosts projects and hardware; users connect through browsers | Node.js 24+ and npm on the host; a browser on clients | `Blode.Studio-0.3.4.3-web.zip`             |
 
-Both editions use the same project format and host services. The desktop artifact uses the lightweight packaging mode. Install compilers through Preferences or select existing custom tool paths. Git operations use Git installed on the host. Build outputs are placed in `release/0.2.3.6/`.
+Both editions use the same project format and host services. The desktop artifact uses the lightweight packaging mode. Install compilers through Preferences or select existing custom tool paths. Git operations use Git installed on the host. Build outputs are placed in `release/0.3.4.3/`.
 
-## What's new in 0.2.3.6
+## What's new in 0.3.4.3
 
-- **Code navigation:** C/C++ definitions, declarations, references and header links. Right-click or press F12, choose among duplicate results, and use Alt+Left to return.
-- **Versioned language data:** separate C99, C11, C17 and C23 JSON directories, alphabetic function catalogs, control-flow snippets, types and declarative source checks.
-- **Incremental indexing:** workspace functions, macros, types and variables contribute to completion; current drafts update the editor index, while saved-source exports are cached under `.blode/index/`.
-- **Project settings:** right-click the root `be` file to edit project identity, platform, entry, source list and C standard with a live JSON preview.
-- **Layered build settings:** **Run → Build settings** selects debug/release mode, size optimization and installed C/C++ tools for common, STM32 and ESP32-S3 scopes.
-- **Independent Git:** software-owned metadata in `.blode/git`, graphical diffs, staging, commits, branches and remotes; management can be disabled or its own history removed. Existing repository sharing is explicitly enabled.
-- **Collaboration:** persistent browser identity and color, shared tabs, viewport highlights, independent edit merging, explicit conflicts and the latest build logs.
-- **Stable reading and undo:** remote edits retain the reader's anchor where possible; browser undo affects the user's own changes, and closed tabs release presence.
-- **External AI completion:** editable user/AI catalogs and optional version-bound inline predictions. Predictions are off by default and accepted with Tab.
-- **Visible startup and installation progress:** phase timings, long-wait messages, download progress and third-party installer output.
+- **clangd language service:** completion, hover, definitions, references, diagnostics, formatting, code actions, document outline and workspace symbol search for C/C++. The full desktop package can bundle clangd; the lite package installs it from Preferences.
+- **Real build databases:** reuse `.blode/build/compile_commands.json` from Arduino CLI and STM32 builds. Without a database, include roots come from `be`, a recursive workspace scan and the STM32 board build model; `.uvprojx` is optional.
+- **Persistent explorer state:** folder collapse/expand state and the project root state are stored in `.blode/explorer.json` and restored when the project reopens.
+- **Problems surface:** editor diagnostics and log errors are merged in the Problems/Warnings tabs and status bar; entries can be clicked to jump to the source location.
+- **Simpler completion data:** built-in C/Arduino JSON completion catalogs were removed. Project, AI and user completion entries remain, alongside clangd and the offline fallback.
+- **Terminal stability:** node-pty 1.2.0-beta.18 fixes a Windows ConPTY handle-table race that could assert during concurrent terminal creation or exit.
 
-Read the detailed [release notes](releases/0.2.3.6.md) for migration and validation information.
+Read the detailed [release notes](releases/0.3.4.3.md) for migration and validation information.
 
 ## Core workflows
 
@@ -154,7 +150,7 @@ The desktop command aliases the lightweight `package:lite` flow. The Web build c
 
 ## Documentation
 
-- [0.2.3.6 release notes](releases/0.2.3.6.md) and [changelog](../CHANGELOG.md)
+- [0.3.4.3 release notes](releases/0.3.4.3.md) and [changelog](../CHANGELOG.md)
 - [Language rules](LANGUAGE-RULES.md), [AI completion](AI-COMPLETIONS.md), [collaboration](COLLABORATION.md)
 - [Git](GIT.md), [project and build settings](PROJECTS.md), [component libraries](COMPONENT-LIBRARIES.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
 - [STM32](STM32.md), [ESP32-S3](../extensions/boards/Esp32_S3_CAM/README.md), [toolchains](TOOLCHAINS.md)

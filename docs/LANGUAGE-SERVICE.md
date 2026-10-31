@@ -4,23 +4,25 @@ C/C++ 的补全与悬停优先由 clangd 回答，见 [clangd 语言服务](CLAN
 
 回退服务不是完整的 clangd：没有类型推导、宏展开和模板实例化。定义、声明、引用和 `#include` 定位在回退路径使用 [`language.navigate`](SOURCE-NAVIGATION.md)；诊断使用前端的声明式语言规则。
 
+clangd 路径优先使用实际构建生成的 `compile_commands.json`（Arduino CLI、STM32 构建）。没有数据库时，包含目录来自 `be` 构建入口、工作区递归目录和平台构建模型；`.uvprojx` 不是必需项。clangd 诊断只对 `.c`／`.cc`／`.cpp`／`.cxx` 发布；头文件和 `.ino` 依赖构建包含顺序、Arduino 预处理或目标 ABI，单独解析会产生误报，因此只用于导航/补全，不写入“问题”页。
+
 ## 组成
 
-| 位置                                           | 责任                                           |
-| ---------------------------------------------- | ---------------------------------------------- |
-| `src/shared/lsp.ts`                            | LSP 消息类型、工作区文档 URI、边界校验         |
-| `src/core/lsp-schemas.ts`                      | 传输信封和每种消息的参数校验                   |
-| `src/core/language-server.ts`                  | 回退服务：文档同步、补全、悬停、头文件符号缓存 |
-| `src/core/clangd/`                             | clangd 发现、安装、进程、会话与编译参数        |
-| `src/renderer/editor/workspaceDocumentSync.ts` | 版本有序的全量文档同步，两个客户端共用         |
-| `src/renderer/editor/lspConvert.ts`            | LSP 结果到 Monaco 补全、悬停和标记的统一转换   |
-| `src/renderer/editor/workspaceLsp.ts`          | 回退服务的 Monaco 客户端                       |
-| `src/renderer/editor/clangd/client.ts`         | clangd 的 Monaco 客户端与可用性探测            |
-| `src/renderer/editor/clangd/providers.ts`      | 格式化、代码操作、文档符号与命令 provider      |
-| `src/renderer/editor/clangd/convert.ts`        | 工作区编辑、文档符号与代码操作的 Monaco 转换   |
-| `src/renderer/workspace/symbolSearch.ts`       | 工程符号搜索（clangd 或宿主索引回退）          |
-| `src/renderer/components/SymbolSearch.tsx`     | `Ctrl+T` 符号搜索面板                          |
-| `src/renderer/editor/completionProvider.ts`    | 合并项目／AI 条目、clangd、回退索引与本地兜底  |
+| 位置                                           | 责任                                                    |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| `src/shared/lsp.ts`                            | LSP 消息类型、工作区文档 URI、边界校验                  |
+| `src/core/lsp-schemas.ts`                      | 传输信封和每种消息的参数校验                            |
+| `src/core/language-server.ts`                  | 回退服务：文档同步、补全、悬停、头文件符号缓存          |
+| `src/core/clangd/`                             | clangd 发现、安装、进程、会话、真实构建数据库与编译参数 |
+| `src/renderer/editor/workspaceDocumentSync.ts` | 版本有序的全量文档同步，两个客户端共用                  |
+| `src/renderer/editor/lspConvert.ts`            | LSP 结果到 Monaco 补全、悬停和标记的统一转换            |
+| `src/renderer/editor/workspaceLsp.ts`          | 回退服务的 Monaco 客户端                                |
+| `src/renderer/editor/clangd/client.ts`         | clangd 的 Monaco 客户端与可用性探测                     |
+| `src/renderer/editor/clangd/providers.ts`      | 格式化、代码操作、文档符号与命令 provider               |
+| `src/renderer/editor/clangd/convert.ts`        | 工作区编辑、文档符号与代码操作的 Monaco 转换            |
+| `src/renderer/workspace/symbolSearch.ts`       | 工程符号搜索（clangd 或宿主索引回退）                   |
+| `src/renderer/components/SymbolSearch.tsx`     | `Ctrl+T` 符号搜索面板                                   |
+| `src/renderer/editor/completionProvider.ts`    | 合并项目／AI 条目、clangd、回退索引与本地兜底           |
 
 ## 传输
 
