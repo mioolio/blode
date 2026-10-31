@@ -2,6 +2,8 @@
 let context;
 const t = (key) => context.locales[context.locale]?.[key] ?? context.locales.en?.[key] ?? key;
 const display = () => {
+  document.documentElement.lang = context.locale ?? 'en';
+  document.documentElement.dir = context.locale === 'ar' ? 'rtl' : 'ltr';
   for (const element of document.querySelectorAll('[data-label]'))
     element.textContent = t(element.dataset.label);
   const toggle = document.getElementById('desktop-glass');

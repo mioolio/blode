@@ -31,6 +31,7 @@ import { PROJECT_MARKER, safeWorkspacePath } from './workspace';
 import { startWebServer, type WebServerHandle } from './web';
 import { exportProbeLog } from './log-export';
 import { MAX_PROBE_LOG_BYTES } from '../shared/probe-log';
+import { supportedLocales } from '../shared/locales';
 import { RecentProjects } from './recent-projects';
 import { FirmwareStore, prepareBuildExport } from './firmware';
 import { HardwareDebugger } from './hardware-debugger';
@@ -870,7 +871,7 @@ async function bootstrap(): Promise<void> {
     desktopQuit: { args: noArgs, run: () => desktopLifecycle!.requestQuit() },
     desktopLifecycleConfigure: {
       args: z.tuple([
-        z.object({ closeToTray: z.boolean(), locale: z.enum(['zh-CN', 'en']).optional() }).strict(),
+        z.object({ closeToTray: z.boolean(), locale: z.enum(supportedLocales).optional() }).strict(),
       ]),
       run: (request) => desktopLifecycle!.configure(request),
     },

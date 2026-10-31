@@ -1,51 +1,62 @@
-import { useContext, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { I18nContext, type Locale } from './i18n-context';
-import zh from './locales/zh-CN.json';
-import en from './locales/en.json';
-import automationZh from '../automation/locales/zh-CN.json';
-import automationEn from '../automation/locales/en-US.json';
+import { isLocale, localeInfo, preferredLocale } from '../shared/locales';
+import { isLocaleLoaded, loadLocale, translate } from './localization';
+export { translate, loadLocale } from './localization';
+export type { TextKey } from './localization';
 export type { Locale } from './i18n-context';
-export type TextKey = keyof typeof zh | keyof typeof automationZh;
-const dictionaries: Record<Locale, Record<string, string>> = {
-  'zh-CN': { ...automationZh, ...zh },
-  en: { ...automationEn, ...en },
-};
-
-/** Translate protocol keys and their diagnostic suffixes; preserve raw compiler output. */
-export function translate(locale: Locale, key: string): string {
-  const lookup = (value: string) => dictionaries[locale][value] ?? dictionaries.en[value];
-  const exact = lookup(key);
-  if (exact !== undefined) return exact;
-  const wrapped = key
-    .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')
-    .replace(/^Error: (?=(?:error|errors|status|rpc)\.)/, '');
-  const prefix = wrapped.match(/^((?:error|errors|status|rpc)\.[A-Za-z0-9]+)((?::\s*|\s+)[\s\S]*)?$/);
-  if (prefix) {
-    const label = lookup(prefix[1]);
-    if (label !== undefined) return label + (prefix[2] ?? '');
+function initialLocale() {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem('blode.locale');
+  } catch {
+    /* Storage may be disabled. */
   }
-  return key;
+  return preferredLocale(saved, typeof navigator === 'undefined' ? [] : navigator.languages);
 }
-
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, update] = useState<Locale>(() => {
-    try {
-      return localStorage.getItem('blode.locale') === 'en' ? 'en' : 'zh-CN';
-    } catch {
-      return 'zh-CN';
-    }
+    const preferred = initialLocale();
+    return isLocaleLoaded(preferred) ? preferred : 'en';
   });
+  const [, redraw] = useState(0);
+  const revision = useRef(0);
+  const alive = useRef(false);
+  const setLocale = useCallback((value: Locale) => {
+    if (!isLocale(value)) return;
+    const request = ++revision.current;
+    void loadLocale(value)
+      .then(() => {
+        if (!alive.current || request !== revision.current) return;
+        update(value);
+        redraw((current) => current + 1);
+        try {
+          localStorage.setItem('blode.locale', value);
+        } catch {
+          /* Keep the session preference. */
+        }
+      })
+      .catch(() => {
+        /* Retain the current locale when a chunk cannot be loaded. */
+      });
+  }, []);
   useEffect(() => {
-    document.documentElement.lang = locale === 'en' ? 'en-US' : locale;
+    alive.current = true;
+    setLocale(initialLocale());
+    const changed = (event: StorageEvent) => {
+      if (event.key === 'blode.locale') setLocale(preferredLocale(event.newValue, navigator.languages));
+    };
+    window.addEventListener('storage', changed);
+    return () => {
+      alive.current = false;
+      revision.current++;
+      window.removeEventListener('storage', changed);
+    };
+  }, [setLocale]);
+  useEffect(() => {
+    document.documentElement.lang = localeInfo[locale].tag;
+    document.documentElement.dir = localeInfo[locale].direction;
   }, [locale]);
-  const setLocale = (value: Locale) => {
-    update(value);
-    try {
-      localStorage.setItem('blode.locale', value);
-    } catch {
-      /* A disabled storage backend must not block language switching. */
-    }
-  };
   return (
     <I18nContext.Provider value={{ locale, setLocale, t: (key) => translate(locale, key) }}>
       {children}

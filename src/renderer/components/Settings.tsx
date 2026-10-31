@@ -10,6 +10,7 @@ import type {
   ToolchainStatus,
 } from '../../shared/contracts';
 import { useI18n, type Locale } from '../i18n';
+import { supportedLocales, localeInfo } from '../../shared/locales';
 import { InstallationOutput } from './InstallationOutput';
 import { AiCompletionSettings } from './AiCompletionSettings';
 import { ContextHelp } from './ContextHelp';
@@ -62,13 +63,9 @@ export function Settings({
     const revision = desktopRevision.current;
     void window.blode
       .desktopLifecycleState()
-      .then(async (state) => {
+      .then((state) => {
         if (cancelled || revision !== desktopRevision.current) return;
-        const next =
-          state.locale === locale
-            ? state
-            : await window.blode.desktopLifecycleConfigure({ closeToTray: state.closeToTray, locale });
-        if (!cancelled && revision === desktopRevision.current) setDesktop(next);
+        if (!cancelled && revision === desktopRevision.current) setDesktop(state);
       })
       .catch((error: unknown) => {
         if (!cancelled) setDesktopError(error instanceof Error ? error.message : String(error));
@@ -216,8 +213,11 @@ export function Settings({
             <label>
               {t('settings.language')}
               <ModernSelect value={locale} onChange={(event) => setLocale(event.target.value as Locale)}>
-                <option value="zh-CN">{t('language.zh-CN')}</option>
-                <option value="en">{t('language.en')}</option>
+                {supportedLocales.map((language) => (
+                  <option key={language} value={language}>
+                    {localeInfo[language].name}
+                  </option>
+                ))}
               </ModernSelect>
             </label>
           </div>

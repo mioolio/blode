@@ -5,10 +5,12 @@ import type { AppCloseDecision, AppCloseRequest } from '../../shared/desktop-lif
 import type { Studio } from '../workspace/useStudio';
 import { hasUnsavedChanges, saveBeforeAppClose } from '../workspace/unsavedChanges';
 import { recoverCloseDrafts, workspaceCloseGate } from '../workspace/workspaceCloseGate';
+import { useI18n } from '../i18n';
 import './desktop-lifecycle.css';
 
 /** Native application exit has a separate handshake from closing an editor tab. */
 export function DesktopLifecycle({ studio }: { studio: Studio }) {
+  const { locale } = useI18n();
   const current = useRef(studio);
   current.current = studio;
   const requestRef = useRef<AppCloseRequest | null>(null);
@@ -22,6 +24,22 @@ export function DesktopLifecycle({ studio }: { studio: Studio }) {
   const title = useId();
   const description = useId();
   const t = studio.t;
+  useEffect(() => {
+    if (studio.isWeb || typeof window.blode.desktopLifecycleState !== 'function') return;
+    let active = true;
+    void window.blode
+      .desktopLifecycleState()
+      .then((state) => {
+        if (active && state.locale !== locale)
+          return window.blode.desktopLifecycleConfigure({ closeToTray: state.closeToTray, locale });
+      })
+      .catch((failure: unknown) => {
+        if (active) current.current.notify(current.current.t(String(failure)), true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [studio.isWeb, locale]);
   const releaseGate = (id: string) => {
     try {
       workspaceCloseGate.cancel(id);

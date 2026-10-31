@@ -1,0 +1,17 @@
+{
+  "title": "외관",
+  "subtitle": "작업 공간 스타일 선택",
+  "menu.appearance": "외관",
+  "settings.preset": "스타일",
+  "settings.desktopGlass": "데스크탑 젖빛 유리",
+  "desktopGlass": "데스크탑 젖빛 유리",
+  "desktopGlassHint": "워크벤치를 통해 Windows 바탕 화면 표시(Windows 11 22H2+)",
+  "preset.default": "신청을 따르십시오",
+  "preset.glass": "유리 및 벽지",
+  "preset.apple": "깨끗한 빛",
+  "apply": "적용",
+  "applied": "적용됨",
+  "preview": "하단 미리보기 열기",
+  "window": "출현 창 열기",
+  "menu.file": "파일"
+}

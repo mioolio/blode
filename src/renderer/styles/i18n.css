@@ -1,0 +1,28 @@
+/* Code, paths and device diagnostics retain their reading direction in RTL UI. */
+html[dir='rtl'] :is(.monaco-editor, .xterm, .log-line, .problem-line, .editor-tabs, .window-controls) {
+  direction: ltr;
+}
+html[dir='rtl'] :is(.log-line pre, .problem-line pre, code, kbd) {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: left;
+}
+html[dir='rtl'] :is(input, textarea) {
+  unicode-bidi: plaintext;
+}
+/* Native window controls keep the Windows title bar convention. */
+html[dir='rtl'] .workspace {
+  direction: ltr;
+}
+html[dir='rtl'] .workspace > :is(.project-panel, .center-panel, .ai-sidebar) {
+  direction: rtl;
+}
+html[dir='rtl'] .topbar {
+  direction: ltr;
+}
+html[dir='rtl'] .topbar nav {
+  direction: rtl;
+}
+html[dir='rtl'] :is(.modern-select-trigger, .modern-select-options button) {
+  text-align: start;
+}

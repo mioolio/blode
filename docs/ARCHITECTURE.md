@@ -1,5 +1,7 @@
 # 平台包与宿主架构
 
+完整运行形态、交付流水线、来源签名和工程数据流见[工程实现与交付](ENGINEERING.md)。界面语言注册与离线语言包见[国际化](LOCALIZATION.md)。
+
 设备实现按平台归属。`extensions/boards/<platform>/` 组合该平台的配置、检测、工具链、构建、烧录、布局、语言和驱动描述；`src/core` 提供宿主服务及可复用调试后端。当前内置检测配置 `auto` 和具体平台 `Esp32_S3_CAM`、`STM32F103C8T6`。
 
 ## 目录责任
@@ -104,4 +106,4 @@ VS Code 连接使用标准工作区文件，不修改项目原有 `.vscode`。�
 
 ST-Link 的 INF、USB ID 和归档描述位于 STM32 平台 driver.ts，通用执行器完成 PnP 查询、解压与显式提权安装。驱动可用不等于命令行工具已安装，调试器也不等于 COM 串口。
 
-补全与资源管理器菜单是显式注册的纯数据。C/C++ 优先由 clangd 回答补全、悬停、定义、引用和诊断；未安装时回退到宿主内置 LSP 与工作区索引，见[内置语言服务](LANGUAGE-SERVICE.md)和 [clangd](CLANGD.md)。内置 C/Arduino JSON 补全目录已删除，诊断规则保留。renderer 使用 zh-CN.json/en.json，automation 使用 zh-CN.json/en-US.json，外部工具输出保留原文。JSON-RPC routes.ts 是方法 schema 唯一映射，MCP 从同一表生成工具，不复制平台逻辑。详见 [AI-PIPE.md](AI-PIPE.md)。
+补全与资源管理器菜单是显式注册的纯数据。C/C++ 优先由 clangd 回答补全、悬停、定义、引用和诊断；未安装时回退到宿主内置 LSP 与工作区索引，见[内置语言服务](LANGUAGE-SERVICE.md)和 [clangd](CLANGD.md)。内置 C/Arduino JSON 补全目录已删除，诊断规则保留。界面语言通过 `src/shared/locales.ts` 统一注册，renderer 的 13 种 JSON 语言包与编辑器菜单在客户端加载；automation 的工具说明保留中英文基础字典，外部工具输出保留原文。JSON-RPC routes.ts 是方法 schema 唯一映射，MCP 从同一表生成工具，不复制平台逻辑。详见 [AI-PIPE.md](AI-PIPE.md)。

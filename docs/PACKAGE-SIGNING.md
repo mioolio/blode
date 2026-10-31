@@ -58,6 +58,8 @@ Blode Studio 使用两层签名：`obe` 用于组件来源和完整性校验，A
 
 此目录仅保留在维护者电脑。应用仅内置公钥，不会向用户分发签发私钥，也不会在普通用户导出第三方组件时替其签署官方身份。
 
+仓库内预签署的官方扩展目录通过 `.gitattributes` 禁用文本换行转换，保证 Windows 和 Unix 检出具有相同文件字节。修改载荷后重新签署；提交前以 Git 暂存区实际内容验证，避免工作区校验正常但提交后哈希改变。
+
 初始化新身份仅执行一次；已有私钥不会被覆盖：
 
 ```powershell
@@ -90,6 +92,8 @@ node --import tsx scripts/sign-native-tools.ts tools/versions/armcc/5.06-u5-b528
 
 ## 验证记录
 
-2026-11-01，Windows x64：完成签名／清单篡改／文件增删／哈希变更／未知公钥／版本替换／安装确认指纹检查；工具 ZIP 和设备模块 ZIP 已验证导入导出；签署后的 AC5 通过 Blode 实际编译，覆盖 C99、C++、ARMASM、Debug／Release、命名入口和固件导出。未在本次重新制作完整发行包。
+2026-11-01，Windows x64：完成签名／清单篡改／文件增删／哈希变更／未知公钥／版本替换／安装确认指纹检查；工具 ZIP 和设备模块 ZIP 已验证导入导出；签署后的 AC5 通过 Blode 实际编译，覆盖 C99、C++、ARMASM、Debug／Release、命名入口和固件导出。0.3.5.9 的桌面便携版、Web EXE 和 Web Node.js ZIP 已完成 OBE 验证，包内两个官方设备模块签名通过。
+
+新增语言文件同样属于模块或扩展签名载荷。更新翻译后需要更新包版本并重新签署；签发过程不改变 Blode Studio 的[永久免费承诺](FREE-SOFTWARE.md)。当前源码的后续修改应重新构建，不回写已校验的旧发行文件。
 
 技术参考：[Node.js Crypto](https://nodejs.org/api/crypto.html#cryptosignalgorithm-data-key-callback)、[Microsoft New-SelfSignedCertificate](https://learn.microsoft.com/en-us/powershell/module/pki/new-selfsignedcertificate)。

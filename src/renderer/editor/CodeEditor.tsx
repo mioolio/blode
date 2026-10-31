@@ -217,6 +217,34 @@ export function CodeEditor({
   const cursorHandler = useRef(onCursor);
   const subscriptions = useRef<monaco.IDisposable[]>([]);
   const aiActions = useRef<monaco.IDisposable | undefined>(undefined);
+  const navigationActions = useRef<monaco.IDisposable[]>([]);
+  const installNavigationActions = (instance: monaco.editor.IStandaloneCodeEditor) => {
+    navigationActions.current.forEach((action) => action.dispose());
+    navigationActions.current = [
+      instance.addAction({
+        id: 'blode.navigationBack',
+        label: t('editor.navigationBack'),
+        keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow],
+        contextMenuGroupId: 'navigation',
+        contextMenuOrder: 1.9,
+        run: () => {
+          window.dispatchEvent(
+            new CustomEvent('blode:navigate-back', {
+              detail: { pane: latest.current.primary ? 'primary' : 'secondary' },
+            }),
+          );
+        },
+      }),
+      instance.addAction({
+        id: 'blode.symbolSearch',
+        label: t('symbol.search.action'),
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyT],
+        run: () => {
+          window.dispatchEvent(new Event('blode:symbol-search'));
+        },
+      }),
+    ];
+  };
   const inlineCompletions = useRef<monaco.IDisposable | undefined>(undefined);
   const [predictionFeedback, setPredictionFeedback] = useState<PredictionFeedback>({ kind: 'idle' });
   const installInlineCompletions = (instance: monaco.editor.IStandaloneCodeEditor) => {
@@ -261,6 +289,7 @@ export function CodeEditor({
     void localizeMonacoContextMenu(locale);
     if (editor.current) {
       installAiActions(editor.current);
+      installNavigationActions(editor.current);
       installInlineCompletions(editor.current);
     }
   }, [locale]);
@@ -412,6 +441,7 @@ export function CodeEditor({
     () => () => {
       subscriptions.current.forEach((item) => item.dispose());
       aiActions.current?.dispose();
+      navigationActions.current.forEach((action) => action.dispose());
       inlineCompletions.current?.dispose();
       if (navigationFrame.current !== undefined) cancelAnimationFrame(navigationFrame.current);
       if (lastFocusedEditor === editor.current) lastFocusedEditor = null;
@@ -462,6 +492,7 @@ export function CodeEditor({
         onMount={(instance) => {
           mountedEditors.add(instance);
           installAiActions(instance);
+          installNavigationActions(instance);
           void localizeMonacoContextMenu(locale);
           editor.current = instance;
           decorations.current = instance.createDecorationsCollection();
@@ -545,31 +576,7 @@ export function CodeEditor({
                 return true;
               },
             }),
-            instance.addAction({
-              id: 'blode.navigationBack',
-              label: t('editor.navigationBack'),
-              keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow],
-              contextMenuGroupId: 'navigation',
-              contextMenuOrder: 1.9,
-              run: () => {
-                window.dispatchEvent(
-                  new CustomEvent('blode:navigate-back', {
-                    detail: { pane: latest.current.primary ? 'primary' : 'secondary' },
-                  }),
-                );
-              },
-            }),
             instance.onDidChangeCursorPosition((event) => report(event.position)),
-          );
-          subscriptions.current.push(
-            instance.addAction({
-              id: 'blode.symbolSearch',
-              label: t('symbol.search.action'),
-              keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyT],
-              run: () => {
-                window.dispatchEvent(new Event('blode:symbol-search'));
-              },
-            }),
           );
           installInlineCompletions(instance);
           const initialModel = instance.getModel();

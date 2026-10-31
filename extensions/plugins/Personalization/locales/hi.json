@@ -1,0 +1,17 @@
+{
+  "title": "दिखावट",
+  "subtitle": "कार्यस्थान शैली चुनें",
+  "menu.appearance": "दिखावट",
+  "settings.preset": "अंदाज",
+  "settings.desktopGlass": "डेस्कटॉप फ्रॉस्टेड ग्लास",
+  "desktopGlass": "डेस्कटॉप फ्रॉस्टेड ग्लास",
+  "desktopGlassHint": "कार्यक्षेत्र के माध्यम से Windows डेस्कटॉप दिखाएँ (Windows 11 22H2+)",
+  "preset.default": "आवेदन का पालन करें",
+  "preset.glass": "कांच और वॉलपेपर",
+  "preset.apple": "स्वच्छ प्रकाश",
+  "apply": "आवेदन करें",
+  "applied": "लागू",
+  "preview": "निचला पूर्वावलोकन खोलें",
+  "window": "उपस्थिति विंडो खोलें",
+  "menu.file": "फ़ाइल"
+}

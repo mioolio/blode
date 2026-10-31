@@ -1,4 +1,4 @@
-import { constants, readFileSync, promises as fs } from 'node:fs';
+import { readFileSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
@@ -10,6 +10,7 @@ import { build } from 'esbuild';
 import { writeZip, type ZipEntry } from '../src/core/zip';
 import { restoreMediumIntegrity } from './windows-artifact-integrity.mjs';
 import { signRelease } from './sign-release';
+import { prepareSeaExecutable } from './sea-executable';
 
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -283,7 +284,7 @@ export async function packageWebRelease(options: { output?: string; skipBuild?: 
     if ((await fs.lstat(postject).catch(() => null))?.isFile() !== true)
       throw new Error('postject is missing; run npm ci before packaging the Web executable.');
     await fs.mkdir(path.dirname(output), { recursive: true });
-    await fs.copyFile(process.execPath, output, constants.COPYFILE_EXCL);
+    await prepareSeaExecutable(process.execPath, output);
     await execute(process.execPath, [postject, output, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', SEA_FUSE], {
       cwd: root,
       timeout: 180_000,

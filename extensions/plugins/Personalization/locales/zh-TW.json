@@ -1,0 +1,17 @@
+{
+  "title": "外觀",
+  "subtitle": "選擇工作空間風格",
+  "menu.appearance": "外觀",
+  "settings.preset": "風格",
+  "settings.desktopGlass": "桌面磨砂玻璃",
+  "desktopGlass": "桌面磨砂玻璃",
+  "desktopGlassHint": "透過工作台顯示Windows桌面（Windows 11 22H2+）",
+  "preset.default": "關注申請",
+  "preset.glass": "玻璃和壁紙",
+  "preset.apple": "乾淨的光",
+  "apply": "申請",
+  "applied": "應用",
+  "preview": "打開底部預覽",
+  "window": "打開外觀視窗",
+  "menu.file": "文件"
+}

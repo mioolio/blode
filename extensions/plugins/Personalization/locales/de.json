@@ -1,0 +1,17 @@
+{
+  "title": "Aussehen",
+  "subtitle": "Wählen Sie einen Arbeitsbereichsstil",
+  "menu.appearance": "Aussehen",
+  "settings.preset": "Stil",
+  "settings.desktopGlass": "Tischplatte aus Milchglas",
+  "desktopGlass": "Tischplatte aus Milchglas",
+  "desktopGlassHint": "Den Windows-Desktop über die Workbench anzeigen (Windows 11 22H2+)",
+  "preset.default": "Folgen Sie der Bewerbung",
+  "preset.glass": "Glas und Tapete",
+  "preset.apple": "Sauberes Licht",
+  "apply": "Bewerben",
+  "applied": "Angewendet",
+  "preview": "Öffnen Sie die untere Vorschau",
+  "window": "Erscheinungsfenster öffnen",
+  "menu.file": "Datei"
+}

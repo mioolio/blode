@@ -28,7 +28,7 @@ export interface UiCommand {
   view?: 'code' | 'layout' | 'ai';
   tab?: import('./workspace-surfaces').WorkspaceConsoleTabId;
   visible?: boolean;
-  language?: 'zh-CN' | 'en';
+  language?: import('./locales').Locale;
   command?: 'undo' | 'redo' | 'find' | 'format' | 'gotoLine' | 'selectAll';
 }
 export interface UiRequest extends UiCommand {

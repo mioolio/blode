@@ -1,0 +1,17 @@
+{
+  "title": "Aspetto",
+  "subtitle": "Scegli uno stile di spazio di lavoro",
+  "menu.appearance": "Aspetto",
+  "settings.preset": "Stile",
+  "settings.desktopGlass": "Vetro smerigliato da tavolo",
+  "desktopGlass": "Vetro smerigliato da tavolo",
+  "desktopGlassHint": "Mostra il desktop di Windows attraverso il workbench (Windows 11 22H2+)",
+  "preset.default": "Segui l'applicazione",
+  "preset.glass": "Vetro e carta da parati",
+  "preset.apple": "Luce pulita",
+  "apply": "Applicare",
+  "applied": "Applicato",
+  "preview": "Apri l'anteprima in basso",
+  "window": "Apri la finestra dell'aspetto",
+  "menu.file": "Archivio"
+}

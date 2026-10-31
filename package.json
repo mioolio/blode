@@ -1,8 +1,8 @@
 {
   "name": "blode-studio",
   "productName": "Blode Studio",
-  "version": "0.3.5-2",
-  "releaseVersion": "0.3.5.2",
+  "version": "0.3.5-9",
+  "releaseVersion": "0.3.5.9",
   "author": "mioolio",
   "description": "Modular microcontroller development studio",
   "private": true,

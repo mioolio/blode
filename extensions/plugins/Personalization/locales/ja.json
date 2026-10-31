@@ -1,0 +1,17 @@
+{
+  "title": "外観",
+  "subtitle": "ワークスペースのスタイルを選択する",
+  "menu.appearance": "外観",
+  "settings.preset": "スタイル",
+  "settings.desktopGlass": "デスクトップ曇りガラス",
+  "desktopGlass": "デスクトップ曇りガラス",
+  "desktopGlassHint": "ワークベンチを通して Windows デスクトップを表示する (Windows 11 22H2+)",
+  "preset.default": "アプリケーションをフォローする",
+  "preset.glass": "ガラスと壁紙",
+  "preset.apple": "クリーンな光",
+  "apply": "申し込む",
+  "applied": "適用済み",
+  "preview": "下部のプレビューを開く",
+  "window": "外観ウィンドウを開く",
+  "menu.file": "ファイル"
+}

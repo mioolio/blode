@@ -1,5 +1,6 @@
 import { createContext } from 'react';
-export type Locale = 'zh-CN' | 'en';
+import type { Locale } from '../shared/locales';
+export type { Locale } from '../shared/locales';
 export interface I18nValue {
   locale: Locale;
   setLocale: (value: Locale) => void;

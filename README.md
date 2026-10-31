@@ -11,6 +11,10 @@
 
 面向 多硬件 的模块化开发工作台，集成代码编辑、编译烧录、串口通信、硬件调试、Git 和多人协作。可作为 Windows 桌面应用使用，也可在目标电脑运行独立 Node.js 服务，通过浏览器访问工程与硬件。
 
+**永久免费。** 官方现有功能及后续功能更新均免费，不设订阅、试用到期或付费解锁。源码采用 Apache License 2.0。详见[永久免费承诺](docs/FREE-SOFTWARE.md)。
+
+支持 13 种界面语言：简体中文、繁体中文、英语、日语、韩语、德语、法语、西班牙语、葡萄牙语、意大利语、俄语、阿拉伯语和印地语。在首选项切换，语言包支持离线使用。见[国际化](docs/LOCALIZATION.md)。
+
 [已完成](#已完成) · [正在进行](#正在进行) · [计划](#计划) · [支持平台](#支持平台) · [快速开始](#快速开始) · [文档导航](#文档导航) · [更新记录](CHANGELOG.md) · [下载](https://github.com/mioolio/blode/releases)
 
 ## 已完成
@@ -42,7 +46,7 @@ ESP32-S3 + CH340 烧录底座已在 Windows 参考固件上完成断点、单步
 - **AI 使用验收**：手动／自动补全、中文注释与全输入触发、间隔设置和错误反馈已有 46 项相关测试及 18 个真实编辑器场景通过；继续评估不同模型的建议质量、输入法体验、长会话及大型工程修改。
 - **通用扩展生态**：管理、权限审查和个性化示例已通过二进制宿主验证；持续完善更多第三方扩展的适配。见[通用扩展开发](docs/GENERAL-EXTENSIONS.md)。
 - **界面验收**：Git 差异与组件库布局已重排，大列表使用有界渲染；本轮实际视觉与滚动帧率待人工验收。
-- **本地发行准备**：0.3.5.2 桌面便携版、Web 单文件 EXE 与 Web Node.js ZIP 已构建，均附 `.sha256` 和[发行说明](docs/releases/0.3.5.2.md)，由发布者手动创建 GitHub 发行版。Web 版不再以源码 ZIP 交付，目标电脑无需 Node.js；构建范围、体积与验证见[更新记录](CHANGELOG.md)。
+- **本地发行准备**：0.3.5.9 桌面便携版、Web 单文件 EXE 与 Web Node.js ZIP 已构建，均附 `.sha256` 和[发行说明](docs/releases/0.3.5.9.md)，由发布者手动创建 GitHub 发行版。Web 版不再以源码 ZIP 交付，目标电脑无需 Node.js；构建范围、体积与验证见[更新记录](CHANGELOG.md)。
 - **协作验收**：外部只读标签共享与恢复已补充自动化覆盖；继续扩展跨机器、高延迟网络和长时间场景。
 - **硬件验收**：ESP32-S3 原生 USB-JTAG、现有相机工程的 UART GDB 迁移，以及 STM32 指令修改的实机覆盖。
 
@@ -82,7 +86,7 @@ Arm Compiler 5 支持 C99、C++03、Keil 启动文件及按版本选择；安装
 | Linux x64／ARM64   | Node.js 宿主与平台工具         | 已做代码适配；安装、USB、编译和桌面打包待实机验证             |
 | macOS              | 自定义工具路径                 | 未验证                                                        |
 
-发行包、校验和与安装步骤见[下载](https://github.com/mioolio/blode/releases)和[发行说明](docs/releases/0.3.5.2.md)。
+发行包、校验和与安装步骤见[下载](https://github.com/mioolio/blode/releases)和[发行说明](docs/releases/0.3.5.9.md)。维护者可双击根目录 `build-release.bat`，输入版本号构建全部三个版本，详见[发行构建](docs/RELEASING.md)。
 
 ## 快速开始
 
@@ -97,7 +101,7 @@ npm run dev
 
 开发端口默认使用 `5173`，占用时自动选择后续空闲端口。
 
-运行独立 Web 宿主。发行版直接运行 `Blode.Studio-0.3.5.2-web-win-x64.exe`：首次启动解压运行时并自动打开浏览器，目标电脑无需安装 Node.js。源码运行方式：
+运行独立 Web 宿主。发行版直接运行 `Blode.Studio-0.3.5.9-web-win-x64.exe`：首次启动解压运行时并自动打开浏览器，目标电脑无需安装 Node.js。源码运行方式：
 
 ```sh
 npm run web:build
@@ -116,6 +120,8 @@ npm run web:start
 通过 **生成 → 组件库** 安装 Arduino 库、导入源码组件或分享组件 ZIP。首选项的工具版本区域可下载离线包、导入并安装。主进程、平台包或 preload 修改后重启开发版；界面源码支持热更新。启动诊断见[开发说明](docs/DEVELOPMENT.md)。
 
 ## 工程与扩展
+
+宿主与模块边界、二进制引用、构建与协作数据流、OBE／Windows 签名和发行流水线，见[工程实现与交付](docs/ENGINEERING.md)。
 
 `be` 保存工程配置。右键 **高级设置** 可编辑入口、文件清单和语言标准；`be.build.settings` 保存通用、平台和语言层级的编译选项。格式与迁移规则见[工程配置](docs/PROJECTS.md)。
 
@@ -180,7 +186,7 @@ npm run package:web:node
 
 | 任务       | 文档                                                                                                                                                                                                                                                                                 |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 安装与开发 | [Web 宿主](docs/WEB-HOST.md) · [开发说明](docs/DEVELOPMENT.md) · [发行说明](docs/releases/0.3.5.2.md)                                                                                                                                                                                |
+| 安装与开发 | [Web 宿主](docs/WEB-HOST.md) · [开发说明](docs/DEVELOPMENT.md) · [发行说明](docs/releases/0.3.5.9.md)                                                                                                                                                                                |
 | 编译与硬件 | [工程配置](docs/PROJECTS.md) · [命名编译入口](docs/BUILD_TARGETS.md) · [组件库](docs/COMPONENT-LIBRARIES.md) · [硬件调试](docs/HARDWARE-DEBUGGING.md) · [工具版本](docs/TOOL-VERSIONS.md) · [离线交付](docs/OFFLINE-DELIVERY.md)                                                     |
 | 编辑与团队 | [资源预览](docs/ASSET-PREVIEW.md) · [源码定位](docs/SOURCE-NAVIGATION.md) · [clangd 语言服务](docs/CLANGD.md) · [语言规则](docs/LANGUAGE-RULES.md) · [多人协作](docs/COLLABORATION.md) · [VS Code 连接](docs/vscode.md) · [Git](docs/GIT.md) · [工程打包](docs/PROJECT-PACKAGING.md) |
 | AI 与插件  | [AI 接口](docs/AI-PIPE.md) · [AI 补全与模型服务](docs/AI-COMPLETIONS.md) · [通用扩展](docs/GENERAL-EXTENSIONS.md) · [运行时插件](docs/RUNTIME-PLUGINS.md) · [模块语言](docs/MODULE-LANGUAGES.md) · [架构](docs/ARCHITECTURE.md)                                                      |

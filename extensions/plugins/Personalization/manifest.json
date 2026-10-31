@@ -3,14 +3,25 @@
   "kind": "extension",
   "id": "Personalization",
   "name": "Personalization",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "vendor": "Blode Studio",
   "description": "工作台外观与菜单个性化。",
   "documentation": "docs/README.md",
   "permissions": ["ui.appearance", "ui.menus", "ui.windows", "ui.panels", "settings"],
   "locales": {
     "zh-CN": "locales/zh-CN.json",
-    "en": "locales/en.json"
+    "en": "locales/en.json",
+    "zh-TW": "locales/zh-TW.json",
+    "ja": "locales/ja.json",
+    "ko": "locales/ko.json",
+    "de": "locales/de.json",
+    "fr": "locales/fr.json",
+    "es": "locales/es.json",
+    "pt-BR": "locales/pt-BR.json",
+    "it": "locales/it.json",
+    "ru": "locales/ru.json",
+    "ar": "locales/ar.json",
+    "hi": "locales/hi.json"
   },
   "settings": {
     "defaults": "settings/defaults.json",

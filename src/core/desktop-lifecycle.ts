@@ -10,10 +10,11 @@ import {
 } from '../shared/desktop-lifecycle';
 import { createTrayIcon } from './tray-icon';
 import { sendToRenderer } from './renderer-delivery';
+import { isLocale, localeInfo, type Locale } from '../shared/locales';
 
 export interface TraySpecification {
   png: Buffer;
-  locale: 'zh-CN' | 'en';
+  locale: Locale;
   show: () => void;
   quit: () => void;
 }
@@ -46,9 +47,9 @@ async function nativeTray(spec: TraySpecification): Promise<LifecycleTray> {
     tray.setToolTip('Blode Studio');
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: spec.locale === 'en' ? 'Show Blode Studio' : '显示 Blode Studio', click: spec.show },
+        { label: localeInfo[spec.locale].show, click: spec.show },
         { type: 'separator' },
-        { label: spec.locale === 'en' ? 'Quit' : '退出', click: spec.quit },
+        { label: localeInfo[spec.locale].quit, click: spec.quit },
       ]),
     );
     tray.on('double-click', spec.show);
@@ -93,7 +94,7 @@ export class DesktopLifecycle {
       if (stat.size <= 4096) {
         const value = JSON.parse(await fs.readFile(this.file, 'utf8'));
         if (typeof value.closeToTray === 'boolean') this.preferences.closeToTray = value.closeToTray;
-        if (value.locale === 'en' || value.locale === 'zh-CN') this.preferences.locale = value.locale;
+        if (isLocale(value.locale)) this.preferences.locale = value.locale;
       }
     } catch {
       /* Missing or obsolete preferences keep the default. */
@@ -116,14 +117,14 @@ export class DesktopLifecycle {
       ...(this.waiting ? { pendingClose: this.waiting.request } : {}),
     });
   }
-  configure(request: { closeToTray: boolean; locale?: 'zh-CN' | 'en' }): Promise<DesktopLifecycleState> {
+  configure(request: { closeToTray: boolean; locale?: Locale }): Promise<DesktopLifecycleState> {
     const task = this.configureWork
       .catch(() => {})
       .then(async () => {
         if (this.disposed) throw new Error('error.operationCancelled');
         if (
           typeof request?.closeToTray !== 'boolean' ||
-          (request.locale !== undefined && !['en', 'zh-CN'].includes(request.locale))
+          (request.locale !== undefined && !isLocale(request.locale))
         )
           throw new Error('rpc.invalidParams');
         const next = {

@@ -1,3 +1,4 @@
+import type { Locale } from './locales';
 export type AppCloseDecision = 'clean' | 'saved' | 'discard' | 'cancel';
 export interface AppCloseRequest {
   id: string;
@@ -10,7 +11,7 @@ export interface AppCloseRequest {
 }
 export interface DesktopLifecycleState {
   closeToTray: boolean;
-  locale: 'zh-CN' | 'en';
+  locale: Locale;
   available: boolean;
   quitting: boolean;
   lifecycleId?: string;
@@ -22,7 +23,7 @@ export interface DesktopLifecycleApi {
   desktopLifecycleState(): Promise<DesktopLifecycleState>;
   desktopLifecycleConfigure(request: {
     closeToTray: boolean;
-    locale?: 'zh-CN' | 'en';
+    locale?: Locale;
   }): Promise<DesktopLifecycleState>;
   desktopCloseReply(request: {
     id: string;

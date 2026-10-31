@@ -1,0 +1,17 @@
+{
+  "title": "Внешний вид",
+  "subtitle": "Выберите стиль рабочего пространства",
+  "menu.appearance": "Внешний вид",
+  "settings.preset": "Стиль",
+  "settings.desktopGlass": "Настольное матовое стекло",
+  "desktopGlass": "Настольное матовое стекло",
+  "desktopGlassHint": "Показ рабочего стола Windows через рабочую среду (Windows 11 22H2+)",
+  "preset.default": "Следовать за заявкой",
+  "preset.glass": "Стекло и обои",
+  "preset.apple": "Чистый свет",
+  "apply": "Применить",
+  "applied": "Прикладной",
+  "preview": "Открыть предварительный просмотр снизу",
+  "window": "Открыть окно внешнего вида",
+  "menu.file": "Файл"
+}

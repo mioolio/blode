@@ -1,0 +1,17 @@
+{
+  "title": "Aparência",
+  "subtitle": "Escolha um estilo de espaço de trabalho",
+  "menu.appearance": "Aparência",
+  "settings.preset": "Estilo",
+  "settings.desktopGlass": "Vidro fosco de mesa",
+  "desktopGlass": "Vidro fosco de mesa",
+  "desktopGlassHint": "Mostrar a área de trabalho do Windows por meio do ambiente de trabalho (Windows 11 22H2+)",
+  "preset.default": "Siga o aplicativo",
+  "preset.glass": "Vidro e papel de parede",
+  "preset.apple": "Luz limpa",
+  "apply": "Aplicar",
+  "applied": "Aplicado",
+  "preview": "Abrir visualização inferior",
+  "window": "Abrir janela de aparência",
+  "menu.file": "Arquivo"
+}

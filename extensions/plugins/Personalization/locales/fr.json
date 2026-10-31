@@ -1,0 +1,17 @@
+{
+  "title": "Apparence",
+  "subtitle": "Choisissez un style d'espace de travail",
+  "menu.appearance": "Apparence",
+  "settings.preset": "Style",
+  "settings.desktopGlass": "Verre dépoli de bureau",
+  "desktopGlass": "Verre dépoli de bureau",
+  "desktopGlassHint": "Afficher le bureau Windows via le plan de travail (Windows 11 22H2+)",
+  "preset.default": "Suivre la candidature",
+  "preset.glass": "Verre et papier peint",
+  "preset.apple": "Lumière propre",
+  "apply": "Postuler",
+  "applied": "Appliqué",
+  "preview": "Ouvrir l'aperçu du bas",
+  "window": "Ouvrir la fenêtre d'apparence",
+  "menu.file": "Fichier"
+}

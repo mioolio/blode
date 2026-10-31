@@ -13,6 +13,7 @@ import {
 import { createTrayIcon } from '../src/core/tray-icon';
 import { crc32 } from '../src/core/zip';
 import { APP_CLOSE_REQUEST_CHANNEL, type AppCloseRequest } from '../src/shared/desktop-lifecycle';
+import { supportedLocales } from '../src/shared/locales';
 
 class WindowDouble extends EventEmitter {
   destroyed = false;
@@ -60,6 +61,22 @@ class WindowDouble extends EventEmitter {
   }
 }
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+test('tray language configuration accepts every registered locale and persists each selection', async () => {
+  const f = await fixture({}, true);
+  try {
+    for (const locale of supportedLocales) {
+      const state = await f.controller.configure({ closeToTray: true, locale });
+      assert.equal(state.locale, locale);
+      assert.equal(f.trays.at(-1)?.spec.locale, locale);
+      assert.equal(
+        JSON.parse(await fs.readFile(path.join(f.directory, 'desktop-lifecycle.json'), 'utf8')).locale,
+        locale,
+      );
+    }
+  } finally {
+    await f.dispose();
+  }
+});
 async function fixture(
   override: Partial<DesktopLifecycleOptions> = {},
   trayPreference: boolean | null = false,

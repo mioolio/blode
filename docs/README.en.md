@@ -4,7 +4,11 @@ English | [简体中文](../README.md)
 
 Blode Studio is a modular embedded development workbench for editing, collaboration, offline builds, firmware export, serial communication and hardware debugging. The current source on `main` includes the specific `Esp32_S3_CAM` and `STM32F103C8T6` runtime profiles.
 
-**Current release: 0.3.5.2** · [Release notes](releases/0.3.5.2.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
+**Free forever.** Existing features and future official feature updates remain free, without subscriptions, trial expiration or paid feature unlocks. Source code is licensed under Apache 2.0. See the [permanent free commitment](FREE-SOFTWARE.md).
+
+The interface supports 13 languages: Simplified Chinese, Traditional Chinese, English, Japanese, Korean, German, French, Spanish, Brazilian Portuguese, Italian, Russian, Arabic and Hindi. Change the language in Preferences; catalogs are bundled for offline use. See [localization](LOCALIZATION.md) and [engineering and delivery](ENGINEERING.md) for registration, runtime boundaries and package signing.
+
+**Current release: 0.3.5.9** · [Release notes](releases/0.3.5.9.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
 
 ## Internal development preview: runtime plugins
 
@@ -37,13 +41,18 @@ For the standalone Web host, run `npm run web:build`, then `npm run web:start` i
 
 | Edition          | Intended use                                                                  | Requirements                                         | Release artifact                            |
 | ---------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------- |
-| Desktop portable | Local editing, builds and connected hardware                                  | Windows x64; Electron runtime included               | `Blode.Studio-0.3.5.2-desktop-win-x64.exe`  |
-| Standalone Web   | A target computer hosts projects and hardware; users connect through browsers | Windows x64; no Node.js needed; a browser on clients | `Blode.Studio-0.3.5.2-web-win-x64.exe`      |
-| Web with Node.js | Smaller ZIP for hosts that already have Node.js                               | Windows x64; Node.js 24+ x64 required                | `Blode.Studio-0.3.5.2-web-node-win-x64.zip` |
+| Desktop portable | Local editing, builds and connected hardware                                  | Windows x64; Electron runtime included               | `Blode.Studio-0.3.5.9-desktop-win-x64.exe`  |
+| Standalone Web   | A target computer hosts projects and hardware; users connect through browsers | Windows x64; no Node.js needed; a browser on clients | `Blode.Studio-0.3.5.9-web-win-x64.exe`      |
+| Web with Node.js | Smaller ZIP for hosts that already have Node.js                               | Windows x64; Node.js 24+ x64 required                | `Blode.Studio-0.3.5.9-web-node-win-x64.zip` |
 
-All three editions use the same project format and host services. The desktop artifact uses the lightweight packaging mode. The Web executable includes Node.js; the smaller Web ZIP uses Node.js 24+ x64 installed on the host. Both Web editions include native dependencies and require no npm installation. Install compilers through Preferences or select existing custom tool paths. Git operations use Git installed on the host. Web build outputs are placed in `release/0.3.5.2/`.
+All three editions use the same project format and host services. The desktop artifact uses the lightweight packaging mode. The Web executable includes Node.js; the smaller Web ZIP uses Node.js 24+ x64 installed on the host. Both Web editions include native dependencies and require no npm installation. Install compilers through Preferences or select existing custom tool paths. Git operations use Git installed on the host. Web build outputs are placed in `release/0.3.5.9/`.
 
-## What's new in 0.3.5.2
+## What's new in 0.3.5.9
+
+- Arm Compiler 5 support for STM32, including C99/C++03, legacy ARM assembly, Keil startup files and version selection.
+- Unified OBE signature and SHA-256 checks for device modules, extensions, components and tool packages.
+- Device health states, working folder opening, a simpler build settings form and reliable tray hide/restore/quit behavior.
+- `build-release.bat` builds all three Windows editions from a version number. See [release builds](RELEASING.md).
 
 - **Device module library:** search, paginate, load a ZIP or folder, select a module for the current project, and export standalone device modules. Newly loaded modules register immediately.
 - **Separate toolchain management:** Preferences distinguishes downloadable versions from tools installed on the host; build settings show the platforms and tools used by the project.
@@ -51,7 +60,7 @@ All three editions use the same project format and host services. The desktop ar
 - **Fresh exports:** each export rescans source files and regenerates hashes and the manifest. Logs show directories, file counts, sizes, compression progress, archive SHA-256 and duration.
 - **Bundled archiving:** Windows x64 builds include 7-Zip 26.05 with its license and matching source, plus the built-in ZIP fallback. Desktop and Web releases both include standalone device modules.
 
-Read the detailed [release notes](releases/0.3.5.2.md) for migration and validation information.
+Read the detailed [release notes](releases/0.3.5.9.md) for migration and validation information.
 
 ## Core workflows
 
@@ -79,10 +88,10 @@ The application stores settings, history and managed tools in its OS application
 
 ### Standalone Web executable
 
-Run `Blode.Studio-0.3.5.2-web-win-x64.exe` on the computer that owns the projects and hardware. The first start extracts its runtime into the host data directory and opens the private launch link in the default browser; no Node.js or npm installation is required.
+Run `Blode.Studio-0.3.5.9-web-win-x64.exe` on the computer that owns the projects and hardware. The first start extracts its runtime into the host data directory and opens the private launch link in the default browser; no Node.js or npm installation is required.
 
 ```sh
-Blode.Studio-0.3.5.2-web-win-x64.exe --no-open --port 47821
+Blode.Studio-0.3.5.9-web-win-x64.exe --no-open --port 47821
 ```
 
 Open the printed link manually if the browser did not start. File pickers browse the **host computer**, and builds, Git and USB access run there.
@@ -90,7 +99,7 @@ Open the printed link manually if the browser did not start. File pickers browse
 For a trusted LAN:
 
 ```sh
-Blode.Studio-0.3.5.2-web-win-x64.exe --host 0.0.0.0 --port 47821
+Blode.Studio-0.3.5.9-web-win-x64.exe --host 0.0.0.0 --port 47821
 ```
 
 Treat the launch token as a workspace credential. Stop the service with Ctrl+C. See the [Web host guide](WEB-HOST.md).
@@ -150,7 +159,7 @@ The desktop command aliases the lightweight `package:lite` flow. `package:web` b
 
 ## Documentation
 
-- [0.3.5.2 release notes](releases/0.3.5.2.md) and [changelog](../CHANGELOG.md)
+- [0.3.5.9 release notes](releases/0.3.5.9.md) and [changelog](../CHANGELOG.md)
 - [Language rules](LANGUAGE-RULES.md), [AI completion](AI-COMPLETIONS.md), [collaboration](COLLABORATION.md)
 - [Git](GIT.md), [project and build settings](PROJECTS.md), [component libraries](COMPONENT-LIBRARIES.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
 - [STM32](STM32.md), [ESP32-S3](../extensions/boards/Esp32_S3_CAM/README.md), [toolchains](TOOLCHAINS.md)

@@ -1,0 +1,17 @@
+{
+  "title": "المظهر",
+  "subtitle": "اختر نمط مساحة العمل",
+  "menu.appearance": "المظهر",
+  "settings.preset": "النمط",
+  "settings.desktopGlass": "سطح المكتب زجاج بلوري",
+  "desktopGlass": "سطح المكتب زجاج بلوري",
+  "desktopGlassHint": "إظهار سطح مكتب Windows من خلال طاولة العمل (Windows 11 22H2+)",
+  "preset.default": "اتبع التطبيق",
+  "preset.glass": "الزجاج وورق الحائط",
+  "preset.apple": "ضوء نظيف",
+  "apply": "تطبيق",
+  "applied": "مطبق",
+  "preview": "فتح المعاينة السفلية",
+  "window": "فتح نافذة المظهر",
+  "menu.file": "ملف"
+}

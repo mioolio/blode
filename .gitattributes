@@ -1,0 +1,2 @@
+# Signed payloads must have identical bytes in Windows and Unix checkouts.
+/extensions/plugins/Personalization/** -text whitespace=cr-at-eol

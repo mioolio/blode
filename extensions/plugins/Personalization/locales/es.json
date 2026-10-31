@@ -1,0 +1,17 @@
+{
+  "title": "Apariencia",
+  "subtitle": "Elija un estilo de espacio de trabajo",
+  "menu.appearance": "Apariencia",
+  "settings.preset": "Estilo",
+  "settings.desktopGlass": "Vidrio esmerilado de escritorio",
+  "desktopGlass": "Vidrio esmerilado de escritorio",
+  "desktopGlassHint": "Mostrar el escritorio de Windows a través del banco de trabajo (Windows 11 22H2+)",
+  "preset.default": "Seguir la aplicación",
+  "preset.glass": "Vidrio y papel tapiz",
+  "preset.apple": "luz limpia",
+  "apply": "Aplicar",
+  "applied": "Aplicado",
+  "preview": "Abrir vista previa inferior",
+  "window": "Abrir ventana de apariencia",
+  "menu.file": "Archivo"
+}
