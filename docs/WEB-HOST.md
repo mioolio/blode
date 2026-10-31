@@ -6,7 +6,8 @@ The Web edition runs a Node.js service on the computer that owns the projects an
 
 | Requirement                               | Purpose                                                                          |
 | ----------------------------------------- | -------------------------------------------------------------------------------- |
-| Node.js 24 or newer, with npm             | Run the host and install serialport and node-pty runtime dependencies            |
+| Windows x64 (packaged EXE)                | The executable already contains the Node host and native device runtimes         |
+| Node.js 24 or newer, with npm (source)    | Only for running the host from a checkout or building a release                  |
 | A current browser                         | Render the editor and collaboration interface                                    |
 | Git on the host's PATH                    | Use the integrated Git interface; existing host credentials handle remote access |
 | A suitable installed/downloaded toolchain | Compile the selected platform; a physical device is unnecessary for compilation  |
@@ -16,24 +17,18 @@ Windows is the current development environment. Linux downloads and platform pat
 
 The current source on `main` includes an interactive terminal. Linux installation requires Python 3, make and a C/C++ compiler to build `node-pty`; Windows uses its ConPTY runtime. See the [workbench interaction update](internal/workbench-interaction.md).
 
-## Start a Web ZIP release
+## Start the packaged Web executable
 
-1. Extract `Blode-Studio-Web-<version>.zip` into a writable directory on the target computer.
-2. Install the Node runtime dependencies in that directory:
+The Web edition is shipped as one Windows x64 executable, `Blode.Studio-<release>-web-win-x64.exe`. It contains the browser assets, the Node host and the SerialPort/PTY runtimes. Electron, Chromium, compilers and project files are excluded, and the target computer does not need Node.js or npm.
 
-   ```sh
-   npm ci --omit=dev
-   ```
+1. Copy the executable to a writable folder and run it.
+2. On first start it extracts its runtime once into the host data directory (`%LOCALAPPDATA%\Blode Studio Web\runtime\bundle-<hash>`), then prints the private launch link.
+3. The default browser opens that link automatically. Add `--no-open` to keep the link terminal-only.
+4. Keep the link private: its token authorizes access to this host's workspace and hardware functions.
 
-3. Start the service:
+If the executable exits immediately, double-clicking keeps the console open and prints the reason; a missing write permission for the data directory is the usual cause. Pass `--data-root` with a writable folder or check the folder permissions.
 
-   ```sh
-   npm start
-   ```
-
-4. Open the private launch link printed once in the terminal. Keep that link private: its token authorizes access to this host's workspace and hardware functions.
-
-The release contains the bundled Node server, browser assets, a small runtime package manifest and lockfile, and documentation. Compiler binaries, Electron, Chromium, project source, Git credentials and application credentials are excluded. Native runtime dependencies are installed for the recipient's operating system by `npm ci`.
+The executable is about 96 MiB and starts the same host as `npm start` in a source checkout. The extracted runtime is keyed by the payload hash, so a newer release never mixes with an older cache; a matching `.sha256` file accompanies every build. Compiler toolchains, the ST-Link archive and `tools/` are still installed or selected on the host after the first launch.
 
 ## Start from source
 
@@ -49,10 +44,10 @@ npm run web:start
 ## Command options
 
 ```sh
-npm run web:start -- --host 127.0.0.1 --port 47821 --project "/path/to/project" --data-root "/path/to/host-data"
+Blode.Studio-0.3.4.5-web-win-x64.exe --host 127.0.0.1 --port 47821 --project "D:\firmware\my-device" --data-root "D:\blode-data"
 ```
 
-For an extracted release, use `npm start --` with the same options.
+The source runner accepts the same options with `npm run web:start --`.
 
 | Option        | Default                | Behavior                                                             |
 | ------------- | ---------------------- | -------------------------------------------------------------------- |
@@ -60,12 +55,14 @@ For an extracted release, use `npm start --` with the same options.
 | `--port`      | `47821`                | HTTP port; `0` requests an available port                            |
 | `--project`   | No open project        | Open a directory on the service computer                             |
 | `--data-root` | OS user data directory | Store history, settings, connection credentials and downloaded tools |
+| `--no-open`   | Browser opens          | Packaged executable only: print the link without opening a browser   |
+| `--version`   | —                      | Packaged executable only: print the release version and exit         |
 | `--help`      | —                      | Show usage without starting a server                                 |
 
 To allow a trusted LAN:
 
 ```sh
-npm run web:start -- --host 0.0.0.0 --port 47821
+Blode.Studio-0.3.4.5-web-win-x64.exe --host 0.0.0.0 --port 47821
 ```
 
 Use the LAN address printed in the launch link. All browser API requests require the generated token, including connections from the host itself. Access uses an IP address or localhost; custom Host domains are rejected. The default HTTP service is intended for local or trusted LAN use. Public deployment, TLS termination and a configurable reverse-proxy domain allowlist require additional implementation and validation.
@@ -98,16 +95,18 @@ The local authenticated automation pipe is available to external AI integrations
 npm run package:web
 ```
 
-The command builds the Web edition, creates a serialport-only runtime lockfile in a temporary staging directory without running install scripts, and writes a standard ZIP under `release/`. It does not package the current working project. An existing ZIP is never overwritten; choose a new destination if necessary:
+The command builds the renderer and host, then embeds both plus the SerialPort/node-pty runtime into one executable under `release/<releaseVersion>/` and writes a matching `.sha256`. The build needs Windows x64, Node.js 24 and the installed `npm ci` dependencies (the single-executable injection uses `postject`). It does not package the current working project. An existing executable is never overwritten; choose a new destination if necessary:
 
 ```sh
-npm run package:web -- --output "release/Blode-Web-review.zip"
+npm run package:web -- --output "release/Blode-Web-review.exe"
 ```
 
-`--skip-build` packages an already-built Web edition. It is intended for release tooling that has just completed `web:build`.
+`--skip-build` packages an already-built `dist/`. The executable embeds the Node runtime that ran the packaging command, so release builds must use the official Windows x64 `node.exe`; other platforms need their own runtime and are rejected with a clear error.
+
+The payload is a single deflated archive: the browser build, the host bundle, the built-in extension examples and the pruned native runtime (Windows x64 prebuilds only). It is not a source archive and contains no `package.json` install step. After extraction the payload is verified by content hash before the host starts; a damaged or partial extraction is reported as `error.webBundleRead`, `error.webBundleWrite` or `error.webBundleInstall`, and the temporary directory is never reused as a finished runtime.
 
 ## Validation and limits
 
-The implementation provides a standalone bundle check, CLI argument tests, and a temporary-port HTTP integration test with hardware runtimes replaced by fixtures. These checks do not prove physical flashing, device drivers, large toolchain downloads, real Git remotes or Linux behavior. GUI and hardware acceptance testing remains necessary before distributing a production release.
+The implementation provides a standalone bundle check, CLI argument tests, and a temporary-port HTTP integration test with hardware runtimes replaced by fixtures. The packaged executable was additionally checked with `--help`, `--version`, five clean first starts, a cached restart and an end-to-end page/RPC/terminal session. These checks do not prove physical flashing, device drivers, large toolchain downloads, real Git remotes or Linux behavior. GUI and hardware acceptance testing remains necessary before distributing a production release.
 
 See [development](DEVELOPMENT.md), [collaboration](COLLABORATION.md), [Git](GIT.md), and [roadmap](ROADMAP.md).

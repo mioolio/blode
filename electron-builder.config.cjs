@@ -48,9 +48,11 @@ module.exports = {
     ...(releaseDist
       ? [
           {
+            // Copy the whole staged output; listing individual paths here
+            // dropped the renderer directory from the app archive.
             from: releaseDist,
             to: 'dist',
-            filter: ['main.cjs', 'preload.cjs', 'mcp-bridge.mjs', 'renderer/**/*', '!**/*.map'],
+            filter: ['**/*', '!**/*.map'],
           },
         ]
       : ['dist/main.cjs', 'dist/preload.cjs', 'dist/mcp-bridge.mjs', 'dist/renderer/**/*']),

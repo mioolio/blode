@@ -1399,5 +1399,11 @@
   "ai.completions.empty": "暂无补全建议",
   "error.aiPredictionTimeout": "AI 补全请求超时。",
   "error.aiPredictionUnavailable": "AI 补全服务不可用。",
-  "error.aiPredictionDelay": "请输入 100–10000 毫秒的整数。"
+  "error.aiPredictionDelay": "请输入 100–10000 毫秒的整数。",
+  "error.webBundleRead": "Web 运行时载荷无效，无法解包。",
+  "error.webBundleTooLarge": "Web 运行时载荷超出大小限制。",
+  "error.webBundlePath": "Web 运行时包含不安全的文件路径。",
+  "error.webBundleWrite": "无法写入 Web 运行时文件，请检查数据目录权限或磁盘空间。",
+  "error.webBundleInstall": "Web 运行时安装失败，请重试或删除数据目录下的 runtime 后重新启动。",
+  "error.webBundleNotPackaged": "该启动器只能从打包的 Web 可执行文件运行。"
 }

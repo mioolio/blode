@@ -2,6 +2,26 @@
 
 本文记录 Blode Studio 的用户可见变化。详细部署、迁移和验证信息见对应版本说明。
 
+## 0.3.4.5 — 2026-10-31
+
+Web 版改为单文件 Windows 可执行程序，目标电脑不再需要 Node.js 或 npm，运行后直接在浏览器中使用同一套工作台；同时重新打包桌面便携版并修复启动窗口一闪而过的问题。
+
+### 新增
+
+- `npm run package:web` 生成自包含的 Web EXE：Node 宿主、浏览器资源与 SerialPort／node-pty 原生运行时打包进一个可执行文件；首次启动按载荷哈希解压到宿主数据目录并复用，后续启动不再解压。详见 [Web 宿主](docs/WEB-HOST.md)。
+- Web EXE 启动后自动打开带一次性令牌的默认浏览器链接；`--no-open` 保持仅终端输出，`--version` 输出版本号，`--help` 不写磁盘直接打印选项说明。
+
+### 变更
+
+- Web 发行物从需要 `npm ci --omit=dev` 的源码 ZIP 改为约 96 MiB 的单文件 EXE，比桌面便携版（约 132 MiB）小约 27%，不包含 Electron／Chromium、编译器和工程文件。
+- 源码运行方式不变：`npm run web:build` 与 `npm run web:start` 继续按 Node 宿主启动，Web 构建仍检查产物不含 Electron 导入。
+
+### 修复
+
+- 修复 Web EXE 从低完整性构建目录生成时继承 Low 完整性标签，双击后以低权限运行、无法写入 `%LOCALAPPDATA%`，进程在打印启动链接前退出、窗口一闪而过的问题；打包现在把产物恢复为 Medium 完整性。
+- 修复桌面便携版使用隔离构建目录时 `app.asar` 漏掉 `dist/renderer`，启动后无法加载界面或立即退出的问题；打包现在复制完整 `dist/`，并在发布前校验归档包含 `dist/renderer/index.html`。
+- 修复 Web 启动器出错时控制台立即关闭的问题：交互式启动会保留窗口并提示检查数据目录或改用 `--data-root`。
+
 ## 0.3.4.3 — 2026-10-31
 
 本次更新加入 clangd C/C++ 语言服务、工程资源树状态持久化和编译数据库集成，并修复打包资源与 STM32 调试问题。

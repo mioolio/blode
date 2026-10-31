@@ -1399,5 +1399,11 @@
   "ai.completions.empty": "No completion available.",
   "error.aiPredictionTimeout": "The AI completion request timed out.",
   "error.aiPredictionUnavailable": "The AI completion service is unavailable.",
-  "error.aiPredictionDelay": "Enter an integer from 100 to 10,000 ms."
+  "error.aiPredictionDelay": "Enter an integer from 100 to 10,000 ms.",
+  "error.webBundleRead": "The Web runtime payload is invalid and could not be unpacked.",
+  "error.webBundleTooLarge": "The Web runtime payload exceeds its size limit.",
+  "error.webBundlePath": "The Web runtime payload contains an unsafe file path.",
+  "error.webBundleWrite": "The Web runtime files could not be written. Check the data directory permissions and free space.",
+  "error.webBundleInstall": "The Web runtime could not be installed. Retry, or remove the runtime folder under the data directory.",
+  "error.webBundleNotPackaged": "This launcher only runs from the packaged Web executable."
 }

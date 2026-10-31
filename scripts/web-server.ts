@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { createCore, type CoreOptions, type CoreService } from '../src/core/service';
 import { startPipeServer, type PipeServerHandle } from '../src/automation/server';
 import { startWebServer, type WebServerHandle } from '../src/core/web';
@@ -20,6 +19,9 @@ import { createHostServices } from '../src/core/host-services';
 import { generalExtensionPanelKey } from '../src/shared/general-extensions';
 import type { LogEvent } from '../src/shared/contracts';
 import { RELEASE_VERSION } from '../src/shared/version';
+import { defaultWebDataRoot } from '../src/core/web-data-root';
+import { webCliHelp } from '../src/shared/web-cli';
+import { openBrowser } from '../src/core/open-browser';
 
 export interface StandaloneHostOptions {
   host?: '127.0.0.1' | '0.0.0.0';
@@ -30,20 +32,6 @@ export interface StandaloneHostOptions {
   /** Injectable platform boundary for lightweight tests; production uses registered boards. */
   createRuntimes?: CoreOptions['createRuntimes'];
   refreshDevices?: boolean;
-}
-
-export function defaultWebDataRoot(): string {
-  if (process.platform === 'win32')
-    return path.join(
-      process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-      'Blode Studio Web',
-    );
-  if (process.platform === 'darwin')
-    return path.join(os.homedir(), 'Library', 'Application Support', 'Blode Studio Web');
-  return path.join(
-    process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'),
-    'blode-studio-web',
-  );
 }
 
 export function parseWebArguments(args: string[]): StandaloneHostOptions & { help?: boolean } {
@@ -234,14 +222,7 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
   }
 }
 
-const help = `Blode Studio Web host ${RELEASE_VERSION} (Node.js 24+, no Electron)
-Usage: node dist/web-server.cjs [options]
-  --host 127.0.0.1|0.0.0.0  Bind address (default: 127.0.0.1)
-  --port <0-65535>            HTTP port (default: 47821; 0 selects a free port)
-  --project <directory>       Open a directory on this host at startup
-  --data-root <directory>     Host settings, credentials, history and downloaded tools
-  --help                     Show this help
-`;
+const help = webCliHelp(RELEASE_VERSION, { program: 'node dist/web-server.cjs' });
 
 async function main() {
   const options = parseWebArguments(process.argv.slice(2));
@@ -253,9 +234,11 @@ async function main() {
   const host = await startStandaloneHost(options);
   // Deliberate one-time launch link; ordinary logs and state never contain its token value.
   const token = (await fs.readFile(host.web.tokenFile, 'utf8')).trim();
-  process.stdout.write(
-    `Blode Studio Web ${RELEASE_VERSION} is ready. Open this private link:\n${host.web.endpoint}/?token=${encodeURIComponent(token)}\n`,
-  );
+  const link = host.web.endpoint + '/?token=' + encodeURIComponent(token);
+  process.stdout.write(`Blode Studio Web ${RELEASE_VERSION} is ready. Open this private link:\n${link}\n`);
+  // The packaged launcher hands the link to the default browser; source users
+  // keep the terminal-only behaviour unless they opt in with the same flag.
+  if (process.env.BLODE_WEB_OPEN_BROWSER === '1') openBrowser(link);
   process.stdout.write(`Host data: ${host.dataRoot}\nPress Ctrl+C to stop.\n`);
   const stop = () =>
     void host.close().then(() => {

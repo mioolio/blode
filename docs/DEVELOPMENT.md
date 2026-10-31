@@ -24,18 +24,18 @@ Vite 依赖扫描入口固定为 `index.html`，文件监听忽略 `.tools/`、`
 
 ### 独立 Node.js Web 版
 
-Web 宿主不导入 Electron，与桌面版共用工程、协作、Git、工具版本、串口和硬件调试服务。要求 Node.js 24 或以上版本；打开工程与文件时选择服务所在电脑上的路径。
+Web 宿主不导入 Electron，与桌面版共用工程、协作、Git、工具版本、串口和硬件调试服务。源码运行要求 Node.js 24 或以上版本；打包的 Web EXE 自带运行时，目标电脑无需安装 Node.js。打开工程与文件时选择服务所在电脑上的路径。
 
-| 命令                  | 用途                                                                               |
-| --------------------- | ---------------------------------------------------------------------------------- |
-| `npm run web:dev`     | 用 tsx 启动 TypeScript Web 宿主；前端需先构建，UI 修改后重新构建                   |
-| `npm run web:build`   | 构建独立 Node 服务与 renderer，并检查宿主 bundle 不含 Electron 导入                |
-| `npm run web:start`   | 运行 `dist/web-server.cjs`，默认仅监听 `127.0.0.1:47821`                           |
-| `npm run package:web` | 构建并生成 Web 发行 ZIP；只包含宿主、前端、serialport 运行时清单与锁文件、说明文档 |
+| 命令                  | 用途                                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `npm run web:dev`     | 用 tsx 启动 TypeScript Web 宿主；前端需先构建，UI 修改后重新构建                                         |
+| `npm run web:build`   | 构建独立 Node 服务与 renderer，并检查宿主 bundle 不含 Electron 导入                                      |
+| `npm run web:start`   | 运行 `dist/web-server.cjs`，默认仅监听 `127.0.0.1:47821`                                                 |
+| `npm run package:web` | 构建单文件 Web EXE（Node SEA）；内嵌宿主、前端与 SerialPort／node-pty 运行时，首次启动解压到宿主数据目录 |
 
-例如 `npm run web:start -- --host 0.0.0.0 --port 47821 --project "D:\\firmware\\my-device" --data-root ".tools/web-data"`。启动后打开终端一次性输出的私密链接；本机回环 API 同样需要令牌。Web 的默认数据目录独立于桌面开发版，可使用 `--data-root` 覆盖；不把该目录、令牌或用户工程加入发行 ZIP。`package:web -- --skip-build --output "release/review.zip"` 可归档刚刚构建的 Web 产物，已有 ZIP 不会被覆盖。
+例如 `npm run web:start -- --host 0.0.0.0 --port 47821 --project "D:\\firmware\\my-device" --data-root ".tools/web-data"`。启动后打开终端一次性输出的私密链接；本机回环 API 同样需要令牌。Web 的默认数据目录独立于桌面开发版，可使用 `--data-root` 覆盖；不把该目录、令牌或用户工程写入发行包。`package:web -- --skip-build --output "release/review.exe"` 可重新打包刚刚构建的 `dist/`，已有 EXE 不会被覆盖。
 
-Web ZIP 解压后执行 `npm ci --omit=dev` 安装目标平台的 serialport 依赖，再执行 `npm start`。生成发行锁文件只发生在临时目录，使用 `--package-lock-only --ignore-scripts`；不在打包时下载大型编译工具，也不内置 Electron、Chromium 或本机凭据。详细部署说明见 [WEB-HOST.md](WEB-HOST.md)。
+Web EXE 首次启动按载荷哈希把 `dist/` 与原生依赖解压到宿主数据目录的 `runtime/bundle-<hash>/`，之后直接复用；目标是 Windows x64，构建机需要 Node.js 24 与已安装的 `npm ci` 依赖。桌面与 Web 打包都在系统临时目录完成，只把最终产物与 `.sha256` 复制到 `release/<版本>/`；桌面构建校验 `app.asar` 含 `dist/renderer/index.html`，Windows 产物恢复 Medium 完整性标签。打包不下载大型编译工具，也不内置 Electron、Chromium、编译器或本机凭据。详细部署说明见 [WEB-HOST.md](WEB-HOST.md)。
 
 | 环境变量             | 用途                                           |
 | -------------------- | ---------------------------------------------- |

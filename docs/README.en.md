@@ -4,7 +4,7 @@ English | [简体中文](../README.md)
 
 Blode Studio is a modular embedded development workbench for editing, collaboration, offline builds, firmware export, serial communication and hardware debugging. The current source on `main` includes the specific `Esp32_S3_CAM` and `STM32F103C8T6` runtime profiles.
 
-**Current release: 0.3.4.3** · [Release notes](releases/0.3.4.3.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
+**Current release: 0.3.4.5** · [Release notes](releases/0.3.4.5.md) · [Changelog](../CHANGELOG.md) · [GitHub Releases](https://github.com/mioolio/blode/releases)
 
 ## Internal development preview: runtime plugins
 
@@ -31,27 +31,26 @@ npm ci
 npm run dev
 ```
 
-For the standalone Web host, run `npm run web:build`, then `npm run web:start` in the source directory. Extension authors should start with the [runtime plugin guide](RUNTIME-PLUGINS.md). Legacy `esp32-s3` and `stm32` project identifiers and compiler pins migrate when loaded.
+For the standalone Web host, run `npm run web:build`, then `npm run web:start` in the source directory, or use the packaged single-file Web executable. Extension authors should start with the [runtime plugin guide](RUNTIME-PLUGINS.md). Legacy `esp32-s3` and `stm32` project identifiers and compiler pins migrate when loaded.
 
 ## Choose an edition
 
-| Edition          | Intended use                                                                  | Requirements                                          | Release artifact                           |
-| ---------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
-| Desktop portable | Local editing, builds and connected hardware                                  | Windows x64; Electron runtime included                | `Blode.Studio-0.3.4.3-desktop-win-x64.exe` |
-| Standalone Web   | A target computer hosts projects and hardware; users connect through browsers | Node.js 24+ and npm on the host; a browser on clients | `Blode.Studio-0.3.4.3-web.zip`             |
+| Edition          | Intended use                                                                  | Requirements                                         | Release artifact                           |
+| ---------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------ |
+| Desktop portable | Local editing, builds and connected hardware                                  | Windows x64; Electron runtime included               | `Blode.Studio-0.3.4.5-desktop-win-x64.exe` |
+| Standalone Web   | A target computer hosts projects and hardware; users connect through browsers | Windows x64; no Node.js needed; a browser on clients | `Blode.Studio-0.3.4.5-web-win-x64.exe`     |
 
-Both editions use the same project format and host services. The desktop artifact uses the lightweight packaging mode. Install compilers through Preferences or select existing custom tool paths. Git operations use Git installed on the host. Build outputs are placed in `release/0.3.4.3/`.
+Both editions use the same project format and host services. The desktop artifact uses the lightweight packaging mode. The Web executable contains the browser assets, host and native device runtimes; it extracts them once into the host data directory and opens the private link in the default browser. Install compilers through Preferences or select existing custom tool paths. Git operations use Git installed on the host. Web build outputs are placed in `release/0.3.4.5/`.
 
-## What's new in 0.3.4.3
+## What's new in 0.3.4.5
 
-- **clangd language service:** completion, hover, definitions, references, diagnostics, formatting, code actions, document outline and workspace symbol search for C/C++. The full desktop package can bundle clangd; the lite package installs it from Preferences.
-- **Real build databases:** reuse `.blode/build/compile_commands.json` from Arduino CLI and STM32 builds. Without a database, include roots come from `be`, a recursive workspace scan and the STM32 board build model; `.uvprojx` is optional.
-- **Persistent explorer state:** folder collapse/expand state and the project root state are stored in `.blode/explorer.json` and restored when the project reopens.
-- **Problems surface:** editor diagnostics and log errors are merged in the Problems/Warnings tabs and status bar; entries can be clicked to jump to the source location.
-- **Simpler completion data:** built-in C/Arduino JSON completion catalogs were removed. Project, AI and user completion entries remain, alongside clangd and the offline fallback.
-- **Terminal stability:** node-pty 1.2.0-beta.18 fixes a Windows ConPTY handle-table race that could assert during concurrent terminal creation or exit.
+- **Single-file Web edition:** `npm run package:web` now produces one Windows executable instead of a source ZIP that required `npm ci`. The Node host, browser assets, SerialPort and node-pty runtimes are embedded; Electron and Chromium are excluded.
+- **No runtime to install:** the first start extracts the payload into `runtime/bundle-<hash>` under the host data directory and reuses it afterwards. A newer release never mixes with an older cache.
+- **Browser-first start:** the executable prints the one-time launch link and opens the default browser; `--no-open` keeps it terminal-only, `--version` prints the release. `--host`, `--port`, `--project` and `--data-root` match the source host.
+- **Smaller than desktop:** the Web executable is about 96 MiB versus about 132 MiB for the desktop portable build, and it still serves the same workspace, Git, compiler, serial and debugger services.
+- **Launch fixes:** build artifacts are raised to Medium integrity (a low-token executable cannot write `%LOCALAPPDATA%` and closes before printing its link), the desktop archive is verified to contain `dist/renderer/index.html`, and a failed Web start keeps its console open with the reason.
 
-Read the detailed [release notes](releases/0.3.4.3.md) for migration and validation information.
+Read the detailed [release notes](releases/0.3.4.5.md) for migration and validation information.
 
 ## Core workflows
 
@@ -77,21 +76,20 @@ Component library APIs add explicit search, installation, host-folder/ZIP import
 
 The application stores settings, history and managed tools in its OS application-data directory. Projects can remain outside the application folder.
 
-### Standalone Web ZIP
+### Standalone Web executable
 
-Extract the ZIP on the computer that owns the projects and hardware, then run:
+Run `Blode.Studio-0.3.4.5-web-win-x64.exe` on the computer that owns the projects and hardware. The first start extracts its runtime into the host data directory and opens the private launch link in the default browser; no Node.js or npm installation is required.
 
 ```sh
-npm ci --omit=dev
-npm start
+Blode.Studio-0.3.4.5-web-win-x64.exe --no-open --port 47821
 ```
 
-Open the private launch link printed in the terminal. File pickers browse the **host computer**, and builds, Git and USB access run there.
+Open the printed link manually if the browser did not start. File pickers browse the **host computer**, and builds, Git and USB access run there.
 
 For a trusted LAN:
 
 ```sh
-npm start -- --host 0.0.0.0 --port 47821
+Blode.Studio-0.3.4.5-web-win-x64.exe --host 0.0.0.0 --port 47821
 ```
 
 Treat the launch token as a workspace credential. Stop the service with Ctrl+C. See the [Web host guide](WEB-HOST.md).
@@ -146,11 +144,11 @@ npm run package:desktop
 npm run package:web
 ```
 
-The desktop command aliases the lightweight `package:lite` flow. The Web build checks for Electron imports. Automated coverage includes disposable Git repositories, language rules and indexes, collaboration, project ZIPs and HTTP services with fixture hardware boundaries. Physical hardware, cross-machine and sustained-session results are tracked separately.
+The desktop command aliases the lightweight `package:lite` flow. `package:web` builds one self-contained Web executable from the local Windows x64 Node runtime (payload hash verification, `.sha256` sidecar). The Web build still checks for Electron imports. Automated coverage includes disposable Git repositories, language rules and indexes, collaboration, project ZIPs and HTTP services with fixture hardware boundaries. Physical hardware, cross-machine and sustained-session results are tracked separately.
 
 ## Documentation
 
-- [0.3.4.3 release notes](releases/0.3.4.3.md) and [changelog](../CHANGELOG.md)
+- [0.3.4.5 release notes](releases/0.3.4.5.md) and [changelog](../CHANGELOG.md)
 - [Language rules](LANGUAGE-RULES.md), [AI completion](AI-COMPLETIONS.md), [collaboration](COLLABORATION.md)
 - [Git](GIT.md), [project and build settings](PROJECTS.md), [component libraries](COMPONENT-LIBRARIES.md), [project packaging](PROJECT-PACKAGING.md), [tool versions](TOOL-VERSIONS.md)
 - [STM32](STM32.md), [ESP32-S3](../extensions/boards/Esp32_S3_CAM/README.md), [toolchains](TOOLCHAINS.md)
