@@ -8,6 +8,8 @@ import { GnuArmToolchain, gnuRelease } from '../../extensions/boards/STM32F103C8
 import { toolVersionSchemas } from './tool-version-schemas';
 import { discoverInstalledBuildTools } from './installed-tools';
 import { readToolPackages } from './tool-package-store';
+import { CLANGD_VERSION, clangdRelease, clangdExecutable } from './clangd/manifest';
+import { installClangd } from './clangd/install';
 
 const GNU_VERSIONS = ['15.2.1-1.1', '14.2.1-1.1', '13.3.1-1.1'];
 const CLI_VERSIONS = ['1.3.1', '1.2.2'];
@@ -135,6 +137,23 @@ export class ToolVersions implements Pick<
       installed: false,
       note: 'settings.versions.stlinkSystem',
     });
+    {
+      const release = clangdRelease(this.platform, this.arch);
+      const directory = this.directory('clangd', CLANGD_VERSION);
+      entries.push({
+        id: `clangd:${CLANGD_VERSION}`,
+        kind: 'clangd',
+        version: CLANGD_VERSION,
+        name: `clangd ${CLANGD_VERSION}`,
+        releaseUrl: release?.releaseUrl ?? 'https://clangd.llvm.org/installation',
+        downloadUrl: release?.downloadUrl,
+        installable: !!release,
+        installed:
+          (await this.exists(path.join(directory, 'bin', clangdExecutable(this.platform)))) ||
+          (await this.exists(path.join(this.options.root, 'clangd', 'bin', clangdExecutable(this.platform)))),
+        directory,
+      });
+    }
     return entries;
   }
   catalog() {
@@ -184,6 +203,7 @@ export class ToolVersions implements Pick<
         arduinoCli: path.join(entry.directory, 'bin', this.executable('arduino-cli')),
       };
     if (entry.kind === 'arduino-esp32') return { packageDirectory: entry.directory };
+    if (entry.kind === 'clangd') return {};
     throw new Error('error.toolVersionUnknown');
   }
   private progress(tool: string, phase: InstallationProgress['phase']) {
@@ -388,6 +408,22 @@ export class ToolVersions implements Pick<
           release: gnuRelease(entry.version, this.platform, this.arch),
         }).install();
       else if (entry.kind === 'arduino-cli') await this.installCli(entry);
+      else if (entry.kind === 'clangd')
+        await installClangd({
+          directory: entry.directory!,
+          platform: this.platform,
+          arch: this.arch,
+          fetcher: this.options.fetcher,
+          signal: this.options.signal,
+          onLine: this.options.onLine,
+          onProgress: (progress) =>
+            this.options.onProgress?.({
+              tool: entry.name,
+              phase: progress.phase,
+              receivedBytes: progress.receivedBytes,
+              totalBytes: progress.totalBytes,
+            }),
+        });
       else await this.installEsp(entry);
       this.progress(entry.name, 'completed');
       return this.toolVersionsState();

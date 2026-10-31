@@ -52,12 +52,16 @@ async function npmCli(): Promise<string> {
 }
 
 export async function packageWebRelease(options: { output?: string; skipBuild?: boolean } = {}) {
+  const buildDist = options.skipBuild
+    ? path.join(root, 'dist')
+    : path.join(root, '.tools', 'release-builds', 'web-' + randomUUID(), 'dist');
   if (!options.skipBuild) {
     const result = await execute(process.execPath, [path.join(root, 'scripts', 'build-web.mjs')], {
       cwd: root,
       timeout: 300_000,
       maxBuffer: 10_000_000,
       windowsHide: true,
+      env: { ...process.env, BLODE_RELEASE_DIST: buildDist },
     });
     process.stdout.write(result.stdout);
     process.stderr.write(result.stderr);
@@ -134,11 +138,11 @@ The archive contains release-manifest.json with the SHA-256 and byte size of eve
     await fs.writeFile(path.join(staging, 'README.md'), readme);
     await fs.mkdir(path.dirname(output), { recursive: true });
     async function* payload(): AsyncGenerator<ZipEntry> {
-      const server = path.join(root, 'dist', 'web-server.cjs');
+      const server = path.join(buildDist, 'web-server.cjs');
       const stat = await fs.lstat(server);
       if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Build the Web host before packaging.');
       yield { path: 'dist/web-server.cjs', data: await fs.readFile(server) };
-      yield* releaseFiles(path.join(root, 'dist', 'renderer'), 'dist/renderer');
+      yield* releaseFiles(path.join(buildDist, 'renderer'), 'dist/renderer');
       for (const name of ['package.json', 'package-lock.json', 'README.md'])
         yield { path: name, data: await fs.readFile(path.join(staging, name)) };
       yield* releaseFiles(path.join(root, 'docs'), 'docs');

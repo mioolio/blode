@@ -1,6 +1,6 @@
 import type { ProjectConfig } from './contracts';
 
-export type ToolVersionKind = 'gnu-arm' | 'arduino-cli' | 'arduino-esp32' | 'stlink';
+export type ToolVersionKind = 'gnu-arm' | 'arduino-cli' | 'arduino-esp32' | 'stlink' | 'clangd';
 export interface ToolVersionEntry {
   id: string;
   kind: ToolVersionKind;

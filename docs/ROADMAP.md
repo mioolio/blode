@@ -8,18 +8,18 @@ The internal preview, developed on `codex/runtime-plugins-internal` and now merg
 
 The [workbench interaction update](internal/workbench-interaction.md) adds a persistent PTY terminal, declared plugin windows and bottom-panel views, attention-based collaboration presence, save-on-exit transactions and an optional system tray. Live tray, browser-window and Linux acceptance remain on the validation backlog.
 
-| Area            | Available behavior                                                                                                                                       |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspaces      | Welcome screen, recent project history, project open/close, configurable build entry and portable project ZIP export                                     |
-| Editors         | C/C++ definitions, declarations, headers and references; incremental source index; versioned JSON C rules; preview/pinned tabs and AI predictions        |
-| Hardware        | `Esp32_S3_CAM` and `STM32F103C8T6` discovery, offline compilation, prepared firmware programming, selectable export formats and serial communication     |
-| Debugging       | STM32/ST-Link and ESP32-S3 USB-JTAG workbench; architecture-aware registers, memory, disassembly and batch breakpoints; STM32 SRAM instruction edits     |
-| Modules         | Ten responsibility directories, independent language catalogs, managed runtime compilers, standalone JavaScript packages and ZIP export for binary hosts |
-| Teamwork        | Shared browser editing, presence colors, shared open tabs, edit conflict reporting and per-user browser undo                                             |
-| Version control | Independent `.blode/git` history with disable/removal controls; explicitly enabled sharing of an existing repository                                     |
-| Tools           | Wide Preferences layout, installation output, pinned compiler/CLI/core version catalog and custom tool paths                                             |
-| Editions        | Electron desktop and a standalone Node.js Web host that excludes Electron/Chromium from its release ZIP                                                  |
-| Automation      | Validated AI/workbench interfaces with explicit confirmation parameters for sensitive actions                                                            |
+| Area            | Available behavior                                                                                                                                                                                       |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspaces      | Welcome screen, recent project history, project open/close, configurable build entry and portable project ZIP export                                                                                     |
+| Editors         | clangd-based C/C++ completion, hover, definitions, references and diagnostics with offline host-index fallback; incremental source index; versioned JSON C rules; preview/pinned tabs and AI predictions |
+| Hardware        | `Esp32_S3_CAM` and `STM32F103C8T6` discovery, offline compilation, prepared firmware programming, selectable export formats and serial communication                                                     |
+| Debugging       | STM32/ST-Link and ESP32-S3 USB-JTAG workbench; architecture-aware registers, memory, disassembly and batch breakpoints; STM32 SRAM instruction edits                                                     |
+| Modules         | Ten responsibility directories, independent language catalogs, managed runtime compilers, standalone JavaScript packages and ZIP export for binary hosts                                                 |
+| Teamwork        | Shared browser editing, presence colors, shared open tabs, edit conflict reporting and per-user browser undo                                                                                             |
+| Version control | Independent `.blode/git` history with disable/removal controls; explicitly enabled sharing of an existing repository                                                                                     |
+| Tools           | Wide Preferences layout, installation output, pinned compiler/CLI/core version catalog and custom tool paths                                                                                             |
+| Editions        | Electron desktop and a standalone Node.js Web host that excludes Electron/Chromium from its release ZIP                                                                                                  |
+| Automation      | Validated AI/workbench interfaces with explicit confirmation parameters for sensitive actions                                                                                                            |
 
 Details and limitations are documented in the relevant guides. The entries above describe implemented code paths; they do not imply that every combination of device, operating system and project format has passed acceptance testing.
 

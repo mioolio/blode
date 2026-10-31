@@ -1,0 +1,79 @@
+.symbol-search-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+  background: rgb(4 8 14 / 45%);
+}
+
+.symbol-search {
+  width: min(640px, 100%);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong, #2a3342);
+  border-radius: 10px;
+  background: var(--surface-raised, #171c26);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+}
+
+.symbol-search-input {
+  flex: none;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border, #232c3a);
+  background: transparent;
+  color: var(--text, #d6deeb);
+  font-size: 14px;
+  outline: none;
+}
+
+.symbol-search-note {
+  margin: 0;
+  padding: 14px;
+  color: var(--text-muted, #8b98ab);
+  font-size: 12px;
+}
+
+.symbol-search-list {
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  list-style: none;
+}
+
+.symbol-search-list li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.symbol-search-list li.active {
+  background: var(--selection, #263246);
+}
+
+.symbol-search-name {
+  color: var(--text, #d6deeb);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.symbol-search-container {
+  color: var(--text-muted, #8b98ab);
+  font-size: 12px;
+}
+
+.symbol-search-path {
+  margin-left: auto;
+  color: var(--text-muted, #8b98ab);
+  font-size: 11px;
+  white-space: nowrap;
+}

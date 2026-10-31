@@ -20,7 +20,11 @@ export function createDevelopmentServerIdentity() {
     plugin,
     async ready(server: ViteDevServer, fetcher: typeof fetch = fetch): Promise<string> {
       const address = server.httpServer?.address();
-      if (!address || typeof address === 'string' || address.address !== '127.0.0.1')
+      if (
+        !address ||
+        typeof address === 'string' ||
+        !['127.0.0.1', '0.0.0.0', '::'].includes(address.address)
+      )
         throw new Error('error.invalidDevServer');
       const origin = developmentRendererUrl(`http://127.0.0.1:${address.port}`);
       const response = await fetcher(origin + endpoint, {

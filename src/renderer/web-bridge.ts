@@ -7,7 +7,10 @@ const scope = window as Window & { blode?: DesktopApi; __blodeWeb?: boolean };
 
 if (!scope.blode) {
   scope.__blodeWeb = true;
-  const apiBase = import.meta.env.DEV ? `http://${window.location.hostname}:47821` : '';
+  // The host API is reached on the page's own origin: in development Vite proxies
+  // /rpc and /events to the loopback desktop server, so LAN clients never need the
+  // desktop port or its token.
+  const apiBase = '';
   const token = new URLSearchParams(window.location.search).get('token') ?? '';
   // One transport owner per page, independent of shared localStorage user identity.
   const client = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>

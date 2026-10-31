@@ -3335,7 +3335,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## node-pty 1.1.0
+## node-pty 1.2.0-beta.18
 
 Declared license: MIT
 
@@ -3618,7 +3618,7 @@ Declared license: MIT
 ```text
 MIT License
 
-Copyright (c) 2019
+Copyright (c) 2019 
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

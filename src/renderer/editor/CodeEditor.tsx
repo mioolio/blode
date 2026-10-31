@@ -561,6 +561,16 @@ export function CodeEditor({
             }),
             instance.onDidChangeCursorPosition((event) => report(event.position)),
           );
+          subscriptions.current.push(
+            instance.addAction({
+              id: 'blode.symbolSearch',
+              label: t('symbol.search.action'),
+              keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyT],
+              run: () => {
+                window.dispatchEvent(new Event('blode:symbol-search'));
+              },
+            }),
+          );
           installInlineCompletions(instance);
           const initialModel = instance.getModel();
           if (initialModel && !modelTexts.has(initialModel))

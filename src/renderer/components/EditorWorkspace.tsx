@@ -26,6 +26,7 @@ import type { SourceLocation } from '../../shared/language';
 import { openableFilePaths, workspaceFileView } from '../../shared/file-views';
 import { EditorActions } from './EditorActions';
 import { SourceNavigation, type NavigationPane } from '../workspace/sourceNavigation';
+import { SymbolSearch } from './SymbolSearch';
 
 const CodeEditor = lazy(() =>
   import('../editor/CodeEditor').then((module) => ({ default: module.CodeEditor })),
@@ -232,6 +233,7 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
   const splitRegion = useRef<HTMLDivElement>(null);
   const tabStrip = useRef<HTMLDivElement>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [symbolSearchOpen, setSymbolSearchOpen] = useState(false);
   const [preferencesTarget, setPreferencesTarget] = useState<{
     section: PreferencesSection;
     revision: number;
@@ -253,6 +255,11 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     };
     window.addEventListener('blode:preferences', openPreferences);
     return () => window.removeEventListener('blode:preferences', openPreferences);
+  }, []);
+  useEffect(() => {
+    const openSymbolSearch = () => setSymbolSearchOpen(true);
+    window.addEventListener('blode:symbol-search', openSymbolSearch);
+    return () => window.removeEventListener('blode:symbol-search', openSymbolSearch);
   }, []);
   useEffect(() => {
     const active = tabStrip.current?.querySelector<HTMLElement>('.editor-tab.active');
@@ -724,6 +731,9 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
             </div>
           </div>
         </div>
+      )}
+      {symbolSearchOpen && state?.workspaceOpen && (
+        <SymbolSearch root={state.projectRoot} onClose={() => setSymbolSearchOpen(false)} />
       )}
     </>
   );

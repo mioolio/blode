@@ -124,7 +124,7 @@
         "id": "cpp",
         "editorLanguage": "cpp",
         "extensions": [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".ino", ".h"],
-        "catalogs": ["languages/C++/c-basics.json", "languages/C++/arduino.json"]
+        "catalogs": []
       }
     ]
   }

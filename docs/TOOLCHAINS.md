@@ -25,6 +25,8 @@
 
 打包有两种模式，由 electron-builder.config.cjs 统一配置。`npm run package:lite` 生成便携版，只包含应用、板卡清单、文档与 ST-Link 驱动归档，缺少的工具在首次使用时安装到 userData 的 toolchains/。`npm run package:full` 额外把仓库 tools/ 下的 arduino-cli、Arduino-ESP32 内核、ST-Link 工具与 Arm Compiler 6 一并打包到 resources/tools/，安装目标为 zip 以便直接解压运行（完整包约 3.3 GiB，不适合做成每次启动都要解包的便携 exe）。完整包启动时优先使用内置工具根；内置工具根不可写时，arduino-cli 配置回落到 userData，其余缺失组件仍可按原有流程安装，或通过 armCompilerDirectory、stlinkDirectory、Arduino CLI 路径指向本机第三方工具。
 
+clangd 语言服务与编译器分开：完整包在维护者执行 `npm run fetch:clangd` 后，把校验过的 `tools/clangd/` 一并放入 `resources/tools/clangd/`，最终用户无需下载；简洁包不包含它，用户在“首选项 → 工具链 → 版本”安装 `clangd 23.1.0`，文件进入 `versions/clangd/23.1.0/`。宿主依次查找显式路径、内置目录、已安装版本和 PATH；未找到时编辑器的 C/C++ 补全回退到内置索引，见 [clangd 语言服务](CLANGD.md)。
+
 不在完整包内的内容：tools/python 是本机 venv 链接，tools/downloads 与 arduino-data/tmp 是缓存，arduino-cli.yaml 记录本机绝对路径与代理，library_index.json 由 `arduino-cli core update-index` 重新生成；这些在打包时一律排除。
 
 BLODE_DATA_ROOT 指定应用数据与连接凭据，不等于固件工程目录。开发用户数据为 .tools/dev-user-data，可用 BLODE_DEV_USER_DATA 覆盖。用户工程通过 be 记录自己的工具配置；工程缓存位于该工程 .blode/。

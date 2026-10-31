@@ -9,6 +9,8 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { ClangdApi } from './clangd';
+import type { ExplorerStateApi } from './explorer';
 import type { GeneralExtensionsApi } from './general-extensions';
 import type { ComponentLibrariesApi } from './components';
 import type { DesktopLifecycleApi } from './desktop-lifecycle';
@@ -405,6 +407,8 @@ export interface DesktopApi
     HostWorkspaceApi,
     ProjectPackageApi,
     LanguageApi,
+    ClangdApi,
+    ExplorerStateApi,
     DesktopLifecycleApi,
     RuntimePluginsApi,
     ComponentLibrariesApi,

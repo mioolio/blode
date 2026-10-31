@@ -2,7 +2,7 @@ import type { IPty } from 'node-pty';
 
 const released = new WeakSet<IPty>();
 
-/** node-pty 1.1.0 closes ConPTY before its asynchronous console-list helper attaches.
+/** node-pty may close ConPTY before its asynchronous console-list helper attaches.
  * The host has already terminated its owned process tree (or received onExit), so
  * skip that redundant enumeration and use the package's public resource cleanup.
  * Keep this compatibility shim local to closed PTYs; never patch child_process.

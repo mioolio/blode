@@ -226,7 +226,12 @@ try {
           createServer({
             ...(diagnoseOnly ? { cacheDir: path.join(logDirectory, 'vite-cache') } : {}),
             plugins: [viteIdentity.plugin],
-            server: { host: '127.0.0.1', port: diagnoseOnly ? 0 : 5173, strictPort: false },
+            server: {
+              host: '0.0.0.0',
+              allowedHosts: true,
+              port: diagnoseOnly ? 0 : 5173,
+              strictPort: false,
+            },
           }),
         ),
       )

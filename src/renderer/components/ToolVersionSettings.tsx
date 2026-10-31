@@ -185,7 +185,7 @@ export function ToolVersionSettings({
                     setNotice('');
                   }}
                 >
-                  {['gnu-arm', 'arduino-cli', 'arduino-esp32', 'stlink'].map((kind) => (
+                  {['clangd', 'gnu-arm', 'arduino-cli', 'arduino-esp32', 'stlink'].map((kind) => (
                     <optgroup key={kind} label={kind}>
                       {state?.entries
                         .filter((item) => item.kind === kind)
@@ -234,7 +234,9 @@ export function ToolVersionSettings({
                     </button>
                     <button
                       className="primary"
-                      disabled={unavailable || !workspaceOpen || !entry.installed}
+                      disabled={
+                        unavailable || !workspaceOpen || !entry.installed || entry.kind === 'clangd'
+                      }
                       onClick={() => useTool(entry.id)}
                     >
                       {t('settings.versions.use')}
@@ -252,7 +254,7 @@ export function ToolVersionSettings({
         </p>
       )}
       <ToolOfflineActions
-        entry={tab === 'catalog' ? entry : undefined}
+        entry={tab === 'catalog' && entry?.kind !== 'clangd' ? entry : undefined}
         state={state}
         disabled={busy || pending}
         onInstalled={acceptState}

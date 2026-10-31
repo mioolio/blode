@@ -52,6 +52,8 @@ export interface LanguageIndexSnapshot {
 }
 export interface LanguageApi {
   languageIndex(): Promise<LanguageIndexSnapshot>;
+  languageLspRequest(request: import('./lsp').LspRequestMessage): Promise<import('./lsp').LspResponse>;
+  languageLspNotify(request: import('./lsp').LspNotificationBatch): Promise<void>;
   languageNavigate(request: LanguageNavigationRequest): Promise<SourceLocation[]>;
   languageCancel(request: { expectedProjectRoot: string; requestId: string }): Promise<void>;
   languageOpenExternal(request: {

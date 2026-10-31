@@ -6,10 +6,11 @@ import { rm } from 'node:fs/promises';
 import { nodeLanguageAssetsPlugin } from './node-json-assets.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const output = path.resolve(root, process.env.BLODE_RELEASE_DIST || 'dist');
 const result = await build({
   absWorkingDir: root,
   entryPoints: ['scripts/web-server.ts'],
-  outfile: 'dist/web-server.cjs',
+  outfile: path.join(output, 'web-server.cjs'),
   bundle: true,
   platform: 'node',
   target: 'node24',
@@ -32,9 +33,9 @@ const forbiddenImport = Object.values(result.metafile.outputs)
   .flatMap((output) => output.imports)
   .find((item) => /^(?:electron|@electron)(?:\/|$)/.test(item.path));
 if (forbiddenInput || forbiddenImport) {
-  await rm(path.join(root, 'dist', 'web-server.cjs'), { force: true });
+  await rm(path.join(output, 'web-server.cjs'), { force: true });
   throw new Error(`Web host must not include Electron: ${forbiddenInput || forbiddenImport.path}`);
 }
-await rm(path.join(root, 'dist', 'web-server.cjs.map'), { force: true });
+await rm(path.join(output, 'web-server.cjs.map'), { force: true });
 await buildRenderer({ root });
 console.log('Web build verified: the Node host contains no Electron imports.');

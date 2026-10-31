@@ -2,6 +2,31 @@
 
 本文记录 Blode Studio 的用户可见变化。详细部署、迁移和验证信息见对应版本说明。
 
+## 未发布
+
+### 新增
+
+- 资源树的文件夹展开／折叠状态保存到工程内 `.blode/explorer.json`，重新打开工程时恢复上次结尾的状态；根节点折叠也会记录，已删除目录的旧状态自动清理，不写入全局缓存。
+- 接入 clangd 23.1.0：C/C++ 补全、悬停、定义、引用和诊断优先由宿主管理的 clangd 回答。宿主按工程生成私有 `compile_commands.json`，文档全量同步支持未保存草稿；未安装 clangd 时自动回退到内置工作区索引。完整安装包可内置 `tools/clangd/`（`npm run fetch:clangd`），简洁包在“首选项 → 工具链 → 版本”下载安装。详见 [clangd 语言服务](docs/CLANGD.md)。
+- 新增 clangd 格式化、代码操作（quick fix／tweak）与符号搜索：编辑器格式化文档／选区调用 clangd；代码操作捕获 `workspace/applyEdit` 并应用到未保存缓冲区；`Ctrl+Shift+O` 显示文件大纲，`Ctrl+T` 打开工程符号搜索，clangd 不可用时回退宿主语言索引。
+- 新增 clangd 工具版本、校验、ZIP 安全解压和完整包内置支持；桌面与 Web 宿主共用同一服务。
+
+### 移除
+
+- 删除内置 C/Arduino JSON 补全目录：`extensions/completions/C/*` 仅保留 `rules.json`，`extensions/completions/C++` 与板卡 `languages/C++` 补全数据移除，板卡 C catalog 不再包含补全条目。工程 `languages/C/<标准>/*.json`、`blode.completions.json` 与 AI 用户条目继续与 clangd 结果合并；诊断规则保留。
+
+### 修复
+
+- clangd 编译参数补充工程内头文件目录，修复 Keil／STM32 工程里 `#include "stm32f10x.h"`、`#include "Delay.h"` 被误报 `file not found` 的红色波浪线。
+- clangd 改为复用构建生成的 `compile_commands.json`（Arduino CLI 与 STM32 构建），不再合成器件宏、目标参数或头文件预包含；换芯片、换工程不需要维护硬编码列表。没有构建数据库时才回退到 `be` 的构建入口、工作区递归包含目录和板级构建模型；`.uvprojx` 只作为可选补充，缺失时仍能工作。
+- clangd 诊断只对翻译单元（`.c`／`.cc`／`.cpp`／`.cxx`）发布；头文件和 `.ino` 依赖构建包含顺序、Arduino 预处理或目标 ABI，单独解析的 `uint8_t`、`HardwareSerial`／`Print`、`../hal.h` 等误报不再写入“问题”页，导航和补全仍由 clangd 提供，完整错误以真实构建输出为准。
+- “问题／警告”页和状态栏现在统计编辑器标记（clangd 与声明式规则），不再出现编辑器有错误标记但计数为 0；点击条目可跳转到对应位置。
+- 升级 node-pty 到 1.2.0-beta.18，修复 Windows ConPTY 全局句柄表在多终端并发创建／退出时的数据竞争和 `remove_pty_baton` 断言崩溃；终端会话、交互 PowerShell 与关闭清理测试通过。
+
+### 变更
+
+- 宿主内置 LSP 子集改为 clangd 的离线回退，新增 `languageClangdState/Request/Notify/Diagnostics` 接口；工程根目录、文档大小、消息大小和位置结果均有限制。
+
 ## 0.3.4.2 — 本地构建，待发布
 
 Windows 桌面便携版与独立 Web 版已完成本地构建，显示版本为 `0.3.4.2`，npm 清单使用 `0.3.4-2`。源码维护于 `main`，GitHub 发行版由发布者手动创建。运行条件与验证范围见[0.3.4.2 发行说明](docs/releases/0.3.4.2.md)。

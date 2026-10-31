@@ -90,7 +90,7 @@
         "id": "cpp",
         "editorLanguage": "cpp",
         "extensions": [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"],
-        "catalogs": ["languages/C++/c-basics.json"]
+        "catalogs": []
       }
     ]
   }

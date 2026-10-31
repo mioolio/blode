@@ -140,15 +140,6 @@ export async function getCompilerIncludeRoots(
   const choices: CompilerChoice[] = [settings?.common, platform?.common, platform?.c, platform?.cpp].filter(
     Boolean,
   );
-  for (const file of workspace.files) {
-    check();
-    if (/\.uvprojx$/i.test(file.path)) {
-      for (const match of file.content.matchAll(/<IncludePath>([\s\S]*?)<\/IncludePath>/g))
-        for (const item of match[1].replaceAll('&amp;', '&').replaceAll('&quot;', '"').split(';'))
-          if (item.trim())
-            add(path.resolve(root, path.dirname(file.path), item.trim().replaceAll('\\', path.sep)));
-    }
-  }
   try {
     const manifest = JSON.parse((await text(path.join(root, 'blode.components.json'))) || '{}');
     for (const component of manifest.components ?? []) {

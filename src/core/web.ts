@@ -85,6 +85,8 @@ const hostMethods = new Set([
   'firmwareChoosePath',
   'firmwareExportPath',
   'firmwareFlash',
+  'explorerState',
+  'explorerStateSave',
 ]);
 const isHostMethod = (method: string) =>
   /^(?:generalExtension|components|git|toolVersion|host|projectPackage|terminal|language|runtimePlugin|vscode|modelService|aiChat)/.test(

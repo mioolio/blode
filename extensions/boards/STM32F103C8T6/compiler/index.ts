@@ -54,6 +54,20 @@ interface SelectedCompiler {
 }
 
 /** Arm Compiler 6 host integration; no project script or shell command is executed. */
+
+/** Share the exact compiler flags with clangd instead of guessing target/defines. */
+async function writeCompileDatabase(
+  outputDirectory: string,
+  root: string,
+  sources: readonly string[],
+  commandFor: (source: string) => string[],
+): Promise<void> {
+  const commands = sources.map((source) => {
+    const absolute = path.join(root, source);
+    return { directory: root, file: absolute, arguments: commandFor(source) };
+  });
+  await fs.writeFile(path.join(outputDirectory, 'compile_commands.json'), JSON.stringify(commands));
+}
 export class Stm32Compiler {
   constructor(private readonly host: RuntimeHost) {}
 
@@ -575,6 +589,13 @@ export class Stm32Compiler {
       );
       objects.push(object);
     };
+    await writeCompileDatabase(outputDirectory, this.host.projectRoot(), inputs.sources, (source) => [
+      path.join(directory, this.executable('armclang')),
+      ...flags,
+      `-std=gnu${/\.(?:cpp|cc|cxx)$/i.test(source) ? '++17' : (inputs.cStandard?.slice(1) ?? '17')}`,
+      '-c',
+      path.join(this.host.projectRoot(), source),
+    ]);
     for (const source of inputs.sources) {
       firmwareTag ||= (await fs.readFile(await this.host.resolveWorkspacePath(source), 'utf8')).includes(
         '.fwtag',
@@ -788,6 +809,19 @@ export class Stm32Compiler {
       ]);
       objects.push(object);
     };
+    await writeCompileDatabase(outputDirectory, this.host.projectRoot(), inputs.sources, (source) => {
+      const cpp = /\.(?:cpp|cc|cxx)$/i.test(source);
+      return [
+        path.join(
+          inputs.tools?.[cpp ? 'cpp' : 'c'].directory ?? directory,
+          this.executable(cpp ? 'arm-none-eabi-g++' : 'arm-none-eabi-gcc'),
+        ),
+        ...flags,
+        `-std=gnu${cpp ? '++17' : (inputs.cStandard?.slice(1) ?? '17')}`,
+        '-c',
+        path.join(this.host.projectRoot(), source),
+      ];
+    });
     for (const source of inputs.sources) {
       const full = await this.host.resolveWorkspacePath(source);
       const text = await fs.readFile(full, 'utf8');

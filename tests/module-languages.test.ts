@@ -109,7 +109,7 @@ test('workspace language overrides extend only their module catalog and rules', 
   );
 });
 
-test('builtin modules carry independent C standard catalogs and ESP-only Arduino completions', () => {
+test('builtin modules keep C declaration rules without builtin completion packs', () => {
   for (const id of ['STM32F103C8T6', 'Esp32_S3_CAM']) {
     const adapter = getBoardAdapter(id);
     for (const standard of ['c99', 'c11', 'c17', 'c23']) {
@@ -122,12 +122,10 @@ test('builtin modules carry independent C standard catalogs and ESP-only Arduino
       assert.deepEqual(state.diagnostics, []);
       const c = state.entries.find((entry) => entry.id === 'c')!;
       assert.equal(c.contributions.length, 1);
-      assert.ok(c.contributions[0].symbols!.some((entry) => entry.name === 'printf'));
+      assert.deepEqual(c.contributions[0].symbols, []);
+      assert.deepEqual(c.contributions[0].snippets, []);
       const cpp = state.entries.find((entry) => entry.id === 'cpp')!;
-      assert.equal(
-        cpp.contributions.some((pack) => pack.symbols?.some((entry) => entry.name === 'digitalWrite')),
-        id === 'Esp32_S3_CAM',
-      );
+      assert.deepEqual(cpp.contributions, []);
     }
   }
 });
@@ -191,7 +189,7 @@ test('other language completions are allowed but C lexer rules are not silently 
   );
 });
 
-test('Monaco uses the module catalog without leaking global Arduino/C entries, while retaining local symbols and user entries', () => {
+test('Monaco uses the module catalog without leaking global Arduino/C entries, while retaining local symbols and user entries', async () => {
   const providers = new Map<string, Set<any>>();
   const disposable = () => ({ dispose() {} });
   const monaco = {
@@ -229,13 +227,16 @@ test('Monaco uses the module catalog without leaking global Arduino/C entries, w
     getWordUntilPosition: () => ({ startColumn: 1, endColumn: 1 }),
     getValueInRange: () => '',
   } as any;
-  const names = [...providers.get('cpp')!].flatMap((provider) =>
-    provider
-      .provideCompletionItems(model, { lineNumber: 1, column: 1 })
-      .suggestions.map((item: any) => item.label),
-  );
-  for (const name of ['module_only', 'local_symbol', 'user_only']) assert.ok(names.includes(name), name);
-  for (const name of ['digitalWrite', 'printf']) assert.equal(names.includes(name), false, name);
+  const names = (
+    await Promise.all(
+      [...providers.get('cpp')!].map((provider) =>
+        Promise.resolve(provider.provideCompletionItems(model, { lineNumber: 1, column: 1 })),
+      ),
+    )
+  ).flatMap((response: any) => response.suggestions.map((item: any) => item.label));
+  for (const name of ['local_symbol', 'user_only']) assert.ok(names.includes(name), name);
+  for (const name of ['module_only', 'digitalWrite', 'printf'])
+    assert.equal(names.includes(name), false, name);
   setCompletionCatalog({
     useBuiltins: false,
     entries: [{ language: 'c', name: 'user_only', kind: 'function', detail: 'User entry' }],
@@ -255,11 +256,13 @@ test('Monaco uses the module catalog without leaking global Arduino/C entries, w
     ],
     { language: resolve(), projectRoot: '/workspace' },
   );
-  const customNames = [...providers.get('cpp')!].flatMap((provider) =>
-    provider
-      .provideCompletionItems(model, { lineNumber: 1, column: 1 })
-      .suggestions.map((item: any) => item.label),
-  );
+  const customNames = (
+    await Promise.all(
+      [...providers.get('cpp')!].map((provider) =>
+        Promise.resolve(provider.provideCompletionItems(model, { lineNumber: 1, column: 1 })),
+      ),
+    )
+  ).flatMap((response: any) => response.suggestions.map((item: any) => item.label));
   for (const name of ['project_only', 'user_only', 'local_symbol'])
     assert.ok(customNames.includes(name), name);
   assert.equal(customNames.includes('module_only'), false);

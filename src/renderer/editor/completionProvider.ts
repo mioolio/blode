@@ -8,7 +8,6 @@ import type {
 import type { CStandard } from '../../../extensions/completions/rules';
 import { LanguageRuleCache } from './languageRuleCache';
 import { resolveCCompletionCatalog } from '../../shared/c-completion-catalog';
-import { listLanguageCompletions } from '../../../extensions/completions';
 import { parseCustomCCompletions, type CompletionFile } from '../../../extensions/completions/c';
 import { resolveCompletionCatalog } from '../../shared/completion-catalog';
 import type { AiAssistanceState } from '../../shared/ai';
@@ -19,6 +18,11 @@ import {
 } from '../../shared/module-languages';
 import { ModuleLanguageCache } from './moduleLanguageCache';
 import { NavigationRequests, yieldNavigation, type NavigationCancellation } from './navigationRequests';
+import { WorkspaceLspClient } from './workspaceLsp';
+import { ClangdClient } from './clangd/client';
+import { registerClangdDiagnostics } from './clangd/diagnostics';
+import { registerClangdEditorFeatures } from './clangd/providers';
+import { attachEditorProblems } from './editorProblems';
 import { refreshExternalModel } from './externalModelUpdates';
 import type {
   CompletionEntry,
@@ -160,6 +164,18 @@ const languageRules = new LanguageRuleCache();
 const moduleLanguageCache = new ModuleLanguageCache();
 let catalog: Pick<AiAssistanceState, 'useBuiltins' | 'entries'> = { useBuiltins: true, entries: [] };
 let registeredMonaco: MonacoApi | undefined;
+const projectPathForUri = (uriPath: string) => {
+  const path = activeProjectPath(uriPath);
+  return path && projectPaths.get(normalizeSourcePath(path)) === path ? path : '';
+};
+const workspaceLsp = new WorkspaceLspClient({
+  projectRoot: () => projectRoot,
+  resolvePath: projectPathForUri,
+});
+const clangd = new ClangdClient({
+  projectRoot: () => projectRoot,
+  resolvePath: projectPathForUri,
+});
 /** Refreshed immediately after either a user or the external AI edits the catalog. */
 export function setCompletionCatalog(next: Pick<AiAssistanceState, 'useBuiltins' | 'entries'>): void {
   if (JSON.stringify(catalog) === JSON.stringify({ useBuiltins: next.useBuiltins, entries: next.entries }))
@@ -191,6 +207,8 @@ export function setCompletionProject(
   if (rootChanged) {
     definitionOrigins = new WeakMap();
     externalSources.clear();
+    workspaceLsp.reset();
+    clangd.reset();
   }
   projectRoot = options.projectRoot ?? projectRoot;
   cStandard = options.cStandard ?? 'c17';
@@ -219,7 +237,8 @@ const moduleContribution = (path: string): LanguageCompletions | undefined => {
   return (
     resolveCompletionCatalog(
       [
-        ...(catalog.useBuiltins ? entry.contributions : []),
+        // Built-in C/Arduino JSON packs no longer feed completion; clangd or the
+        // host index answer symbols. Module-provided user entries still apply.
         ...(entry.userContributions ?? []),
         { language: entry.editorLanguage, symbols: project },
       ],
@@ -256,11 +275,21 @@ const markerState = new WeakMap<Monaco.editor.ITextModel, string>();
 function scheduleRuleDiagnostics(): void {
   clearTimeout(diagnosticTimer);
   if (!registeredMonaco) return;
-  diagnosticTimer = setTimeout(() => {
-    const monaco = registeredMonaco!;
+  diagnosticTimer = setTimeout(async () => {
+    const monaco = registeredMonaco;
+    if (!monaco) return;
+    // clangd owns diagnostics for C/C++ files when it is installed; the
+    // declarative rules remain the fallback for machines without clangd.
+    const clangdActive = await clangd.available();
     for (const model of monaco.editor.getModels()) {
       const path = activeProjectPath(model.uri.path);
       if (!path) continue;
+      if (clangdActive && /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|ino)$/i.test(path)) {
+        if (markerState.get(model) === 'clangd') continue;
+        markerState.set(model, 'clangd');
+        monaco.editor.setModelMarkers(model, 'blode-language-rules', []);
+        continue;
+      }
       const diagnostics = moduleLanguage
         ? [
             ...moduleLanguage.diagnostics.filter((item) => item.file === path),
@@ -295,7 +324,22 @@ function cCompletions(activePath: string): CompletionEntry[] {
   const cached = cCache.get(key);
   if (cached) return cached;
   const entries = parseCustomCCompletions(projectFiles);
-  const names = new Set(entries.map((entry) => entry.name));
+  cCache.set(key, entries);
+  return entries;
+}
+
+/**
+ * Draft-aware workspace symbols are the local fallback for the host language
+ * service. They keep completion usable while a project is loading and fill any
+ * symbol the host index could not resolve.
+ */
+let projectSymbolsKey = '';
+let projectSymbolsCache: CompletionEntry[] = [];
+function projectSymbols(activePath: string): CompletionEntry[] {
+  const key = `${projectVersion}:${activePath}`;
+  if (projectSymbolsKey === key) return projectSymbolsCache;
+  const entries: CompletionEntry[] = [];
+  const names = new Set<string>();
   for (const symbol of workspaceIndex.snapshot().symbols) {
     if (names.has(symbol.name) || (symbol.local && symbol.path !== activePath)) continue;
     names.add(symbol.name);
@@ -307,7 +351,8 @@ function cCompletions(activePath: string): CompletionEntry[] {
       insertText: symbol.kind === 'function' ? `${symbol.name}(\${1:})` : symbol.name,
     });
   }
-  cCache.set(key, entries);
+  projectSymbolsKey = key;
+  projectSymbolsCache = entries;
   return entries;
 }
 
@@ -549,6 +594,29 @@ function languageNavigation(monaco: MonacoApi, declaration = false): Monaco.lang
         )?.specifier;
       const word = model.getWordAtPosition(position);
       if (!specifier && !word) return [];
+      // clangd understands types and overloads; the lexical host navigation
+      // remains the fallback for installations without clangd.
+      if (!specifier && !external && !declaration && word) {
+        const semantic = await clangd.definition(monaco, path, model, position);
+        if (!current()) return [];
+        if (semantic?.length) {
+          const locations = await targetLocations(monaco, semantic, current);
+          if (locations.length && current() && sourceEditor && sourceEditor.getModel() === model)
+            definitionOrigins.set(sourceEditor, {
+              root,
+              model,
+              version: model.getVersionId(),
+              origin: {
+                path,
+                line: position.lineNumber,
+                column: position.column,
+                endLine: position.lineNumber,
+                endColumn: position.column,
+              },
+            });
+          return locations;
+        }
+      }
       const local: SourceLocation[] =
         specifier && !external
           ? workspaceIndex
@@ -633,7 +701,7 @@ function createCProvider(monaco: MonacoApi, language: string): Monaco.languages.
           ) ?? []),
       ]),
     ],
-    provideCompletionItems(model, position) {
+    async provideCompletionItems(model, position) {
       const word = model.getWordUntilPosition(position);
       const range = new monaco.Range(
         position.lineNumber,
@@ -665,16 +733,36 @@ function createCProvider(monaco: MonacoApi, language: string): Monaco.languages.
       const entries = contribution
         ? [...(contribution.snippets ?? []), ...(contribution.symbols ?? [])]
         : cCompletions(activePath);
-      return {
-        suggestions: entries.map((entry) => toSuggestion(monaco, entry, range)),
-      };
+      const suggestions = entries.map((entry) => toSuggestion(monaco, entry, range));
+      // C/C++ symbol intelligence is answered by the host language service; the
+      // local draft index only fills symbols the service did not return.
+      if (language === 'cpp' || language === 'c') {
+        const seen = new Set(suggestions.map((item) => item.label as string));
+        // clangd is authoritative when installed; the host index keeps the
+        // editor usable on machines that have not installed it yet.
+        const remote =
+          (await clangd.completion(monaco, activePath, model, position)) ??
+          (await workspaceLsp.completion(monaco, activePath, model, position));
+        for (const item of remote ?? []) {
+          const label = typeof item.label === 'string' ? item.label : item.label.label;
+          if (seen.has(label)) continue;
+          seen.add(label);
+          suggestions.push(item);
+        }
+        for (const entry of projectSymbols(activePath)) {
+          if (seen.has(entry.name)) continue;
+          seen.add(entry.name);
+          suggestions.push(toSuggestion(monaco, entry, range));
+        }
+      }
+      return { suggestions };
     },
   };
 }
 
-function createCDynamicHover(monaco: MonacoApi): Monaco.languages.HoverProvider {
+function createCDynamicHover(monaco: MonacoApi, language: string): Monaco.languages.HoverProvider {
   return {
-    provideHover(model, position) {
+    async provideHover(model, position) {
       const word = model.getWordAtPosition(position);
       if (!word) return null;
       if (moduleLanguage && !moduleLanguageForFile(moduleLanguage, activeProjectPath(model.uri.path)))
@@ -697,13 +785,22 @@ function createCDynamicHover(monaco: MonacoApi): Monaco.languages.HoverProvider 
           ? [...(contribution.symbols ?? []), ...(contribution.snippets ?? [])]
           : cCompletions(activeProjectPath(model.uri.path));
       const entry = entries.find((candidate) => candidate.name === word.word);
-      if (!entry) return null;
-      const contents: Monaco.IMarkdownString[] = [{ value: `\`\`\`c\n${entry.detail}\n\`\`\`` }];
-      if (entry.documentation) contents.push({ value: entry.documentation });
-      return {
-        range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
-        contents,
-      };
+      if (entry) {
+        const contents: Monaco.IMarkdownString[] = [{ value: `\`\`\`c\n${entry.detail}\n\`\`\`` }];
+        if (entry.documentation) contents.push({ value: entry.documentation });
+        return {
+          range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+          contents,
+        };
+      }
+      if (language !== 'cpp' && language !== 'c') return null;
+      const activePath = activeProjectPath(model.uri.path);
+      if (!activePath || projectPaths.get(normalizeSourcePath(activePath)) !== activePath) return null;
+      return (
+        (await clangd.hover(monaco, activePath, model, position)) ??
+        (await workspaceLsp.hover(monaco, activePath, model, position)) ??
+        null
+      );
     },
   };
 }
@@ -720,11 +817,15 @@ export function registerCompletions(monaco: MonacoApi): void {
   scope.__blodeCompletionDisposables?.forEach((disposable) => disposable.dispose());
   const disposables: Monaco.IDisposable[] = [];
   disposables.push(monaco.editor.onDidCreateModel(() => scheduleRuleDiagnostics()));
-  for (const contribution of resolveCompletionCatalog(
-    moduleLanguage ? [] : listLanguageCompletions(),
-    moduleLanguage ? [] : catalog.entries,
-    catalog.useBuiltins,
-  )) {
+  registerClangdDiagnostics(monaco, clangd, projectPathForUri, disposables);
+  attachEditorProblems(monaco, projectPathForUri, disposables);
+  registerClangdEditorFeatures(
+    monaco,
+    clangd,
+    { root: () => projectRoot, resolvePath: projectPathForUri },
+    disposables,
+  );
+  for (const contribution of resolveCompletionCatalog([], moduleLanguage ? [] : catalog.entries, true)) {
     disposables.push(
       monaco.languages.registerCompletionItemProvider(
         contribution.language,
@@ -749,7 +850,7 @@ export function registerCompletions(monaco: MonacoApi): void {
     disposables.push(
       monaco.languages.registerCompletionItemProvider(language, createCProvider(monaco, language)),
     );
-    disposables.push(monaco.languages.registerHoverProvider(language, createCDynamicHover(monaco)));
+    disposables.push(monaco.languages.registerHoverProvider(language, createCDynamicHover(monaco, language)));
     if (!['cpp', 'c'].includes(language)) continue;
     disposables.push(monaco.languages.registerDefinitionProvider(language, languageNavigation(monaco)));
     const declaration = languageNavigation(monaco, true);
@@ -845,6 +946,27 @@ export function registerCompletions(monaco: MonacoApi): void {
             word = model.getWordAtPosition(position),
             external = externalSourceForUri(model.uri.path);
           if (!word || !path) return [];
+          if (!external) {
+            const semantic = await clangd.references(monaco, path, model, position);
+            if (!current()) return [];
+            if (semantic?.length) {
+              const locations = await targetLocations(monaco, semantic, current);
+              if (locations.length && current() && sourceEditor && sourceEditor.getModel() === model)
+                definitionOrigins.set(sourceEditor, {
+                  root,
+                  model,
+                  version: model.getVersionId(),
+                  origin: {
+                    path,
+                    line: position.lineNumber,
+                    column: position.column,
+                    endLine: position.lineNumber,
+                    endColumn: position.column,
+                  },
+                });
+              return locations;
+            }
+          }
           const remotePromise = hostNavigation(
             {
               expectedProjectRoot: root,

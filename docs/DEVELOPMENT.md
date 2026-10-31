@@ -94,7 +94,7 @@ STM32 的 build.entry 可为文件、目录或点号；有入口才请求 Arm Co
 
 本机 Arm Compiler 6.22 已从 E 盘迁入 tools/armclang，原 license_terms 保留，源码仓库不跟踪工具二进制。平台目录可单独分享，但不因此获得编译器重分发或本机 Community 授权的转授。
 
-.blode/ 是项目私有构建与缓存区，不用于公共头文件或扩展代码。工程路径拒绝穿越和不安全的符号链接/目录联接；源码编辑索引有深度、数量与单文件大小限制，不能将资源树中出现的所有文件都视为已参与构建。
+.blode/ 是项目私有构建与缓存区，不用于公共头文件或扩展代码。资源树的展开／折叠状态保存在 `.blode/explorer.json`，只属于当前工程，重新打开时恢复；已删除目录的旧状态会被清理。工程路径拒绝穿越和不安全的符号链接/目录联接；源码编辑索引有深度、数量与单文件大小限制，不能将资源树中出现的所有文件都视为已参与构建。
 
 ## 界面与能力
 
@@ -102,7 +102,7 @@ STM32 的 build.entry 可为文件、目录或点号；有入口才请求 Arm Co
 
 构建/固件验证、布局与烧录按平台 capabilities 开放。`layout` 提供布局页，`partitions` 允许任意分区编辑；auto 不显示布局，STM32 在固定布局中调整容量与应用区，剩余 Flash 保留。旧会话中的不可用布局页只显示说明，不产生可编辑的 ESP 默认分区。
 
-Monaco 本地打包。补全位于 extensions/completions，当前有 Arduino API 提示、片段、成员与悬停；未实现完整 clangd 语义服务。资源树菜单位于 extensions/menus，纯数据条目与 renderer 处理器分离。
+Monaco 本地打包。补全分三层：clangd（`src/core/clangd/`）提供 C/C++ 语义补全、悬停、定义、引用和诊断；clangd 不可用时回退到宿主内置 LSP 子集（`src/core/language-server.ts`）；`extensions/completions` 只保留 JSON 诊断规则、工程条目和片段。内置 C/Arduino JSON 补全目录已删除。资源树菜单位于 extensions/menus，纯数据条目与 renderer 处理器分离。
 
 日志桌面导出由主进程原生另存为并实际写入，完成后才提示保存；取消不提示成功。网页端只发起 Blob 下载并提示已发起。导出文本有编码后大小限制，IPC 不接受任意输出路径。
 

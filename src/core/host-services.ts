@@ -26,6 +26,12 @@ import { LanguageIndexService } from './language-index';
 import { GeneralExtensions } from './general-extensions';
 import { createGeneralExtensionRoutes } from './general-extensions/routes';
 import { LanguageNavigationService } from './language-navigation';
+import { WorkspaceLanguageServer } from './language-server';
+import { lspNotifySchema, lspRequestSchema } from './lsp-schemas';
+import { ClangdService } from './clangd/manager';
+import { clangdDiagnosticsSchema, clangdNotifySchema, clangdRequestSchema } from './clangd/schemas';
+import { ExplorerStateStore } from './explorer-state';
+import { explorerStateSaveSchema } from './explorer-schemas';
 import { languageNavigationSchema, languageExternalSchema, languageCancelSchema } from './language-schemas';
 import type { RuntimeDebugger } from './runtime-debugger';
 import { isRuntimeViewKind, type RuntimeViewContribution, type RuntimeViewKind } from '../shared/plugins';
@@ -104,6 +110,14 @@ export function createHostServices(options: Options) {
     toolchainRoot: options.toolchainRoot,
     env: options.toolchainEnv,
   });
+  const languageServer = new WorkspaceLanguageServer({ core, navigation: languageNavigation });
+  const clangd = new ClangdService({
+    core,
+    dataRoot: options.dataRoot,
+    toolchainRoot: options.toolchainRoot,
+    env: options.toolchainEnv,
+  });
+  const explorer = new ExplorerStateStore(core);
   collaboration.setReadonlySources?.((root) => languageNavigation.readonlyPaths(root));
   const git = new GitService({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
   const terminal = new HostTerminals({ projectRoot: () => core.currentProjectRoot(), emit: options.emit });
@@ -342,6 +356,27 @@ export function createHostServices(options: Options) {
       },
     },
     languageIndex: { args: noArgs, run: () => language.snapshot() },
+    languageLspRequest: {
+      args: z.tuple([lspRequestSchema]),
+      run: (request) => languageServer.request(request),
+    },
+    languageLspNotify: {
+      args: z.tuple([lspNotifySchema]),
+      run: (request) => languageServer.notify(request),
+    },
+    languageClangdState: { args: noArgs, run: () => clangd.state() },
+    languageClangdRequest: {
+      args: z.tuple([clangdRequestSchema]),
+      run: (request) => clangd.request(request),
+    },
+    languageClangdNotify: {
+      args: z.tuple([clangdNotifySchema]),
+      run: (request) => clangd.notify(request),
+    },
+    languageClangdDiagnostics: {
+      args: z.tuple([clangdDiagnosticsSchema]),
+      run: (request) => clangd.diagnostics(request),
+    },
     languageNavigate: {
       args: z.tuple([languageNavigationSchema]),
       run: (request) => languageNavigation.navigate(request),
@@ -353,6 +388,11 @@ export function createHostServices(options: Options) {
     languageOpenExternal: {
       args: z.tuple([languageExternalSchema]),
       run: (request) => languageNavigation.openExternal(request),
+    },
+    explorerState: { args: noArgs, run: () => explorer.state() },
+    explorerStateSave: {
+      args: z.tuple([explorerStateSaveSchema]),
+      run: (request) => explorer.save(request.expectedProjectRoot, request.state),
     },
     ...createGitRoutes(git).routes,
     toolVersionsState: { args: noArgs, run: () => tools.toolVersionsState() },
@@ -372,6 +412,7 @@ export function createHostServices(options: Options) {
             onProgress: reporter.progress,
           }).toolVersionInstall(request);
         });
+        clangd.invalidate();
         return tools.toolVersionsState();
       },
     },
@@ -613,6 +654,8 @@ export function createHostServices(options: Options) {
       return invoke(entry[0], entry[1](params));
     },
     close: async () => {
+      languageServer.dispose();
+      await clangd.dispose();
       languageNavigation.dispose();
       model.close();
       await Promise.allSettled([terminal.closeAll(), generalExtensions.close()]);

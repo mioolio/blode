@@ -1,6 +1,6 @@
 # AI 服务、预测与补全清单
 
-C 标准库与声明式语义规则的目录格式见 [语言规则](LANGUAGE-RULES.md)。工程通过 `be.build.cStandard` 选择 C99／C11／C17／C23，工作区符号索引及 `language.index` 接口提供定义位置。用户和外部 AI 仍可通过补全清单添加、覆盖和禁用条目。
+C 标准库与声明式语义规则的目录格式见 [语言规则](LANGUAGE-RULES.md)。工程通过 `be.build.cStandard` 选择 C99／C11／C17／C23，工作区符号索引及 `language.index` 接口提供定义位置。C/C++ 补全、悬停、定义、引用和诊断优先由 clangd 回答，未安装时回退到宿主内置语言服务，见 [clangd](CLANGD.md) 与[内置语言服务](LANGUAGE-SERVICE.md)。内置 C/Arduino JSON 补全目录已删除；用户和外部 AI 仍可通过补全清单添加、覆盖和禁用用户条目。
 
 内部开发版中，声明 `manifest.languages` 的模块拥有自己的默认清单。首选项与 AI 状态接口展示当前模块的条目，不改写宿主默认 JSON；用户条目和工作区索引仍保留。模块格式见[模块语言适配](MODULE-LANGUAGES.md)。
 
@@ -80,9 +80,9 @@ DeepSeek 预设地址为 `https://api.deepseek.com`。远程兼容接口使用 H
 - C／Arduino 在编辑器中使用 `cpp` 语言 ID。
 - `kind` 可选 `function`、`method`、`variable`、`constant`、`type`、`keyword`、`snippet`、`property`。
 - `owner` 存在时，只在对应的 `Board.` 等成员访问后显示。
-- 同一 `language`／`owner`／`name` 替换内置同名项；加上 `disabled: true` 可隐藏内置项。`useBuiltins: false` 关闭内置清单，保留用户项与工程符号解析。
+- 同一 `language`／`owner`／`name` 替换用户或工程同名项；加上 `disabled: true` 可隐藏该条目。`useBuiltins: false` 保留用户项与工程符号解析；内置 C/Arduino 补全包已移除，不再有可关闭的内置清单。
 - `insertText` 支持 Monaco 的 `${1:参数}` 片段语法。预测提示接口则接收普通文本，不解释片段占位符。
-- 点击保存后立即生效；“恢复内置清单”清除用户覆盖，不改变 AI 预测开关。可展开“查看内置清单”参考已有结构。
+- 点击保存后立即生效；“恢复内置清单”清除用户覆盖，不改变 AI 预测开关。可展开“查看内置清单”查看当前模块的只读条目（内置补全包已为空）。
 - 原有工程级 `blode.completions.json` 和头文件／宏解析继续工作。
 
 清单最多 1000 项，配置总大小限制为 1 MB，保存在应用数据目录的 `ai-assistance.json`。它属于本机用户设置，不写入平台核心源码。修改带版本号，其他用户或 AI 同时更新时会提示版本冲突，刷新后重新合并，不会静默覆盖。

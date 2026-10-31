@@ -5,6 +5,6 @@
   },
   "web": {
     "enabled": true,
-    "allowExternal": false
+    "allowExternal": true
   }
 }

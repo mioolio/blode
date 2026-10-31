@@ -2,10 +2,16 @@ import { CircleAlert, MemoryStick, Network, TriangleAlert, Usb } from 'lucide-re
 import type { Studio } from '../workspace/useStudio';
 import { bytes } from '../utils';
 import { projectFootprint } from '../workspace/resources';
+import { useEditorProblems } from '../workspace/editorProblems';
 
 /** StudioStatusBar renders one workspace surface; application actions stay in useStudio. */
 export function StudioStatusBar({ studio }: { studio: Studio }) {
   const { t, busy, errors, warnings, state, config, setView, drafts, usesStlink, isAuto, setTab } = studio;
+  const editorProblems = useEditorProblems();
+  const errorCount =
+    errors.length + editorProblems.filter((problem) => problem.severity === 'error').length;
+  const warningCount =
+    warnings.length + editorProblems.filter((problem) => problem.severity === 'warning').length;
   const footprint = projectFootprint(state?.inventory, state?.files ?? [], drafts);
   const appCapacity =
     config?.partitions
@@ -31,15 +37,15 @@ export function StudioStatusBar({ studio }: { studio: Studio }) {
         {t(busy ? 'status.busy' : 'status.ready')}
         <i />
         <button
-          className={`status-item ${errors.length ? 'error-text' : ''}`}
+          className={`status-item ${errorCount ? 'error-text' : ''}`}
           onClick={() => setTab('problems')}
         >
           <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
-          {t('status.errors')} {errors.length}
+          {t('status.errors')} {errorCount}
         </button>
         <button className="status-item" onClick={() => setTab('warnings')}>
           <TriangleAlert size={11} strokeWidth={2} aria-hidden="true" />
-          {t('status.warnings')} {warnings.length}
+          {t('status.warnings')} {warningCount}
         </button>
       </span>
       <span className="status-center">

@@ -39,6 +39,7 @@ import { workspaceConsoleTabs } from '../../shared/workspace-surfaces';
 import { MemoryUsage } from './MemoryUsage';
 import { ContextHelp } from './ContextHelp';
 import { LogScrollController } from '../workspace/logScroll';
+import { useEditorProblems, type EditorProblem } from '../workspace/editorProblems';
 import './runtime-surfaces.css';
 import './resource-panel.css';
 
@@ -69,6 +70,34 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
     setSerialInput,
   } = studio;
   const logs = allLogs.filter((log) => log.kind !== 'terminal' && !!log.message);
+  const editorProblems = useEditorProblems();
+  const editorIssues =
+    tab === 'problems'
+      ? editorProblems.filter((problem) => problem.severity === 'error')
+      : tab === 'warnings'
+        ? editorProblems.filter((problem) => problem.severity === 'warning')
+        : [];
+  const errorCount =
+    errors.length + editorProblems.filter((problem) => problem.severity === 'error').length;
+  const warningCount =
+    warnings.length + editorProblems.filter((problem) => problem.severity === 'warning').length;
+  const openProblem = (problem: EditorProblem) => {
+    if (!state?.projectRoot) return;
+    window.dispatchEvent(
+      new CustomEvent('blode:navigate-source', {
+        detail: {
+          root: state.projectRoot,
+          target: {
+            path: problem.path,
+            line: problem.line,
+            column: problem.column,
+            endLine: problem.endLine,
+            endColumn: problem.endColumn,
+          },
+        },
+      }),
+    );
+  };
   const logRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const logScroll = useRef(new LogScrollController());
@@ -196,8 +225,8 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
             <button className={tab === id ? 'active' : ''} onClick={() => setTab(id)} key={id}>
               <Icon size={13} strokeWidth={1.9} aria-hidden="true" />
               {t(`console.${id}`)}
-              {id === 'problems' && <span className="count-badge">{errors.length}</span>}
-              {id === 'warnings' && <span className="count-badge">{warnings.length}</span>}
+              {id === 'problems' && <span className="count-badge">{errorCount}</span>}
+              {id === 'warnings' && <span className="count-badge">{warningCount}</span>}
             </button>
           ))}
           {pluginViews.map((view) => (
@@ -427,6 +456,27 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           onScroll={(event) => logScroll.current.remember(tab, event.currentTarget)}
         >
           <div className="log-content">
+            {editorIssues.map((problem) => (
+              <div
+                className={`log-line ${problem.severity}`}
+                key={`editor:${problem.path}:${problem.line}:${problem.column}:${problem.message}`}
+              >
+                <time>
+                  {problem.path}:{problem.line}
+                </time>
+                <span className="log-marker">{problem.severity === 'error' ? '×' : '!'}</span>
+                <pre>
+                  <button
+                    type="button"
+                    className="log-file-link"
+                    title={problem.message}
+                    onClick={() => openProblem(problem)}
+                  >
+                    {problem.message}
+                  </button>
+                </pre>
+              </div>
+            ))}
             {visibleLogs.map((log, index) => (
               <div className={`log-line ${log.level}`} key={`${log.time}-${index}`}>
                 <time>{new Date(log.time).toLocaleTimeString(locale, { hour12: false })}</time>
@@ -436,7 +486,7 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
                 <pre>{t(log.message)}</pre>
               </div>
             ))}
-            {!visibleLogs.length && (
+            {!visibleLogs.length && !editorIssues.length && (
               <div className="console-empty">
                 <span className="console-empty-icon">{emptyIcon}</span>
                 <span>

@@ -26,7 +26,11 @@
 | `src/renderer/workspace/attention.ts`  | 浏览器／桌面共用注意力来源注册                                    |
 | `extensions/drivers/`                  | 驱动类型与注册，厂商事实来自平台目录                              |
 | `src/core/`                            | 通用锁、工程路径、配置、进程宿主、哈希、缓存、串口                |
+| `src/core/language-server.ts`          | 内置 LSP 回退：文档同步、补全、悬停和包含头文件符号               |
+| `src/core/clangd/`                     | clangd 发行清单、发现、安装、stdio LSP 会话与编译参数             |
 | `src/renderer/`                        | 编辑器、设备能力显示、菜单、首选项、国际化                        |
+| `src/renderer/editor/workspaceLsp.ts`  | Monaco 回退 LSP 客户端、文档版本同步和结果转换                    |
+| `src/renderer/editor/clangd/`          | clangd 客户端、诊断调度与 Monaco 适配                             |
 | `src/automation/`                      | 认证传输、schema 路由、客户端与 MCP                               |
 
 平台 runtime 不导入 core 或另一个平台实现；类型来自 shared，宿主契约来自 `extensions/runtime.ts`。平台内部使用相对导入，复制完整目录即可保留内部依赖。纯 adapter 定义配置，有状态的工具与设备操作由 runtime 组织。
@@ -100,4 +104,4 @@ VS Code 连接使用标准工作区文件，不修改项目原有 `.vscode`。�
 
 ST-Link 的 INF、USB ID 和归档描述位于 STM32 平台 driver.ts，通用执行器完成 PnP 查询、解压与显式提权安装。驱动可用不等于命令行工具已安装，调试器也不等于 COM 串口。
 
-补全与资源管理器菜单是显式注册的纯数据。renderer 使用 zh-CN.json/en.json，automation 使用 zh-CN.json/en-US.json，外部工具输出保留原文。JSON-RPC routes.ts 是方法 schema 唯一映射，MCP 从同一表生成工具，不复制平台逻辑。详见 [AI-PIPE.md](AI-PIPE.md)。
+补全与资源管理器菜单是显式注册的纯数据。C/C++ 优先由 clangd 回答补全、悬停、定义、引用和诊断；未安装时回退到宿主内置 LSP 与工作区索引，见[内置语言服务](LANGUAGE-SERVICE.md)和 [clangd](CLANGD.md)。内置 C/Arduino JSON 补全目录已删除，诊断规则保留。renderer 使用 zh-CN.json/en.json，automation 使用 zh-CN.json/en-US.json，外部工具输出保留原文。JSON-RPC routes.ts 是方法 schema 唯一映射，MCP 从同一表生成工具，不复制平台逻辑。详见 [AI-PIPE.md](AI-PIPE.md)。

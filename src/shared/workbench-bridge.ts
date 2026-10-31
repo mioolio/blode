@@ -8,6 +8,8 @@ import type { HostWorkspaceApi } from './host-workspace';
 import type { ProjectPackageApi } from './project-package';
 import type { TerminalApi } from './terminal';
 import type { LanguageApi } from './language';
+import type { ClangdApi, ClangdState } from './clangd';
+import type { ExplorerStateApi } from './explorer';
 import type { GeneralExtensionsApi } from './general-extensions';
 import type { ComponentLibrariesApi } from './components';
 import { APP_CLOSE_REQUEST_CHANNEL, type DesktopLifecycleApi } from './desktop-lifecycle';
@@ -27,6 +29,8 @@ export function createWorkbenchBridge(
   HostWorkspaceApi &
   ProjectPackageApi &
   LanguageApi &
+  ClangdApi &
+  ExplorerStateApi &
   DesktopLifecycleApi &
   RuntimePluginsApi &
   ComponentLibrariesApi &
@@ -69,9 +73,19 @@ export function createWorkbenchBridge(
     runtimePluginContext: (id) => invoke('runtimePluginContext', [id]),
     runtimePluginConfigure: (id, value) => invoke('runtimePluginConfigure', [id, value]),
     languageIndex: () => invoke('languageIndex', []),
+    languageLspRequest: (request) =>
+      invoke('languageLspRequest', [request]) as Promise<import('./lsp').LspResponse>,
+    languageLspNotify: (request) => invoke('languageLspNotify', [request]) as Promise<void>,
+    languageClangdState: () => invoke<ClangdState>('languageClangdState', []),
+    languageClangdRequest: (request) => invoke('languageClangdRequest', [request]),
+    languageClangdNotify: (request) => invoke('languageClangdNotify', [request]) as Promise<void>,
+    languageClangdDiagnostics: (request) =>
+      invoke('languageClangdDiagnostics', [request]) as ReturnType<ClangdApi['languageClangdDiagnostics']>,
     languageNavigate: (request) => invoke('languageNavigate', [request]),
     languageCancel: (request) => invoke('languageCancel', [request]),
     languageOpenExternal: (request) => invoke('languageOpenExternal', [request]),
+    explorerState: () => invoke('explorerState', []),
+    explorerStateSave: (request) => invoke('explorerStateSave', [request]) as Promise<void>,
     gitStatus: () => invoke('gitStatus', []),
     gitDiff: (input) => invoke('gitDiff', [input]),
     gitAction: (input) => invoke('gitAction', [input]),

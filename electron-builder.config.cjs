@@ -12,6 +12,7 @@
  */
 const full = process.env.npm_lifecycle_event === 'package:full' || process.env.BLODE_BUNDLE_TOOLS === '1';
 const { releaseVersion } = require('./package.json');
+const releaseDist = process.env.BLODE_RELEASE_DIST;
 if (!/^\d+\.\d+\.\d+\.\d+$/.test(releaseVersion)) throw new Error('A four-part releaseVersion is required.');
 
 /**
@@ -20,8 +21,11 @@ if (!/^\d+\.\d+\.\d+\.\d+$/.test(releaseVersion)) throw new Error('A four-part r
  * artefacts (`python` venv link, `downloads`, `arduino-cli.yaml` with this
  * machine's paths and proxy) live outside the copied folders entirely.
  */
+const fs = require('node:fs');
 const arduinoDataFilter = ['**/*', '!tmp/**', '!library_index.json', '!library_index.json.sig'];
 
+// Full packages also ship clangd when the maintainer fetched it into tools/.
+// Lite packages omit it and install it from Preferences on first use.
 const bundledTools = full
   ? [
       { from: 'tools/armclang', to: 'tools/armclang' },
@@ -29,6 +33,7 @@ const bundledTools = full
       { from: 'tools/stlink', to: 'tools/stlink' },
       { from: 'tools/libraries', to: 'tools/libraries' },
       { from: 'tools/arduino-data', to: 'tools/arduino-data', filter: arduinoDataFilter },
+      ...(fs.existsSync('tools/clangd') ? [{ from: 'tools/clangd', to: 'tools/clangd' }] : []),
     ]
   : [];
 
@@ -40,10 +45,15 @@ module.exports = {
   extraMetadata: { releaseVersion, shortVersionWindows: releaseVersion },
   directories: { output: `release/${releaseVersion}${full ? '/full' : ''}` },
   files: [
-    'dist/main.cjs',
-    'dist/preload.cjs',
-    'dist/mcp-bridge.mjs',
-    'dist/renderer/**/*',
+    ...(releaseDist
+      ? [
+          {
+            from: releaseDist,
+            to: 'dist',
+            filter: ['main.cjs', 'preload.cjs', 'mcp-bridge.mjs', 'renderer/**/*', '!**/*.map'],
+          },
+        ]
+      : ['dist/main.cjs', 'dist/preload.cjs', 'dist/mcp-bridge.mjs', 'dist/renderer/**/*']),
     'config/application.json',
     'package.json',
     'LICENSE',

@@ -52,7 +52,10 @@ export class LanguageRuleCache {
 
   pack(): CCompletionPack {
     return (this.packCache ??= resolveCCompletionPack(this.assets, this.standard, {
-      useBuiltins: this.useBuiltins,
+      // Built-in JSON completions were replaced by clangd/host symbols; their
+      // declaration-only diagnostics stay available (and keep the toggle).
+      useBuiltins: false,
+      useBuiltinRules: this.useBuiltins,
     }));
   }
 

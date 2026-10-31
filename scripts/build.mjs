@@ -1,6 +1,8 @@
 import { build } from 'esbuild';
 import { rm } from 'node:fs/promises';
+import path from 'node:path';
 import { nodeLanguageAssetsPlugin } from './node-json-assets.mjs';
+const output = process.env.BLODE_RELEASE_DIST || 'dist';
 
 const development =
   process.env.BLODE_BUILD_MODE === 'development' ||
@@ -23,26 +25,28 @@ const common = {
 await build({
   ...common,
   entryPoints: ['src/core/main.ts'],
-  outfile: 'dist/main.cjs',
+  outfile: path.join(output, 'main.cjs'),
   format: 'cjs',
   external: ['electron', 'serialport', 'node-pty', 'zod'],
 });
 await build({
   ...common,
   entryPoints: ['src/core/preload.ts'],
-  outfile: 'dist/preload.cjs',
+  outfile: path.join(output, 'preload.cjs'),
   format: 'cjs',
   external: ['electron'],
 });
 await build({
   ...common,
   entryPoints: ['scripts/mcp-bridge.ts'],
-  outfile: 'dist/mcp-bridge.mjs',
+  outfile: path.join(output, 'mcp-bridge.mjs'),
   format: 'esm',
   packages: 'external',
 });
 // A release made after a dev build must not package obsolete debug maps.
 if (!development)
   await Promise.all(
-    ['main.cjs', 'preload.cjs', 'mcp-bridge.mjs'].map((name) => rm(`dist/${name}.map`, { force: true })),
+    ['main.cjs', 'preload.cjs', 'mcp-bridge.mjs'].map((name) =>
+      rm(path.join(output, name + '.map'), { force: true }),
+    ),
   );

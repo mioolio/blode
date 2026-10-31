@@ -10,6 +10,7 @@ This page describes the version catalog available in **Preferences → Toolchain
 | Arduino CLI    | 1.3.1, 1.2.2                       | Arduino project builds; [official Arduino CLI releases](https://github.com/arduino/arduino-cli/releases)                                                                                        |
 | Arduino-ESP32  | 3.0.7, 2.0.17                      | Separate ESP32 package stores; [3.0.7 release](https://github.com/espressif/arduino-esp32/releases/tag/3.0.7), [2.0.17 release](https://github.com/espressif/arduino-esp32/releases/tag/2.0.17) |
 | ST-Link        | 1.9.0 reference link               | Existing managed tools, custom directory or Linux system package; [official release](https://github.com/stlink-org/stlink/releases/tag/v1.9.0)                                                  |
+| clangd         | 23.1.0                             | C/C++ language service; standalone archives from [clangd releases](https://github.com/clangd/clangd/releases/tag/23.1.0)                                                                        |
 | Arm Compiler 6 | User-installed versions            | Specify an existing licensed installation; the app does not download or authorize redistribution of AC6                                                                                         |
 
 These entries are compatibility choices rather than a claim that a particular release is the newest. Download assets and release metadata were checked against the publishers on 2026-10-29. The [xPack installation guide](https://xpack-dev-tools.github.io/arm-none-eabi-gcc-xpack/docs/install/) documents the Windows and Linux archive naming.
@@ -39,6 +40,8 @@ versions/
     libraries/
     arduino-cli.yaml
     installed.json
+  clangd/<version>/bin/clangd(.exe)
+                /lib/clang/<version>/include/
 ```
 
 Selecting GNU sets `toolchain.armCompilerDirectory` to that version's `bin` directory. Selecting Arduino CLI sets `toolchain.mode` to `custom` and records its executable path. Selecting Arduino-ESP32 sets `toolchain.packageDirectory`; builds and bundled esptool discovery use that isolated store. Its `installed.json` pins subsequent core installation to the selected version rather than silently upgrading the same store.
@@ -50,6 +53,8 @@ For portable sharing, do not copy machine-specific compiler binaries into a sour
 ## Download verification
 
 GNU and Arduino CLI archives are matched against a pinned release tag and expected asset URL. SHA-256 is taken from GitHub's publisher asset metadata when present. Older releases without that field use the publisher's adjacent `.sha` file (GNU) or release checksum manifest (Arduino CLI). Missing or mismatching checksums, oversized archives and unsafe archive paths stop installation. Download bytes, verification, extraction and installation stages are reported to the shared installation output.
+
+clangd uses its own pinned standalone archive and digest. Linux and macOS archives are ZIP files, so the installer uses the shared bounded ZIP reader rather than `tar`; only stored and deflated entries are accepted, the release folder is stripped, and the executable is marked runnable on POSIX. The installed layout is checked before the version directory replaces any previous copy. Full packages can instead ship `tools/clangd/`; see [toolchains](TOOLCHAINS.md#clangd).
 
 Arduino-ESP32 is installed by Arduino CLI with an explicit `esp32:esp32@<version>` target and the official Espressif package index. The CLI validates the package downloads; the app verifies the reported installed core version before recording the installation.
 

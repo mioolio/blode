@@ -135,6 +135,18 @@
 .log-line.success pre {
   color: var(--green);
 }
+.log-file-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.log-file-link:hover {
+  text-decoration: underline;
+}
 .console-empty {
   display: flex;
   flex-direction: column;

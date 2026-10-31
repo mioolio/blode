@@ -15,7 +15,7 @@ manifest.languages
   + 用户 AI 补全、显式工程规则
 ```
 
-声明 `languages` 后，宿主全局 C/Arduino 默认包不参与该模块的补全与默认规则。未声明该字段的旧模块继续使用原有机制。模块之间可以使用相同函数名，各自的数据不共享也不写回主程序。
+声明 `languages` 后，宿主全局 C/Arduino 默认包不参与该模块的补全与默认规则；内置补全包已移除，C/C++ 补全由 clangd 或宿主索引提供。模块目录仍可声明自定义补全条目与声明式规则。未声明该字段的旧模块继续使用原有机制。模块之间可以使用相同函数名，各自的数据不共享也不写回主程序。
 
 ## 目录规范
 
@@ -26,14 +26,11 @@ languages/
     c11/catalog.json
     c17/catalog.json
     c23/catalog.json
-  C++/
-    c-basics.json
-    arduino.json
 ```
 
-这是当前 ESP32 标准模块的布局。STM32 同样独立提供各版 C 目录，但 C++ 不加载 Arduino 数据。每个 C 目录包含自己的完整版本数据，不混入其他标准。项目使用 `be.build.cStandard` 选择标准；C23 对应的编译器命令行名称由工具链适配处理。
+这是当前 ESP32 与 STM32 标准模块的布局。每个 C 目录只保留自己的声明规则（可附带模块自定义补全条目），不混入其他标准，也不再包含内置标准库或 Arduino 补全数据。项目使用 `be.build.cStandard` 选择标准；C23 对应的编译器命令行名称由工具链适配处理。
 
-较大的目录可按 `a.json` 至 `z.json`、`snippets.json`、`rules.json` 拆分。每个文件独立遵循相同 schema，清单列出所有需要的路径；宿主不自动扫描未声明文件。文件名只是组织方式，不改变补全优先级。
+较大的模块仍可按多个 JSON 文件拆分规则或自定义条目。每个文件独立遵循相同 schema，清单列出所有需要的路径；宿主不自动扫描未声明文件。文件名只是组织方式，不改变补全优先级。
 
 ## 声明多语言
 
@@ -60,7 +57,7 @@ languages/
       "id": "cpp",
       "editorLanguage": "cpp",
       "extensions": [".cpp", ".cc", ".cxx", ".h", ".hpp", ".ino"],
-      "catalogs": ["languages/C++/arduino.json"]
+      "catalogs": []
     }
   ]
 }
@@ -78,7 +75,7 @@ languages/
 
 文件路径限定在 `languages/` 下，使用 `/`，不允许绝对路径、`..` 或逃出包目录的链接。语言列表最多 32 项，每项最多 32 个后缀，每份清单数组最多 64 个文件。
 
-`id: c` 与 `editorLanguage: cpp` 分别表达源语言和编辑器服务，不表示将 C 工程按 C++ 编译。实际编译语言与编译器仍由工程、构建后端和文件类型决定。对 C++ 使用 C 基础函数时，应单独提供经过筛选的 C++ 数据，不直接叠加任意 C 标准的语义规则。
+`id: c` 与 `editorLanguage: cpp` 分别表达源语言和编辑器服务，不表示将 C 工程按 C++ 编译。实际编译语言与编译器仍由工程、构建后端和文件类型决定。模块自定义的 C++ 条目应直接声明在模块 `languages/` 中，不再叠加宿主内置的 C++ 补全数据。
 
 ## 固定单语言
 
@@ -93,7 +90,7 @@ languages/
       "id": "cpp",
       "editorLanguage": "cpp",
       "extensions": [".ino", ".cpp", ".h"],
-      "catalogs": ["languages/C++/arduino.json"]
+      "catalogs": []
     }
   ]
 }

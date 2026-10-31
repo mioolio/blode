@@ -70,7 +70,8 @@ async function fixture(t: TestContext, sourceId: 'STM32F103C8T6' | 'Esp32_S3_CAM
     const languages = await manager.languages(id, standard);
     assert.equal(languages?.moduleId, id);
     assert.deepEqual(languages?.diagnostics, []);
-    assert.ok(languages!.entries[0].contributions.some((entry) => entry.symbols?.length));
+    // Catalogs keep declaration rules; built-in completion entries were removed.
+    assert.ok(languages!.entries[0].contributions.every((entry) => !entry.symbols?.length));
   }
   assert.equal(discovered.plugins[0].trust, 'required');
   await manager.trust({

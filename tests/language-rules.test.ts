@@ -8,32 +8,31 @@ import {
   type LanguageRuleFile,
 } from '../extensions/completions/rules';
 import { parseProjectBuild } from '../src/core/config';
-import { arduinoCompletions } from '../extensions/completions/arduino';
-import { cBasics } from '../extensions/completions/c-basics';
+import { listLanguageCompletions } from '../extensions/completions';
 
 const custom = (file: string, body: unknown): LanguageRuleFile => ({
   path: `languages/C/c17/${file}.json`,
   content: JSON.stringify({ schemaVersion: 1, language: 'c', standard: 'c17', ...(body as object) }, null, 2),
 });
 
-test('C language standards load isolated valid syntax and library packs', () => {
+test('C language standards keep isolated declaration rules without built-in completion packs', () => {
   for (const standard of C_STANDARDS) {
     const pack = resolveCCompletionPack([], standard);
     assert.deepEqual(pack.diagnostics, [], standard);
-    assert.ok(pack.contribution.symbols?.some((entry) => entry.name === 'printf'));
-    assert.ok(pack.contribution.symbols?.some((entry) => entry.name === 'uint32_t'));
-    assert.ok(pack.contribution.snippets?.some((entry) => entry.name === 'ifelse'));
+    assert.deepEqual(pack.contribution.symbols, []);
+    assert.deepEqual(pack.contribution.snippets, []);
+    assert.ok(
+      pack.rules.some((rule) => rule.id === 'removed-gets'),
+      standard,
+    );
   }
-  const symbols = (standard: (typeof C_STANDARDS)[number]) =>
-    new Set(resolveCCompletionPack([], standard).contribution.symbols?.map((entry) => entry.name));
-  assert.equal(symbols('c99').has('_Atomic'), false);
-  assert.equal(symbols('c11').has('_Atomic'), true);
-  assert.equal(symbols('c17').has('nullptr'), false);
-  assert.equal(symbols('c23').has('nullptr'), true);
-  assert.equal(symbols('c99').has('gets'), true);
-  assert.equal(symbols('c11').has('gets'), false);
-  assert.equal(symbols('c17').has('strdup'), false);
-  assert.equal(symbols('c23').has('strdup'), true);
+  const rules = (standard: (typeof C_STANDARDS)[number]) =>
+    new Set(resolveCCompletionPack([], standard).rules.map((rule) => rule.id));
+  assert.equal(rules('c99').has('c11-syntax'), true);
+  assert.equal(rules('c11').has('c11-syntax'), false);
+  assert.equal(rules('c17').has('c23-syntax'), true);
+  assert.equal(rules('c23').has('c23-syntax'), false);
+  assert.deepEqual(listLanguageCompletions(), []);
 });
 
 test('selected project JSON overrides its builtin and other standard directories stay isolated', () => {
@@ -145,8 +144,7 @@ test('build C standard is explicit and rejects unknown dialects while legacy Ard
   assert.equal(parseProjectBuild({ cStandard: 'c99', entry: 'main.c' }).cStandard, 'c99');
   assert.throws(() => parseProjectBuild({ cStandard: 'c21' }), /error.invalidProjectDescriptor/);
   assert.equal(parseProjectBuild({}).cStandard, undefined);
-  assert.ok(arduinoCompletions.members?.some((entry) => entry.owner === 'Serial'));
-  assert.ok(cBasics.snippets?.some((entry) => entry.name === 'switch'));
+  assert.deepEqual(listLanguageCompletions(), []);
   assert.deepEqual(validateProjectLanguageRules([], 'c17'), []);
 });
 

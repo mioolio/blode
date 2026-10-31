@@ -41,7 +41,10 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
     setBuildEntry,
   } = studio;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [collapsedRoot, setCollapsedRoot] = useState('');
+  const [rootCollapsed, setRootCollapsed] = useState(false);
+  const [loadedRoot, setLoadedRoot] = useState('');
+  const savedState = useRef('');
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const [creating, setCreating] = useState<{
     parent: string;
     value: string;
@@ -64,7 +67,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
   );
   const rootName = rootPath.replaceAll('\\', '/').split('/').filter(Boolean).at(-1) ?? '';
   const nodes = useMemo(() => buildFileTree(state?.inventory?.entries ?? []), [state?.inventory?.entries]);
-  const rootOpen = collapsedRoot !== rootPath;
+  const rootOpen = !rootCollapsed;
   const buildEntry = (state?.build?.entry ?? state?.build?.sketch ?? '')
     .replaceAll('\\', '/')
     .replace(/^\.\//, '')
@@ -76,6 +79,87 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
       <Play size={11} strokeWidth={1.8} aria-hidden="true" />
     </span>
   );
+
+  const knownDirectories = useMemo(() => {
+    const inventory = state?.inventory;
+    if (!inventory || inventory.truncated || !inventory.entries.length) return undefined;
+    return new Set(
+      inventory.entries
+        .filter((entry) => entry.kind === 'directory')
+        .map((entry) => entry.path.replaceAll('\\', '/')),
+    );
+  }, [state?.inventory]);
+
+  // `.blode/explorer.json` travels with the project; missing or corrupt state
+  // simply opens the tree with everything expanded.
+  useEffect(() => {
+    let cancelled = false;
+    setLoadedRoot('');
+    setCollapsed(new Set());
+    setRootCollapsed(false);
+    if (!rootPath) {
+      savedState.current = '';
+      return;
+    }
+    const api = typeof window === 'undefined' ? undefined : window.blode;
+    const fallback = () => {
+      setCollapsed(new Set());
+      setRootCollapsed(false);
+      savedState.current = JSON.stringify({ version: 1, collapsed: [], rootCollapsed: false });
+      setLoadedRoot(rootPath);
+    };
+    if (typeof api?.explorerState !== 'function') {
+      fallback();
+      return;
+    }
+    void api
+      .explorerState()
+      .then((saved) => {
+        if (cancelled) return;
+        const next = new Set(saved.collapsed);
+        setCollapsed(next);
+        setRootCollapsed(saved.rootCollapsed);
+        savedState.current = JSON.stringify({
+          version: 1,
+          collapsed: [...next].sort(),
+          rootCollapsed: saved.rootCollapsed,
+        });
+        setLoadedRoot(rootPath);
+      })
+      .catch(() => {
+        if (!cancelled) fallback();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rootPath]);
+
+  useEffect(() => {
+    if (loadedRoot !== rootPath || !knownDirectories) return;
+    setCollapsed((current) => {
+      const next = new Set([...current].filter((pathValue) => knownDirectories.has(pathValue)));
+      return next.size === current.size ? current : next;
+    });
+  }, [knownDirectories, loadedRoot, rootPath]);
+
+  useEffect(() => {
+    if (loadedRoot !== rootPath || !rootPath || typeof window === 'undefined') return;
+    const api = window.blode;
+    if (typeof api?.explorerStateSave !== 'function') return;
+    const nextState = {
+      version: 1 as const,
+      collapsed: [...collapsed].sort(),
+      rootCollapsed,
+    };
+    const serialized = JSON.stringify(nextState);
+    if (serialized === savedState.current) return;
+    savedState.current = serialized;
+    saveQueue.current = saveQueue.current
+      .then(() => api.explorerStateSave({ expectedProjectRoot: rootPath, state: nextState }))
+      .catch(() => {
+        if (savedState.current === serialized) savedState.current = '';
+      });
+  }, [collapsed, rootCollapsed, loadedRoot, rootPath]);
 
   const toggle = (path: string) =>
     setCollapsed((current) => {
@@ -123,13 +207,12 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
     const normalized = parent.replaceAll('\\', '/').replace(/\/+$/, '');
     setRenaming(null);
     setCreating({ parent: normalized ? `${normalized}/` : '', value: '', kind });
-    setCollapsedRoot('');
+    setRootCollapsed(false);
     if (!normalized) return;
     const parts = normalized.split('/').filter(Boolean);
     setCollapsed((current) => {
       const next = new Set(current);
-      for (let index = 0; index < parts.length; index++)
-        next.delete(`${rootPath}:${parts.slice(0, index + 1).join('/')}`);
+      for (let index = 0; index < parts.length; index++) next.delete(parts.slice(0, index + 1).join('/'));
       return next;
     });
   };
@@ -152,7 +235,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
         setSelected({ path: relative, kind: 'directory' });
         setCollapsed((current) => {
           const updated = new Set(current);
-          updated.delete(`${rootPath}:${relative}`);
+          updated.delete(relative);
           return updated;
         });
       } else if (next?.files.some((file) => file.path === relative)) openFile(relative);
@@ -325,7 +408,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
   const renderNodes = (items: FileTreeNode[], depth: number) =>
     items.map((node) => {
       const isDirectory = node.kind === 'directory';
-      const open = !collapsed.has(`${rootPath}:${node.path}`);
+      const open = !collapsed.has(node.path);
       const active = !isDirectory && activePath === node.path && view === 'code';
       const isBuildEntry = node.path === buildEntry;
       return (
@@ -346,7 +429,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
               onClick={() => {
                 if (isDirectory) {
                   setSelected({ path: node.path, kind: 'directory' });
-                  toggle(`${rootPath}:${node.path}`);
+                  toggle(node.path);
                 } else selectFile(node);
               }}
               onDoubleClick={() => {
@@ -450,7 +533,7 @@ export function ProjectExplorer({ studio }: { studio: Studio }) {
           title={`${rootPath}${buildEntry === '.' ? ` · ${t('project.buildEntry')}` : ''}`}
           onClick={() => {
             setSelected(null);
-            setCollapsedRoot(rootOpen ? rootPath : '');
+            setRootCollapsed(rootOpen);
           }}
           onContextMenu={(event) => openContextMenu(event, null)}
           aria-expanded={rootOpen}
