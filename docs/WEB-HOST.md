@@ -44,7 +44,7 @@ npm run web:start
 ## Command options
 
 ```sh
-Blode.Studio-0.3.4.5-web-win-x64.exe --host 127.0.0.1 --port 47821 --project "D:\firmware\my-device" --data-root "D:\blode-data"
+Blode.Studio-0.3.5.2-web-win-x64.exe --host 127.0.0.1 --port 47821 --project "D:\firmware\my-device" --data-root "D:\blode-data"
 ```
 
 The source runner accepts the same options with `npm run web:start --`.
@@ -62,7 +62,7 @@ The source runner accepts the same options with `npm run web:start --`.
 To allow a trusted LAN:
 
 ```sh
-Blode.Studio-0.3.4.5-web-win-x64.exe --host 0.0.0.0 --port 47821
+Blode.Studio-0.3.5.2-web-win-x64.exe --host 0.0.0.0 --port 47821
 ```
 
 Use the LAN address printed in the launch link. All browser API requests require the generated token, including connections from the host itself. Access uses an IP address or localhost; custom Host domains are rejected. The default HTTP service is intended for local or trusted LAN use. Public deployment, TLS termination and a configurable reverse-proxy domain allowlist require additional implementation and validation.
@@ -93,6 +93,7 @@ The local authenticated automation pipe is available to external AI integrations
 
 ```sh
 npm run package:web
+npm run package:web:node
 ```
 
 The command builds the renderer and host, then embeds both plus the SerialPort/node-pty runtime into one executable under `release/<releaseVersion>/` and writes a matching `.sha256`. The build needs Windows x64, Node.js 24 and the installed `npm ci` dependencies (the single-executable injection uses `postject`). It does not package the current working project. An existing executable is never overwritten; choose a new destination if necessary:
@@ -102,6 +103,16 @@ npm run package:web -- --output "release/Blode-Web-review.exe"
 ```
 
 `--skip-build` packages an already-built `dist/`. The executable embeds the Node runtime that ran the packaging command, so release builds must use the official Windows x64 `node.exe`; other platforms need their own runtime and are rejected with a clear error.
+
+`npm run package:web:node` creates `Blode.Studio-<version>-web-node-win-x64.zip`. This edition requires Node.js 24 or newer for Windows x64 on the host and omits the embedded Node executable. It includes the compiled host, renderer, device modules, archive tools, and pruned native dependency tree; no `npm install` step is required. Extract the whole archive and double-click `start-web.cmd`, or run:
+
+```sh
+node launch-web.cjs
+node launch-web.cjs --no-open --host 0.0.0.0 --port 47821
+node launch-web.cjs --version
+```
+
+The launcher resolves resources relative to its extracted folder and accepts the host's project, port and data-root options. Keep the directory structure intact when copying this edition.
 
 The payload is a single deflated archive: the browser build, the host bundle, the built-in extension examples and the pruned native runtime (Windows x64 prebuilds only). It is not a source archive and contains no `package.json` install step. After extraction the payload is verified by content hash before the host starts; a damaged or partial extraction is reported as `error.webBundleRead`, `error.webBundleWrite` or `error.webBundleInstall`, and the temporary directory is never reused as a finished runtime.
 

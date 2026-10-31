@@ -1,8 +1,8 @@
 {
   "name": "blode-studio",
   "productName": "Blode Studio",
-  "version": "0.3.4-5",
-  "releaseVersion": "0.3.4.5",
+  "version": "0.3.5-2",
+  "releaseVersion": "0.3.5.2",
   "author": "mioolio",
   "description": "Modular microcontroller development studio",
   "private": true,
@@ -29,6 +29,7 @@
     "web:build": "node scripts/build-web.mjs",
     "web:start": "node dist/web-server.cjs",
     "package:web": "tsx scripts/package-web.ts",
+    "package:web:node": "tsx scripts/package-web-node.ts",
     "package:runtime": "tsx scripts/package-runtime.ts"
   },
   "dependencies": {

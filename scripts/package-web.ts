@@ -140,10 +140,11 @@ function zipName(file: string): string {
   return relative;
 }
 
-async function* payload(
+export async function* webReleasePayload(
   distDirectory: string,
   releaseVersion: string,
   packageVersion: string,
+  format: 'exe' | 'node-zip' = 'exe',
 ): AsyncGenerator<ZipEntry> {
   yield {
     path: 'release.json',
@@ -152,7 +153,7 @@ async function* payload(
         {
           product: 'Blode Studio',
           edition: 'web',
-          format: 'exe',
+          format,
           releaseVersion,
           packageVersion,
           platform: 'win32',
@@ -232,7 +233,10 @@ export async function packageWebRelease(options: { output?: string; skipBuild?: 
       throw new Error('Build the Web host before packaging.');
 
     const bundle = path.join(staging, 'bundle.zip');
-    const bundleSize = await writeZip(bundle, payload(distDirectory, releaseVersion, sourcePackage.version));
+    const bundleSize = await writeZip(
+      bundle,
+      webReleasePayload(distDirectory, releaseVersion, sourcePackage.version),
+    );
     process.stdout.write(`Runtime payload: ${(bundleSize / 1048576).toFixed(2)} MiB compressed.\n`);
 
     const bootstrap = path.join(staging, 'web-bootstrap.cjs');

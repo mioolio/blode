@@ -26,12 +26,13 @@ Vite 依赖扫描入口固定为 `index.html`，文件监听忽略 `.tools/`、`
 
 Web 宿主不导入 Electron，与桌面版共用工程、协作、Git、工具版本、串口和硬件调试服务。源码运行要求 Node.js 24 或以上版本；打包的 Web EXE 自带运行时，目标电脑无需安装 Node.js。打开工程与文件时选择服务所在电脑上的路径。
 
-| 命令                  | 用途                                                                                                     |
-| --------------------- | -------------------------------------------------------------------------------------------------------- |
-| `npm run web:dev`     | 用 tsx 启动 TypeScript Web 宿主；前端需先构建，UI 修改后重新构建                                         |
-| `npm run web:build`   | 构建独立 Node 服务与 renderer，并检查宿主 bundle 不含 Electron 导入                                      |
-| `npm run web:start`   | 运行 `dist/web-server.cjs`，默认仅监听 `127.0.0.1:47821`                                                 |
-| `npm run package:web` | 构建单文件 Web EXE（Node SEA）；内嵌宿主、前端与 SerialPort／node-pty 运行时，首次启动解压到宿主数据目录 |
+| 命令                       | 用途                                                                                                     |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `npm run web:dev`          | 用 tsx 启动 TypeScript Web 宿主；前端需先构建，UI 修改后重新构建                                         |
+| `npm run web:build`        | 构建独立 Node 服务与 renderer，并检查宿主 bundle 不含 Electron 导入                                      |
+| `npm run web:start`        | 运行 `dist/web-server.cjs`，默认仅监听 `127.0.0.1:47821`                                                 |
+| `npm run package:web`      | 构建单文件 Web EXE（Node SEA）；内嵌宿主、前端与 SerialPort／node-pty 运行时，首次启动解压到宿主数据目录 |
+| `npm run package:web:node` | 构建 Web Node.js ZIP；目标电脑需 Node.js 24+ x64，解压后运行，已包含原生依赖                             |
 
 例如 `npm run web:start -- --host 0.0.0.0 --port 47821 --project "D:\\firmware\\my-device" --data-root ".tools/web-data"`。启动后打开终端一次性输出的私密链接；本机回环 API 同样需要令牌。Web 的默认数据目录独立于桌面开发版，可使用 `--data-root` 覆盖；不把该目录、令牌或用户工程写入发行包。`package:web -- --skip-build --output "release/review.exe"` 可重新打包刚刚构建的 `dist/`，已有 EXE 不会被覆盖。
 
