@@ -2,6 +2,13 @@
 
 简体中文 · [繁體中文](docs/README.zh-TW.md) · [English](docs/README.en.md) · [日本語](docs/README.ja.md) · [한국어](docs/README.ko.md) · [Deutsch](docs/README.de.md) · [Français](docs/README.fr.md) · [Español](docs/README.es.md) · [Português](docs/README.pt-BR.md) · [Italiano](docs/README.it.md) · [Русский](docs/README.ru.md) · [العربية](docs/README.ar.md) · [हिन्दी](docs/README.hi.md)
 
+> [!IMPORTANT]
+> **声明**
+>
+> - 针对不同单片机，如需支持，请向作者提交 [Issues](https://github.com/mioolio/blode/issues) 反馈；也可自行完成适配并贡献代码。
+> - 目前仅完成了 **两个** 单片机的可用性适配，其余单片机的适配程度未知。
+> - 本项目采用 **模块化插件** 方式编写。
+
 面向嵌入式开发的模块化工作台，集成代码编辑、编译烧录、串口通信、硬件调试、Git 和多人协作。可作为 Windows 桌面应用使用，也可在目标电脑运行独立 Node.js 服务，通过浏览器访问工程与硬件。
 
 **永久免费 · Free forever。** Blode Studio 官方现有功能及后续更新均免费提供，源码采用 Apache License 2.0。
