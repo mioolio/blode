@@ -6,6 +6,6 @@
 | `ui.menus`      | 在扩展菜单添加外观入口；浅色样式示范覆盖文件菜单的图案 |
 | `ui.windows`    | 打开独立外观窗口，Web 端使用新标签页                   |
 | `ui.panels`     | 在底部面板显示样式预览                                 |
-| `settings`      | 保存选中的样式                                         |
+| `settings`      | 保存选中的样式和桌面磨砂开关                           |
 
 此示例没有 `native` 权限。ESM 文件运行于隔离页面，通过 `window.blodeExtension` 读写本扩展设置和打开已声明视图。

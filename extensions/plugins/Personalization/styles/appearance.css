@@ -28,6 +28,83 @@ header p {
 header {
   margin-bottom: 26px;
 }
+.desktop-glass {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #d9e0ea;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.desktop-glass-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.desktop-glass-copy strong {
+  font-size: 13px;
+}
+.desktop-glass-copy small {
+  color: #718096;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.desktop-glass-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 24px;
+}
+.desktop-glass-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.desktop-glass-switch i {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.15s;
+}
+.desktop-glass-switch i::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px #0f172a33;
+  transition: transform 0.15s;
+}
+.desktop-glass-switch input:checked + i {
+  background: #347fea;
+}
+.desktop-glass-switch input:checked + i::after {
+  transform: translateX(18px);
+}
+.desktop-glass-switch input:focus-visible + i {
+  outline: 2px solid #347fea59;
+  outline-offset: 2px;
+}
+.desktop-glass-switch input:disabled {
+  cursor: default;
+}
+.desktop-glass-switch input:disabled + i {
+  opacity: 0.55;
+}
 .presets {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

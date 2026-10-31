@@ -15,6 +15,8 @@ export interface ExtensionAppearance {
   background?: string;
   blur?: number;
   translucent?: boolean;
+  /** Let the native desktop material show through the workbench chrome. */
+  desktopGlass?: boolean;
   menuOverrides?: Record<string, { label?: string; icon?: string }>;
 }
 export interface GeneralExtensionManifest {
@@ -37,6 +39,8 @@ export interface GeneralExtensionManifest {
     appearance?: ExtensionAppearance;
     presets?: { id: string; label: string; appearance: ExtensionAppearance }[];
     presetSetting?: string;
+    /** Boolean setting that toggles `appearance.desktopGlass` at runtime. */
+    desktopGlassSetting?: string;
   };
 }
 export interface GeneralExtensionInfo {

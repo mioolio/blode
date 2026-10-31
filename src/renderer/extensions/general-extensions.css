@@ -336,13 +336,68 @@
 .extension-wallpaper .studio {
   background: transparent;
 }
-.extension-glass .studio-header {
+/* Native windows carry the material; these rules only decide what shows it. */
+.extension-desktop-glass {
+  --extension-glass-panel: color-mix(in srgb, var(--surface-1) 74%, transparent);
+  --extension-glass-chrome: color-mix(in srgb, var(--surface-1) 58%, transparent);
+  --extension-glass-strong: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  --extension-glass-editor: color-mix(in srgb, var(--editor-bg) 72%, transparent);
+  --extension-glass-titlebar: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--titlebar-a) 62%, transparent),
+    color-mix(in srgb, var(--titlebar-b) 54%, transparent)
+  );
+  --extension-glass-statusbar: color-mix(in srgb, var(--bg-deep) 62%, transparent);
+}
+html.extension-desktop-glass,
+.extension-desktop-glass body,
+.extension-desktop-glass .studio,
+.extension-desktop-glass .workspace {
+  background: transparent;
+}
+.extension-desktop-glass.extension-wallpaper body {
+  background-image: none;
+}
+/* Blur adds a stacking context; raise it so topbar popups stay above editor content. */
+.extension-desktop-glass .topbar {
+  position: relative;
+  z-index: 75;
+  background: var(--extension-glass-titlebar);
   backdrop-filter: blur(var(--extension-blur, 16px));
 }
-.extension-glass .project-panel,
-.extension-glass .editor-panel,
-.extension-glass .console-panel {
-  background: var(--surface-1);
+.extension-desktop-glass .statusbar {
+  background: var(--extension-glass-statusbar);
+  backdrop-filter: blur(var(--extension-blur, 16px));
+}
+.extension-desktop-glass .project-panel,
+.extension-desktop-glass .editor-region,
+.extension-desktop-glass .console-panel {
+  background: var(--extension-glass-panel);
+}
+.extension-desktop-glass .editor-tabs,
+.extension-desktop-glass .editor-footer,
+.extension-desktop-glass .split-pane-header,
+.extension-desktop-glass .console-header {
+  background: var(--extension-glass-chrome);
+}
+.extension-desktop-glass .breadcrumbs,
+.extension-desktop-glass .editor-pane,
+.extension-desktop-glass .monaco-container {
+  background: transparent;
+}
+.extension-desktop-glass .editor-tab.active {
+  background: var(--extension-glass-strong);
+}
+.extension-desktop-glass .editor-empty,
+.extension-desktop-glass .welcome-view,
+.extension-desktop-glass .editor-source-preview,
+.extension-desktop-glass .editor-source-preview > span {
+  background: var(--extension-glass-editor);
+}
+.extension-desktop-glass .monaco-editor,
+.extension-desktop-glass .monaco-editor .monaco-editor-background,
+.extension-desktop-glass .monaco-editor .margin {
+  background-color: var(--extension-glass-editor) !important;
 }
 @media (max-width: 700px) {
   .extension-backdrop {

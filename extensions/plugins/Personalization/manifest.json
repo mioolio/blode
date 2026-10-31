@@ -3,7 +3,7 @@
   "kind": "extension",
   "id": "Personalization",
   "name": "Personalization",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "vendor": "Blode Studio",
   "description": "工作台外观与菜单个性化。",
   "documentation": "docs/README.md",
@@ -34,6 +34,12 @@
             "label": "preset.apple"
           }
         ]
+      },
+      {
+        "id": "desktopGlass",
+        "label": "settings.desktopGlass",
+        "type": "boolean",
+        "default": false
       }
     ]
   },
@@ -64,6 +70,7 @@
       }
     ],
     "presetSetting": "preset",
+    "desktopGlassSetting": "desktopGlass",
     "presets": [
       {
         "id": "default",

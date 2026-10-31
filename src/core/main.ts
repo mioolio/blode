@@ -63,6 +63,7 @@ import { protectSharedWorkspace } from './shared-workspace';
 import { RELEASE_VERSION } from '../shared/version';
 import { renderRuntimeView, RUNTIME_VIEW_CSP } from '../shared/runtime-view';
 import { workspaceAssetRequestSchema } from './workspace-assets';
+import { nativeWindowMaterial } from './window-material';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'blode-runtime-ui', privileges: { standard: true, secure: true } },
@@ -131,6 +132,9 @@ if (!app.isPackaged && process.env.BLODE_DEV_USER_DATA) {
 // Follow the operating system theme; the renderer reads the same preference via CSS.
 nativeTheme.themeSource = 'system';
 const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#0b0e14' : '#eef1f6');
+// Desktop appearance extensions reveal this material through transparent CSS.
+// Windows 11 22H2+ renders it natively; elsewhere the opaque color remains.
+const windowMaterial = nativeWindowMaterial();
 const windowActionArgs = z.tuple([z.enum(['minimize', 'maximize', 'close'])]);
 function controlWindow(target: BrowserWindow | null, action: 'minimize' | 'maximize' | 'close') {
   if (!target || target.isDestroyed()) return;
@@ -263,7 +267,9 @@ async function bootstrap(): Promise<void> {
     minWidth: 1100,
     minHeight: 720,
     frame: false,
-    backgroundColor: windowBackground(),
+    // Electron makes the contents transparent when a material is set and no
+    // explicit background color is provided.
+    ...(windowMaterial ? { backgroundMaterial: windowMaterial } : { backgroundColor: windowBackground() }),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -371,7 +377,9 @@ async function bootstrap(): Promise<void> {
     () => closing || terminalFocus.has(window!.webContents.id) || !!desktopLifecycle?.state().pendingClose,
   );
   window.on('closed', disposeDebugControls);
-  const syncWindowBackground = () => window?.setBackgroundColor(windowBackground());
+  const syncWindowBackground = () => {
+    if (!windowMaterial) window?.setBackgroundColor(windowBackground());
+  };
   nativeTheme.on('updated', syncWindowBackground);
   window.on('closed', () => nativeTheme.off('updated', syncWindowBackground));
   window.webContents.setWindowOpenHandler(allowReleaseLink);

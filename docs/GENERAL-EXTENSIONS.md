@@ -36,7 +36,7 @@
 
 | 权限            | 能力                                               |
 | --------------- | -------------------------------------------------- |
-| `ui.appearance` | 贡献应用主题变量、背景和透明效果                   |
+| `ui.appearance` | 贡献应用主题变量、背景、透明效果和桌面磨砂开关     |
 | `ui.menus`      | 添加扩展菜单入口，覆盖指定顶层菜单的显示名称／图案 |
 | `ui.windows`    | 声明独立窗口或 Web 标签页                          |
 | `ui.panels`     | 声明底部面板标签                                   |
@@ -85,7 +85,7 @@ await window.blodeExtension.openView('preview');
 
 ## 外观和菜单贡献
 
-`ui.appearance` 可声明基础样式；`ui.presets` 提供若干可选样式，`ui.presetSetting` 指向选择样式的设置字段。所选样式覆盖基础样式。
+`ui.appearance` 可声明基础样式；`ui.presets` 提供若干可选样式，`ui.presetSetting` 指向选择样式的设置字段。所选样式覆盖基础样式。`ui.desktopGlassSetting` 可指向一个布尔设置，让用户在运行时开关桌面磨砂。
 
 ```json
 {
@@ -95,11 +95,15 @@ await window.blodeExtension.openView('preview');
       "background": "assets/wallpaper.png",
       "blur": 16,
       "translucent": true,
+      "desktopGlass": false,
       "menuOverrides": { "file": { "label": "menu.file", "icon": "⌘" } }
-    }
+    },
+    "desktopGlassSetting": "desktopGlass"
   }
 }
 ```
+
+`desktopGlass` 让工作台外壳、面板和编辑器透出桌面；同时存在背景图片时，桌面磨砂优先显示真实桌面。宿主仅在 Windows 11 22H2 及以上创建 Acrylic 窗口，旧版 Windows、macOS、Linux 和 Web 端仍保持不透明窗口，但不会报错。
 
 菜单 ID 和原操作保持稳定，只覆盖显示名称与图案。显示名可引用扩展自己的语言键；不提供对应翻译时按普通文字显示。扩展菜单项的 `labelKey` 同样使用本扩展语言资源。
 

@@ -39,6 +39,7 @@ export const appearanceSchema = z
     background: extensionRelative.optional(),
     blur: z.number().min(0).max(32).optional(),
     translucent: z.boolean().optional(),
+    desktopGlass: z.boolean().optional(),
     menuOverrides: z
       .record(menuId, z.object({ label: label.optional(), icon: icon.optional() }).strict())
       .optional(),
@@ -112,6 +113,7 @@ export const generalExtensionManifestSchema = z
           .max(16)
           .optional(),
         presetSetting: extensionId.optional(),
+        desktopGlassSetting: extensionId.optional(),
       })
       .strict(),
   })
@@ -123,7 +125,10 @@ export const generalExtensionManifestSchema = z
     if (new Set(manifest.permissions).size !== manifest.permissions.length) error('Duplicate permission');
     if (manifest.runtime && (!has('native') || !/\.(?:mjs|js)$/.test(manifest.runtime)))
       error('Native runtime requires permission');
-    if ((manifest.ui.appearance || manifest.ui.presets?.length) && !has('ui.appearance'))
+    if (
+      (manifest.ui.appearance || manifest.ui.presets?.length || manifest.ui.desktopGlassSetting) &&
+      !has('ui.appearance')
+    )
       error('Appearance permission required');
     if (
       (manifest.ui.menus?.length ||
@@ -148,6 +153,13 @@ export const generalExtensionManifestSchema = z
       )
     )
       error('Preset setting missing');
+    if (
+      manifest.ui.desktopGlassSetting &&
+      !manifest.settings?.fields.some(
+        (field) => field.id === manifest.ui.desktopGlassSetting && field.type === 'boolean',
+      )
+    )
+      error('Desktop glass setting missing');
     const fields = manifest.settings?.fields ?? [];
     if (new Set(fields.map((field) => field.id)).size !== fields.length) error('Duplicate setting');
     for (const item of fields) if (item.type === 'select' && !item.options?.length) error('Missing choices');

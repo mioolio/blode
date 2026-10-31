@@ -78,6 +78,28 @@ test('general extension permission declarations are independent of board/compile
     }).success,
     false,
   );
+  assert.equal(
+    generalExtensionManifestSchema.safeParse({
+      ...pack.manifest,
+      ui: { ...pack.manifest.ui, appearance: { desktopGlass: true } },
+    }).success,
+    true,
+  );
+  assert.equal(
+    generalExtensionManifestSchema.safeParse({
+      ...pack.manifest,
+      ui: { ...pack.manifest.ui, appearance: { desktopGlass: true } },
+      permissions: pack.manifest.permissions.filter((permission) => permission !== 'ui.appearance'),
+    }).success,
+    false,
+  );
+  assert.equal(
+    generalExtensionManifestSchema.safeParse({
+      ...pack.manifest,
+      ui: { ...pack.manifest.ui, desktopGlassSetting: 'preset' },
+    }).success,
+    false,
+  );
 });
 
 test('review/install copy a self-contained package without enabling it, and reject source changes', async (t) => {
@@ -205,6 +227,12 @@ test('isolated views inline package resources and approved settings drive appear
   const state = await f.manager.configure({ id: 'Personalization', values: { preset: 'glass' } });
   assert.match(state.plugins[0].appearance?.backgroundData ?? '', /^data:image\/svg\+xml;base64,/);
   assert.equal(state.plugins[0].appearance?.translucent, true);
+  assert.equal(state.plugins[0].appearance?.desktopGlass, false);
+  const frosted = await f.manager.configure({
+    id: 'Personalization',
+    values: { desktopGlass: true },
+  });
+  assert.equal(frosted.plugins[0].appearance?.desktopGlass, true);
   await assert.rejects(
     f.manager.configure({ id: 'Personalization', values: { preset: 'unknown' } }),
     /extensionSettings/,
@@ -267,8 +295,12 @@ test('shell theme variables and classes are restored after disabling or uninstal
     confirm: true,
     permanent: false,
   });
-  const plugin = (await f.manager.configure({ id: 'Personalization', values: { preset: 'glass' } }))
-    .plugins[0];
+  const plugin = (
+    await f.manager.configure({
+      id: 'Personalization',
+      values: { preset: 'glass', desktopGlass: true },
+    })
+  ).plugins[0];
   const values = new Map([['--bg', '#original']]),
     classes = new Set<string>();
   const root = {
@@ -287,6 +319,7 @@ test('shell theme variables and classes are restored after disabling or uninstal
   assert.notEqual(values.get('--bg'), '#original');
   assert.ok(classes.has('extension-glass'));
   assert.ok(classes.has('extension-wallpaper'));
+  assert.ok(classes.has('extension-desktop-glass'));
   restore();
   assert.equal(values.get('--bg'), '#original');
   assert.equal(values.has('--surface-1'), false);

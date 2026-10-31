@@ -319,6 +319,8 @@ export class GeneralExtensions {
       variables: { ...manifest.ui.appearance?.variables, ...preset?.appearance.variables },
       menuOverrides: { ...manifest.ui.appearance?.menuOverrides, ...preset?.appearance.menuOverrides },
     };
+    if (manifest.ui.desktopGlassSetting && typeof values[manifest.ui.desktopGlassSetting] === 'boolean')
+      appearance.desktopGlass = values[manifest.ui.desktopGlassSetting] as boolean;
     const background = appearance.background && record.package.files.get(appearance.background),
       type = appearance.background && mime(appearance.background);
     return {

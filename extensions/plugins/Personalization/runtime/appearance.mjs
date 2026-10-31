@@ -4,6 +4,11 @@ const t = (key) => context.locales[context.locale]?.[key] ?? context.locales.en?
 const display = () => {
   for (const element of document.querySelectorAll('[data-label]'))
     element.textContent = t(element.dataset.label);
+  const toggle = document.getElementById('desktop-glass');
+  if (toggle) {
+    toggle.checked = context.settings.desktopGlass === true;
+    toggle.disabled = false;
+  }
   const container = document.getElementById('presets');
   container.replaceChildren();
   for (const preset of context.manifest.ui.presets) {
@@ -37,6 +42,20 @@ const display = () => {
 export async function start() {
   context = await window.blodeExtension.context();
   display();
+  const toggle = document.getElementById('desktop-glass');
+  if (toggle)
+    toggle.addEventListener('change', async () => {
+      toggle.disabled = true;
+      try {
+        context = await window.blodeExtension.configure({ desktopGlass: toggle.checked });
+        display();
+        document.getElementById('status').textContent = t('applied');
+      } catch (error) {
+        toggle.checked = context.settings.desktopGlass === true;
+        toggle.disabled = false;
+        document.getElementById('status').textContent = error.message;
+      }
+    });
   document.getElementById('preview').addEventListener('click', async () => {
     try {
       await window.blodeExtension.openView(document.querySelector('.compact') ? 'appearance' : 'preview');

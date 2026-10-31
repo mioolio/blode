@@ -144,16 +144,21 @@ export function applyShellAppearance(
     root.style.setProperty(key, value);
   };
   const classes = new Map(
-    ['extension-glass', 'extension-wallpaper'].map((name) => [name, root.classList.contains(name)]),
+    ['extension-glass', 'extension-wallpaper', 'extension-desktop-glass'].map((name) => [
+      name,
+      root.classList.contains(name),
+    ]),
   );
   let glass = false,
-    wallpaper = false;
+    wallpaper = false,
+    desktopGlass = false;
   for (const plugin of plugins.filter((plugin) => plugin.enabled)) {
     const appearance = plugin.appearance;
     if (!appearance) continue;
     for (const [key, value] of Object.entries(appearance.variables ?? {})) assign(key, value);
     if (appearance.blur !== undefined) assign('--extension-blur', `${appearance.blur}px`);
     glass = appearance.translucent ?? glass;
+    desktopGlass = appearance.desktopGlass ?? desktopGlass;
     if (
       appearance.backgroundData &&
       /^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(appearance.backgroundData)
@@ -164,6 +169,10 @@ export function applyShellAppearance(
   }
   root.classList.toggle('extension-glass', glass);
   root.classList.toggle('extension-wallpaper', wallpaper);
+  root.classList.toggle(
+    'extension-desktop-glass',
+    desktopGlass && !(typeof window !== 'undefined' && window.__blodeWeb),
+  );
   return () => {
     for (const [key, value] of before)
       value.value ? root.style.setProperty(key, value.value, value.priority) : root.style.removeProperty(key);
