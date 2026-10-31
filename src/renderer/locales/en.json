@@ -1049,7 +1049,7 @@
   "buildSettings.versionOptional": "Leave empty to use the version at this path",
   "buildSettings.directory": "Compiler directory",
   "buildSettings.packageDirectory": "ESP32 core package directory",
-  "buildSettings.mode": "Build mode (all platforms)",
+  "buildSettings.mode": "Build configuration",
   "buildSettings.debug": "Debug",
   "buildSettings.release": "Production · Release",
   "buildSettings.optimizeSize": "Optimize firmware size",
@@ -1348,7 +1348,7 @@
   "menu.generate": "Generate",
   "menu.debug": "Debug",
   "buildTargets.target": "Build target",
-  "buildTargets.workspaceDefaults": "Workspace defaults",
+  "buildTargets.workspaceDefaults": "Current project",
   "buildTargets.add": "Add target",
   "buildTargets.remove": "Remove target",
   "buildTargets.default": "Default target",
@@ -1482,5 +1482,9 @@
   "status.exportArchiveName": "Archive name",
   "status.exportElapsed": "Export duration",
   "status.archiveEngine": "Compression engine",
-  "status.archivePrimaryFailed": "7-Zip failed"
+  "status.archivePrimaryFailed": "7-Zip failed",
+  "buildSettings.defaultCompiler": "Compiler",
+  "buildSettings.useDefaultCompiler": "Use default compiler",
+  "buildSettings.languageOverrides": "Configure by language",
+  "buildSettings.advancedCompiler": "Advanced compiler options"
 }

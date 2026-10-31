@@ -30,12 +30,13 @@
   scrollbar-gutter: stable;
 }
 .build-settings-body {
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   border-block: 1px solid var(--border);
   margin-block: 18px;
+  overflow: hidden;
 }
 .build-target-selector {
   display: flex;
@@ -87,15 +88,6 @@
     min-width: 120px;
   }
 }
-.build-settings-nav {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  padding: 18px 14px 18px 0;
-  border-right: 1px solid var(--border);
-  overflow: auto;
-}
 .build-plugin-compiler {
   margin-top: 16px;
   padding: 12px;
@@ -125,30 +117,55 @@
   gap: 8px;
   margin-top: 12px;
 }
-.build-settings-nav button {
-  text-align: left;
-  border: 0;
-  background: transparent;
-  padding: 12px;
-  border-radius: 7px;
-}
-.build-settings-nav button.active {
-  color: var(--accent);
-  background: var(--surface-2);
-}
 .build-settings-detail {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
   contain: paint;
-  padding: 22px;
+  padding: 4px 4px 4px 0;
+  scrollbar-gutter: stable;
 }
 .build-settings-group {
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  padding: 20px 4px;
+  border: 0;
+  border-radius: 0;
 }
 .build-settings-group + .build-settings-group {
-  margin-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.build-group-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.build-platform-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.build-language-options,
+.build-backend-options {
+  margin-top: 18px;
+}
+.build-language-options > summary,
+.build-backend-options > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+.build-language-options > summary:focus-visible,
+.build-backend-options > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.build-language-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding-top: 8px;
 }
 .build-group-head h4 {
   margin: 0;
@@ -217,11 +234,9 @@
   margin: 0;
 }
 .build-compiler-row {
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-2);
-  margin-bottom: 12px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
 }
 .build-compiler-row select,
 .build-compiler-row input,
@@ -251,20 +266,12 @@
   grid-column: 1 / -1;
 }
 @media (max-width: 680px) {
-  .build-settings-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .build-settings-nav {
-    flex-direction: row;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-    padding: 8px;
-  }
   .build-settings-detail {
-    padding: 14px;
+    padding-right: 4px;
   }
   .build-mode-fields,
-  .build-custom-tool {
+  .build-custom-tool,
+  .build-language-fields {
     grid-template-columns: 1fr;
   }
 }

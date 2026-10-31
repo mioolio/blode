@@ -51,8 +51,12 @@ test('compiler settings render without a connected board and default to release 
   assert.match(html, /<option value="release" selected="">/);
   assert.match(html, /type="checkbox" checked=""/);
   assert.match(html, /<option value="inherit" selected="">buildSettings.followProject/);
-  assert.match(html, />STM32F103C8T6<\/button>/);
-  assert.match(html, />Esp32_S3_CAM<\/button>/);
+  assert.doesNotMatch(
+    html,
+    /build-settings-nav|components\.title|buildSettings\.common<\/|buildSettings\.group\.backend/,
+  );
+  assert.match(html, /buildSettings.defaultCompiler/);
+  assert.doesNotMatch(html, />STM32F103C8T6<\/button>|>Esp32_S3_CAM<\/button>/);
   assert.match(html, /role="combobox"/);
   assert.doesNotMatch(html, /buildSettings.installHint/);
   assert.doesNotMatch(html, /role="alert"/);
@@ -136,7 +140,7 @@ test('third-party compiler selection remains explicit and its override permissio
   });
   studio.state!.files[0].content = JSON.stringify({ ...config, build });
   const html = render(studio);
-  assert.match(html, />USB Third Party<\/button>/);
+  assert.match(html, /class="build-platform-label">USB Third Party<\/span>/);
   assert.match(html, /<option value="plugin:USB_ThirdParty" selected="">/);
   assert.match(html, /tools\/compiler\.mjs/);
   assert.match(html, /type="checkbox"\/>buildSettings.forceCompiler/);
@@ -201,4 +205,50 @@ test('compiler settings do not render an installed device catalog with thousands
   const html = render(studio);
   assert.ok(html.length < 30000);
   assert.doesNotMatch(html, /Unrelated device/);
+});
+
+test('the current platform and default compiler share one form without module navigation or an empty backend section', () => {
+  for (const id of ['STM32F103C8T6', 'Esp32_S3_CAM']) {
+    const studio = studioFor();
+    const config = getBoardAdapter(id).createConfig();
+    studio.config = config;
+    studio.state!.config = config;
+    studio.state!.files[0].content = JSON.stringify({ ...config, build: {} });
+    const html = render(studio);
+    assert.match(html, /class="build-platform-label"/);
+    assert.match(html, /buildSettings\.defaultCompiler/);
+    assert.match(html, /class="build-language-options"><summary>buildSettings.languageOverrides/);
+    assert.doesNotMatch(
+      html,
+      /build-settings-nav|components\.title|buildSettings\.common<\/|build-backend-options|buildSettings.forceCompiler/,
+    );
+    assert.equal((html.match(/class="build-settings-detail"/g) ?? []).length, 1);
+  }
+});
+
+test('existing per-platform compiler and language selections are visible in the combined form', () => {
+  const studio = studioFor();
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
+  studio.config = config;
+  studio.state!.config = config;
+  studio.state!.files[0].content = JSON.stringify({
+    ...config,
+    build: {
+      settings: {
+        common: { family: 'gnu-arm', directory: '/global-gcc', version: '13.3' },
+        platforms: {
+          STM32F103C8T6: {
+            common: { family: 'armclang', directory: '/arm-6', version: '6.22' },
+            c: { family: 'gnu-arm', directory: '/c-gcc', version: '14.2' },
+          },
+        },
+      },
+    },
+  });
+  const html = render(studio);
+  assert.match(html, /value="\/arm-6"/);
+  assert.match(html, /value="6\.22"/);
+  assert.match(html, /value="\/c-gcc"/);
+  assert.match(html, /class="build-language-options" open=""/);
+  assert.doesNotMatch(html, /value="\/global-gcc"/);
 });

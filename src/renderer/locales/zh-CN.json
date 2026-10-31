@@ -1049,9 +1049,9 @@
   "buildSettings.versionOptional": "留空使用指定路径的版本",
   "buildSettings.directory": "编译器目录",
   "buildSettings.packageDirectory": "ESP32 核心包目录",
-  "buildSettings.mode": "构建模式（适用于所有平台）",
+  "buildSettings.mode": "构建模式",
   "buildSettings.debug": "调试 · Debug",
-  "buildSettings.release": "生产发布 · Release",
+  "buildSettings.release": "发布 · Release",
   "buildSettings.optimizeSize": "优化固件体积",
   "buildSettings.compiler": "编译工具",
   "buildSettings.detecting": "正在读取本机工具…",
@@ -1348,7 +1348,7 @@
   "menu.generate": "生成",
   "menu.debug": "调试",
   "buildTargets.target": "编译入口",
-  "buildTargets.workspaceDefaults": "工作区默认配置",
+  "buildTargets.workspaceDefaults": "当前工程",
   "buildTargets.add": "新增入口",
   "buildTargets.remove": "删除入口",
   "buildTargets.default": "默认入口",
@@ -1482,5 +1482,9 @@
   "status.exportArchiveName": "归档名称",
   "status.exportElapsed": "导出耗时",
   "status.archiveEngine": "压缩引擎",
-  "status.archivePrimaryFailed": "7-Zip 执行失败"
+  "status.archivePrimaryFailed": "7-Zip 执行失败",
+  "buildSettings.defaultCompiler": "编译器",
+  "buildSettings.useDefaultCompiler": "使用默认编译器",
+  "buildSettings.languageOverrides": "按语言配置",
+  "buildSettings.advancedCompiler": "高级编译选项"
 }

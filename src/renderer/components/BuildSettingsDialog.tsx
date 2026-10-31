@@ -1,5 +1,5 @@
 import { ModernSelect } from './ModernSelect';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
 import type { BuildTarget, ProjectConfig } from '../../shared/contracts';
 import type { BuildSettings, CompilerChoice } from '../../shared/build-settings';
@@ -7,10 +7,32 @@ import type { InstalledBuildTool } from '../../shared/tool-versions';
 import type { Studio } from '../workspace/useStudio';
 import { readProjectSettings, writeProjectSettings } from '../workspace/projectSettings';
 import { flushCollaboration } from '../workspace/collaborationFlush';
+import {
+  buildCompilerChoice,
+  updateBuildCompilerChoice,
+  type BuildCompilerLanguage,
+} from './buildSettingsModel';
 import './build-settings.css';
 
-type Scope = string;
-type Language = 'common' | 'c' | 'cpp';
+function CompilerOptions({
+  initialOpen = false,
+  label,
+  className,
+  children,
+}: {
+  initialOpen?: boolean;
+  label: string;
+  className: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(initialOpen);
+  return (
+    <details className={className} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>{label}</summary>
+      {children}
+    </details>
+  );
+}
 
 export default function BuildSettingsDialog({ studio, onClose }: { studio: Studio; onClose: () => void }) {
   const { t, busy } = studio;
@@ -65,14 +87,13 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
     ]);
     setSelectedTarget(id);
   };
-  const [scope, setScope] = useState<Scope>('common');
   const [baseForceCompiler, setBaseForceCompiler] = useState(
     session?.draft.config.runtime?.forceCompiler ?? false,
   );
   const [baseCompilerRuntime, setBaseCompilerRuntime] = useState(
     session?.draft.config.runtime?.compilerRuntime ?? '',
   );
-  let childConfig: Partial<ProjectConfig> | undefined;
+  let childConfig: (Partial<ProjectConfig> & { build?: BuildTarget['build'] }) | undefined;
   if (target && target.root !== '.') {
     const marker = `${target.root}/be`;
     const text = studio.drafts[marker] ?? studio.state?.files.find((file) => file.path === marker)?.content;
@@ -107,25 +128,27 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
     ['Esp32_S3_CAM', 'STM32F103C8T6'].includes(board.id),
   );
   const platformId = target?.config?.boardId ?? childConfig?.boardId ?? session?.draft.config.boardId;
+  const scope = platformId && platformId !== 'auto' ? platformId : undefined;
+  const effectiveMode =
+    settings.mode ??
+    (target ? (childConfig?.build?.settings?.mode ?? baseSettings.mode) : undefined) ??
+    'release';
+  const optimizeForSize =
+    settings.optimizeForSize ??
+    (target ? (childConfig?.build?.settings?.optimizeForSize ?? baseSettings.optimizeForSize) : undefined) ??
+    true;
   const relevantIds = new Set([
     platformId,
     compilerRuntime,
-    ...Object.keys(settings.platforms ?? {}),
     settings.common?.pluginId,
-    ...Object.values(settings.platforms ?? {}).flatMap((value) => [
-      value?.common?.pluginId,
-      value?.c?.pluginId,
-      value?.cpp?.pluginId,
-    ]),
+    ...Object.values(scope ? (settings.platforms?.[scope] ?? {}) : {}).map((value) => value?.pluginId),
   ]);
   if (platformId === 'auto') {
     relevantIds.add('Esp32_S3_CAM');
     relevantIds.add('STM32F103C8T6');
   }
-  const projectRuntime = studio.state?.boards.find(
-    (board) =>
-      board.id === (target?.config?.boardId ?? childConfig?.boardId ?? session?.draft.config.boardId),
-  )?.runtimePlugin;
+  const projectBoard = studio.state?.boards.find((board) => board.id === platformId);
+  const projectRuntime = projectBoard?.runtimePlugin;
   const compilerPlugins = (studio.state?.boards ?? [])
     .filter((board) => relevantIds.has(board.id))
     .flatMap((board) =>
@@ -134,12 +157,13 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
         ? [board.runtimePlugin]
         : [],
     );
-  const scopes = [
-    'common',
-    ...(studio.state?.boards ?? [])
-      .filter((board) => board.id !== 'auto' && relevantIds.has(board.id))
-      .map((board) => board.id),
-  ];
+  const showBackendOptions =
+    forceCompiler ||
+    !!compilerRuntime ||
+    projectRuntime?.compiler.mode === 'plugin' ||
+    (['common', 'c', 'cpp'] as const).some(
+      (language) => buildCompilerChoice(settings, scope, language)?.family === 'plugin',
+    );
   const [tools, setTools] = useState<InstalledBuildTool[]>([]);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState('');
@@ -165,18 +189,9 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [busy, onClose]);
-  const choiceFor = (language: Language) =>
-    scope === 'common' ? settings.common : settings.platforms?.[scope]?.[language];
-  const updateChoice = (language: Language, choice: CompilerChoice) => {
-    setSettings((value) =>
-      scope === 'common'
-        ? { ...value, common: choice }
-        : {
-            ...value,
-            platforms: { ...value.platforms, [scope]: { ...value.platforms?.[scope], [language]: choice } },
-          },
-    );
-  };
+  const choiceFor = (language: BuildCompilerLanguage) => buildCompilerChoice(settings, scope, language);
+  const updateChoice = (language: BuildCompilerLanguage, choice: CompilerChoice) =>
+    setSettings((value) => updateBuildCompilerChoice(value, scope, language, choice));
   const save = () =>
     void studio.perform('action.save', async () => {
       if (!session) throw new Error('error.invalidProjectDescriptor');
@@ -223,12 +238,15 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
       studio.notify(t('toast.saved'));
       onClose();
     });
-  const renderChoice = (language: Language) => {
+  const renderChoice = (language: BuildCompilerLanguage) => {
     const choice = choiceFor(language) ?? { family: 'inherit' as const };
     const base =
-      studio.state?.boards.find((board) => board.id === scope)?.runtimePlugin?.compiler.baseRuntime ?? scope;
+      forceCompiler && compilerRuntime
+        ? (studio.state?.boards.find((board) => board.id === compilerRuntime)?.runtimePlugin?.compiler
+            .baseRuntime ?? compilerRuntime)
+        : (projectRuntime?.compiler.baseRuntime ?? scope);
     const available = tools.filter(
-      (tool) => scope === 'common' || tool.platforms.includes(base as (typeof tool.platforms)[number]),
+      (tool) => !scope || tool.platforms.includes(base as (typeof tool.platforms)[number]),
     );
     const matching = available.find(
       (tool) =>
@@ -253,7 +271,7 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
     return (
       <section className="build-compiler-row" key={language}>
         <label>
-          {t(`buildSettings.${language}`)}
+          {t(language === 'common' ? 'buildSettings.defaultCompiler' : `buildSettings.${language}`)}
           <ModernSelect
             value={selected}
             onChange={(event) => {
@@ -275,13 +293,7 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
             }}
           >
             <option value="inherit">
-              {t(
-                scope === 'common'
-                  ? 'buildSettings.followProject'
-                  : language === 'common'
-                    ? 'buildSettings.followCommon'
-                    : 'buildSettings.followPlatform',
-              )}
+              {t(language === 'common' ? 'buildSettings.followProject' : 'buildSettings.useDefaultCompiler')}
             </option>
             <option value="auto">{t('buildSettings.auto')}</option>
             <optgroup label={t('buildSettings.installed')}>
@@ -550,26 +562,6 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
               </fieldset>
             )}
             <div className="build-settings-body">
-              <aside className="build-settings-nav" aria-label={t('buildSettings.scope')}>
-                <button
-                  className="text-button"
-                  onClick={() => window.dispatchEvent(new CustomEvent('blode:component-libraries'))}
-                >
-                  {t('components.title')}
-                </button>
-                {scopes.map((value) => (
-                  <button
-                    key={value}
-                    className={scope === value ? 'active' : ''}
-                    aria-pressed={scope === value}
-                    onClick={() => setScope(value)}
-                  >
-                    {value === 'common'
-                      ? t('buildSettings.common')
-                      : (studio.state?.boards.find((board) => board.id === value)?.name ?? value)}
-                  </button>
-                ))}
-              </aside>
               <div className="build-settings-detail">
                 <section className="build-settings-group">
                   <div className="build-group-head">
@@ -598,8 +590,8 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
                     <label className="build-size-option">
                       <input
                         type="checkbox"
-                        checked={settings.mode !== 'debug' && (settings.optimizeForSize ?? true)}
-                        disabled={settings.mode === 'debug'}
+                        checked={effectiveMode !== 'debug' && optimizeForSize}
+                        disabled={effectiveMode === 'debug'}
                         onChange={(event) =>
                           setSettings({ ...settings, optimizeForSize: event.target.checked })
                         }
@@ -608,60 +600,11 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
                     </label>
                   </fieldset>
                 </section>
-                {(projectRuntime || compilerPlugins.length > 0 || forceCompiler) && (
-                  <section className="build-settings-group">
-                    <div className="build-group-head">
-                      <h4>{t('buildSettings.group.backend')}</h4>
-                    </div>
-                    <div className="build-plugin-compiler">
-                      {projectRuntime?.compiler.defaultTool && (
-                        <p>
-                          <strong>{t('buildSettings.runtimeCompiler')}</strong>
-                          <code>
-                            {projectRuntime.compiler.defaultTool.id}
-                            {projectRuntime.compiler.defaultTool.version
-                              ? ` ${projectRuntime.compiler.defaultTool.version}`
-                              : ''}
-                          </code>
-                        </p>
-                      )}
-                      <label className="build-size-option">
-                        <input
-                          type="checkbox"
-                          checked={forceCompiler}
-                          disabled={!!busy}
-                          onChange={(event) => setForceCompiler(event.target.checked)}
-                        />
-                        {t('buildSettings.forceCompiler')}
-                      </label>
-                      {forceCompiler && (
-                        <label className="build-force-backend">
-                          {t('buildSettings.forceBackend')}
-                          <ModernSelect
-                            value={compilerRuntime}
-                            disabled={!!busy}
-                            onChange={(event) => setCompilerRuntime(event.target.value)}
-                          >
-                            <option value="">{t('buildSettings.followRuntime')}</option>
-                            {forceBackends.map((board) => (
-                              <option key={board.id} value={board.id}>
-                                {board.name}
-                              </option>
-                            ))}
-                            {compilerRuntime &&
-                              !forceBackends.some((board) => board.id === compilerRuntime) && (
-                                <option value={compilerRuntime}>{compilerRuntime}</option>
-                              )}
-                          </ModernSelect>
-                        </label>
-                      )}
-                    </div>
-                  </section>
-                )}
                 <section className="build-settings-group">
                   <div className="build-tool-heading">
                     <div className="build-group-head">
-                      <h4>{t('buildSettings.group.languages')}</h4>
+                      <h4>{t('buildSettings.compiler')}</h4>
+                      {projectBoard && <span className="build-platform-label">{projectBoard.name}</span>}
                     </div>
                     <button
                       className="text-button"
@@ -675,13 +618,77 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
                   {pending && <p role="status">{t('buildSettings.detecting')}</p>}
                   <fieldset disabled={!!busy || pending} className="build-compiler-fields">
                     {renderChoice('common')}
-                    {scope !== 'common' && (
-                      <>
-                        {renderChoice('c')}
-                        {renderChoice('cpp')}
-                      </>
+                    {scope && (
+                      <CompilerOptions
+                        className="build-language-options"
+                        label={t('buildSettings.languageOverrides')}
+                        key={`${selectedTarget}-${scope}`}
+                        initialOpen={
+                          !!(['c', 'cpp'] as const).find((language) => {
+                            const choice = choiceFor(language);
+                            return choice && choice.family !== 'inherit';
+                          })
+                        }
+                      >
+                        <div className="build-language-fields">
+                          {renderChoice('c')}
+                          {renderChoice('cpp')}
+                        </div>
+                      </CompilerOptions>
                     )}
                   </fieldset>
+                  {showBackendOptions && (
+                    <CompilerOptions
+                      className="build-backend-options"
+                      key={`backend-${selectedTarget}-${scope}`}
+                      label={t('buildSettings.advancedCompiler')}
+                      initialOpen={forceCompiler}
+                    >
+                      <div className="build-plugin-compiler">
+                        {projectRuntime?.compiler.defaultTool && (
+                          <p>
+                            <strong>{t('buildSettings.runtimeCompiler')}</strong>
+                            <code>
+                              {projectRuntime.compiler.defaultTool.id}
+                              {projectRuntime.compiler.defaultTool.version
+                                ? ` ${projectRuntime.compiler.defaultTool.version}`
+                                : ''}
+                            </code>
+                          </p>
+                        )}
+                        <label className="build-size-option">
+                          <input
+                            type="checkbox"
+                            checked={forceCompiler}
+                            disabled={!!busy}
+                            onChange={(event) => setForceCompiler(event.target.checked)}
+                          />
+                          {t('buildSettings.forceCompiler')}
+                        </label>
+                        {forceCompiler && (
+                          <label className="build-force-backend">
+                            {t('buildSettings.forceBackend')}
+                            <ModernSelect
+                              value={compilerRuntime}
+                              disabled={!!busy}
+                              onChange={(event) => setCompilerRuntime(event.target.value)}
+                            >
+                              <option value="">{t('buildSettings.followRuntime')}</option>
+                              {forceBackends.map((board) => (
+                                <option key={board.id} value={board.id}>
+                                  {board.name}
+                                </option>
+                              ))}
+                              {compilerRuntime &&
+                                !forceBackends.some((board) => board.id === compilerRuntime) && (
+                                  <option value={compilerRuntime}>{compilerRuntime}</option>
+                                )}
+                            </ModernSelect>
+                          </label>
+                        )}
+                      </div>
+                    </CompilerOptions>
+                  )}
                   {notice && <p role="status">{notice}</p>}
                 </section>
               </div>
