@@ -442,3 +442,138 @@
     gap: 12px;
   }
 }
+.device-module-library {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+.device-module-library .component-toolbar {
+  flex-wrap: wrap;
+}
+.device-module-library .component-filter {
+  min-width: 180px;
+}
+.device-module-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.device-modules-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.device-module-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 80px auto;
+  gap: 13px;
+  padding: 14px 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.device-module-row > svg,
+.device-module-origin {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.device-module-info {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.device-module-info strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.device-module-info > span,
+.device-module-info > small {
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.device-module-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.device-module-actions button {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.device-module-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.device-module-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.device-module-pagination button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.device-module-review-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-1);
+  display: grid;
+  place-items: center;
+  z-index: 10;
+}
+.device-module-review {
+  width: min(480px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+}
+.device-module-review h3 {
+  margin: 0 0 16px;
+  font-size: 15px;
+}
+.device-module-review p {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+}
+.component-tabs {
+  overflow-x: auto;
+}
+.component-tabs button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+@media (max-width: 680px) {
+  .device-module-row {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+  .device-module-origin {
+    grid-column: 2;
+  }
+  .device-module-actions {
+    grid-column: 2;
+  }
+}
+.device-module-review-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 24%);
+  z-index: 10000;
+}

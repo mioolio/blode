@@ -83,11 +83,13 @@ test('custom Arduino settings expose CLI and package-store paths while keeping c
   assert.doesNotMatch(html, /value="[^\"]*arduino-data/);
 });
 
-test('invalid project descriptors show an error and disable save instead of opening a writable form', () => {
+test('invalid project descriptors show an error without opening a writable form', () => {
   const html = render(studioFor({}, '{ broken'));
   assert.match(html, /role="alert">error.invalidProjectDescriptor/);
-  assert.match(html, /<button class="primary" disabled="">action.save<\/button>/);
+  assert.doesNotMatch(html, /action\.save/);
+  assert.match(html, /action\.close/);
   assert.doesNotMatch(html, /class="build-settings-body"/);
+  assert.doesNotMatch(html, /build-device-packages/);
 });
 
 test('third-party compiler selection remains explicit and its override permission is restored from the project', () => {
@@ -144,6 +146,18 @@ test('third-party compiler selection remains explicit and its override permissio
   assert.match(render(studio), /type="checkbox" checked=""\/>buildSettings.forceCompiler/);
 });
 
+test('build settings stay separate from device modules when no project is open', () => {
+  const studio = studioFor();
+  studio.state!.workspaceOpen = false;
+  studio.state!.projectRoot = '';
+  studio.state!.files = [];
+  const html = renderToStaticMarkup(createElement(BuildSettingsDialog, { studio, onClose() {} }));
+  assert.match(html, /buildSettings.noProjectHint/);
+  assert.doesNotMatch(html, /build-device-packages|STM32F103C8T6|ESP32-S3-CAM/);
+  assert.doesNotMatch(html, /error.invalidProjectDescriptor/);
+  assert.doesNotMatch(html, />action.save</);
+});
+
 test('closed launcher and tool preferences server-render without requiring a desktop bridge', () => {
   const studio = studioFor();
   assert.equal(renderToStaticMarkup(createElement(BuildSettingsLauncher, { studio })), '');
@@ -177,4 +191,14 @@ test('forced build backend restores a selected or unavailable runtime without di
   config.runtime.forceCompiler = false;
   studio.state!.files[0].content = JSON.stringify({ ...config, build: {} });
   assert.doesNotMatch(render(studio), /buildSettings.forceBackend/);
+});
+
+test('compiler settings do not render an installed device catalog with thousands of unrelated platforms', () => {
+  const studio = studioFor();
+  const board = studio.state!.boards.find((board) => board.id === 'STM32F103C8T6')!;
+  for (let index = 0; index < 5000; index++)
+    studio.state!.boards.push({ ...board, id: 'Unrelated_' + index, name: 'Unrelated device ' + index });
+  const html = render(studio);
+  assert.ok(html.length < 30000);
+  assert.doesNotMatch(html, /Unrelated device/);
 });

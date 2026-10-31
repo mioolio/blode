@@ -14,6 +14,16 @@ export const hostParameterSchemas = {
   ...languageParameterSchemas,
   ...modelServiceParameterSchemas,
   ...deliveryParameterSchemas,
+  'devices.packages': empty,
+  'devices.review': z.object({ path: z.string().min(1).max(4096) }).strict(),
+  'devices.install': z
+    .object({
+      ticket: z.string().uuid(),
+      fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+      confirm: z.literal(true),
+    })
+    .strict(),
+  'devices.export': z.object({ id: z.string().min(1).max(80), confirm: z.literal(true) }).strict(),
   'components.state': empty,
   'components.search': z.object({ query: z.string().trim().min(1).max(200) }).strict(),
   'components.install': z

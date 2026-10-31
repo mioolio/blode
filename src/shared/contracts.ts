@@ -255,9 +255,21 @@ export interface ReopenProjectResult {
   recent?: RecentProject;
 }
 export interface InstallationProgress {
-  operation?: 'download' | 'install';
+  operation?: 'download' | 'install' | 'export';
   tool: string;
-  phase: 'starting' | 'downloading' | 'verifying' | 'extracting' | 'installing' | 'completed' | 'failed';
+  phase:
+    | 'starting'
+    | 'collecting'
+    | 'packing'
+    | 'downloading'
+    | 'verifying'
+    | 'extracting'
+    | 'installing'
+    | 'completed'
+    | 'failed';
+  percent?: number;
+  processedFiles?: number;
+  totalFiles?: number;
   receivedBytes?: number;
   totalBytes?: number;
 }

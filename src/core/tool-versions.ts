@@ -2,7 +2,13 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { InstallationProgress, ProjectConfig, ProjectBuildInputs } from '../shared/contracts';
-import type { ToolVersionEntry, ToolVersionsApi, ToolVersionsState } from '../shared/tool-versions';
+import {
+  type LocalToolchain,
+  type InstalledBuildTool,
+  type ToolVersionEntry,
+  type ToolVersionsApi,
+  type ToolVersionsState,
+} from '../shared/tool-versions';
 import type { RuntimeHost } from '../../extensions/runtime';
 import { GnuArmToolchain, gnuRelease } from '../../extensions/boards/STM32F103C8T6/tools/gnu';
 import { toolVersionSchemas } from './tool-version-schemas';
@@ -61,6 +67,11 @@ export class ToolVersions implements Pick<
     this.root = path.join(path.resolve(options.root), 'versions');
     this.platform = options.platform ?? process.platform;
     this.arch = options.arch ?? process.arch;
+  }
+  private get tarCommand() {
+    if (this.platform !== 'win32') return 'tar';
+    const systemRoot = this.options.env?.SystemRoot ?? process.env.SystemRoot;
+    return systemRoot ? path.join(systemRoot, 'System32', 'tar.exe') : 'tar';
   }
   private directory(kind: string, version: string) {
     return path.join(this.root, kind, version);
@@ -139,7 +150,10 @@ export class ToolVersions implements Pick<
     });
     {
       const release = clangdRelease(this.platform, this.arch);
-      const directory = this.directory('clangd', CLANGD_VERSION);
+      const versioned = this.directory('clangd', CLANGD_VERSION);
+      const directory = (await this.exists(path.join(versioned, 'bin', clangdExecutable(this.platform))))
+        ? versioned
+        : path.join(this.options.root, 'clangd');
       entries.push({
         id: `clangd:${CLANGD_VERSION}`,
         kind: 'clangd',
@@ -148,9 +162,7 @@ export class ToolVersions implements Pick<
         releaseUrl: release?.releaseUrl ?? 'https://clangd.llvm.org/installation',
         downloadUrl: release?.downloadUrl,
         installable: !!release,
-        installed:
-          (await this.exists(path.join(directory, 'bin', clangdExecutable(this.platform)))) ||
-          (await this.exists(path.join(this.options.root, 'clangd', 'bin', clangdExecutable(this.platform)))),
+        installed: await this.exists(path.join(directory, 'bin', clangdExecutable(this.platform))),
         directory,
       });
     }
@@ -166,8 +178,167 @@ export class ToolVersions implements Pick<
       arch: this.arch,
       entries,
       installedTools,
+      localTools: await this.localTools(entries, installedTools),
       archives: await readToolPackages(this.options.dataRoot),
     };
+  }
+  private async localTools(
+    entries: ToolVersionEntry[],
+    installed: InstalledBuildTool[],
+  ): Promise<LocalToolchain[]> {
+    const identity = (value: string) =>
+      this.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
+    const inside = (value: string, root: string) => {
+      const relative = path.relative(identity(root), identity(value));
+      return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+    };
+    const result: LocalToolchain[] = entries
+      .filter((entry) => entry.installed)
+      .map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        version: entry.version,
+        kind: entry.kind,
+        directory: entry.directory,
+        source: inside(entry.directory!, this.root) ? 'versioned' : 'managed',
+        exportable: true,
+        binaryDirectory: entry.directory && path.join(entry.directory, 'bin'),
+      }));
+    const add = (tool: Omit<LocalToolchain, 'id'>, id?: string) => {
+      if (
+        !tool.directory ||
+        result.some(
+          (entry) =>
+            entry.kind === tool.kind &&
+            entry.directory &&
+            identity(entry.directory) === identity(tool.directory!),
+        )
+      )
+        return;
+      result.push({
+        ...tool,
+        id:
+          id ??
+          `local:${tool.kind}:${createHash('sha256').update(identity(tool.directory)).digest('hex').slice(0, 24)}`,
+      });
+    };
+    for (const tool of installed) {
+      if (tool.family !== 'arduino') {
+        const directory =
+          tool.directory &&
+          (path.basename(tool.directory).toLowerCase() === 'bin'
+            ? path.dirname(tool.directory)
+            : tool.directory);
+        add(
+          {
+            name: tool.name,
+            version: tool.version,
+            kind: tool.family,
+            directory,
+            source: tool.source,
+            exportable: !!directory,
+            binaryDirectory: tool.directory,
+          },
+          tool.id,
+        );
+      } else {
+        if (tool.arduinoCli) {
+          const binaryDirectory = path.dirname(tool.arduinoCli);
+          const directory =
+            path.basename(binaryDirectory).toLowerCase() === 'bin'
+              ? path.dirname(binaryDirectory)
+              : binaryDirectory;
+          const cliVersion = tool.name.match(/Arduino CLI ([\d.]+)/)?.[1] ?? '';
+          add({
+            name: `Arduino CLI ${cliVersion}`.trim(),
+            version: cliVersion,
+            kind: 'arduino-cli',
+            directory,
+            source: tool.source,
+            exportable: true,
+            binaryDirectory,
+          });
+        }
+        add({
+          name: `Arduino-ESP32 ${tool.version}`,
+          version: tool.version,
+          kind: 'arduino-esp32',
+          directory: tool.packageDirectory,
+          source: tool.source,
+          exportable: !!tool.packageDirectory,
+        });
+      }
+    }
+    const config = await this.options.config();
+    const cliFile = config.toolchain.arduinoCli?.trim();
+    const cliCandidates = [
+      path.join(this.options.root, 'bin', this.executable('arduino-cli')),
+      ...(cliFile && path.isAbsolute(cliFile) ? [cliFile] : []),
+    ];
+    for (const file of new Set(cliCandidates)) {
+      const managed = identity(file) === identity(cliCandidates[0]);
+      const binaryDirectory = path.dirname(file);
+      const directory =
+        path.basename(binaryDirectory).toLowerCase() === 'bin'
+          ? path.dirname(binaryDirectory)
+          : binaryDirectory;
+      if (
+        result.some(
+          (entry) =>
+            entry.kind === 'arduino-cli' &&
+            entry.directory &&
+            (identity(entry.directory) === identity(directory) ||
+              identity(path.join(entry.directory, 'bin', this.executable('arduino-cli'))) === identity(file)),
+        )
+      )
+        continue;
+      if (!(await this.exists(file))) continue;
+      const probe = await this.options
+        .runner(file, ['version'], { timeout: 4000, signal: this.options.signal, env: this.options.env })
+        .catch(() => ({ code: -1, output: '' }));
+      const version = probe.code === 0 ? probe.output.match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0] : undefined;
+      if (version)
+        add({
+          name: `Arduino CLI ${version}`,
+          version,
+          kind: 'arduino-cli',
+          directory,
+          source: managed ? 'managed' : 'custom',
+          exportable: true,
+          binaryDirectory,
+        });
+    }
+    const versionRoot = path.join(this.root, 'stlink');
+    const versions = (await fs.readdir(versionRoot, { withFileTypes: true }).catch(() => []))
+      .filter((item) => item.isDirectory() && !item.isSymbolicLink())
+      .slice(0, 64)
+      .map((item) => path.join(versionRoot, item.name, 'bin'));
+    const stlinkBins = [
+      config.toolchain.stlinkDirectory?.trim(),
+      path.join(this.options.root, 'stlink', 'bin'),
+      ...versions,
+    ].filter((value): value is string => !!value && path.isAbsolute(value));
+    for (const stlinkBin of new Set(stlinkBins)) {
+      if (!(await this.exists(path.join(stlinkBin, this.executable('st-info'))))) continue;
+      const probe = await this.options
+        .runner(path.join(stlinkBin, this.executable('st-info')), ['--version'], {
+          timeout: 4000,
+          signal: this.options.signal,
+          env: this.options.env,
+        })
+        .catch(() => ({ code: -1, output: '' }));
+      if (probe.code === 0)
+        add({
+          name: 'ST-Link',
+          version: probe.output.match(/\d+\.\d+(?:\.\d+)?/)?.[0] ?? '',
+          kind: 'stlink',
+          directory: path.basename(stlinkBin).toLowerCase() === 'bin' ? path.dirname(stlinkBin) : stlinkBin,
+          binaryDirectory: stlinkBin,
+          source: config.toolchain.stlinkDirectory ? 'custom' : 'managed',
+          exportable: true,
+        });
+    }
+    return result;
   }
   private async installedTools() {
     return discoverInstalledBuildTools({
@@ -293,7 +464,7 @@ export class ToolVersions implements Pick<
     try {
       const archive = path.join(stage, expected.asset);
       await fs.writeFile(archive, bytes);
-      const listing = await this.options.runner('tar', ['-tf', archive], {
+      const listing = await this.options.runner(this.tarCommand, ['-tf', archive], {
         signal: this.options.signal,
         timeout: 60_000,
       });
@@ -307,7 +478,7 @@ export class ToolVersions implements Pick<
       const bin = path.join(entry.directory!, 'bin');
       await fs.mkdir(bin, { recursive: true });
       this.progress(entry.name, 'extracting');
-      const result = await this.options.runner('tar', ['-xf', archive, '-C', bin], {
+      const result = await this.options.runner(this.tarCommand, ['-xf', archive, '-C', bin], {
         signal: this.options.signal,
         timeout: 120_000,
         onLine: this.options.onLine,

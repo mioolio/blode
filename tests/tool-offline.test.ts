@@ -5,6 +5,9 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { OfflineTools } from '../src/core/tool-offline';
+import { BundledArchiveWriter } from '../src/core/archive-writer';
+import { createDeliveryRoutes } from '../src/core/delivery-routes';
+import { InstallationTracker } from '../src/core/installation';
 import { ToolVersions, arduinoCliAsset } from '../src/core/tool-versions';
 import { getBoardAdapter } from '../extensions/registry';
 import { runCommand } from '../src/core/process';
@@ -57,7 +60,7 @@ async function fixture(t: TestContext) {
     fetcher,
     runner: async (command: string, args: string[], settings: any = {}) => {
       commands++;
-      return command === 'tar'
+      return /^tar(?:\.exe)?$/i.test(path.basename(command))
         ? runCommand(command, args, settings)
         : {
             code: 0,
@@ -317,6 +320,131 @@ test('failed promotion restores an existing partial tool version and leaves no i
   assert.deepEqual(await fs.readdir(path.join(f.tools, 'offline-imports')), []);
 });
 
+test('installed toolchains export as ZIP and install offline on a clean client', async (t) => {
+  if (process.platform !== 'win32' && process.platform !== 'linux') return t.skip();
+  const f = await fixture(t),
+    version = '15.2.1-1.1',
+    bin = path.join(f.tools, 'versions', 'gnu-arm', version, 'bin'),
+    suffix = process.platform === 'win32' ? '.exe' : '';
+  await fs.mkdir(bin, { recursive: true });
+  await fs.writeFile(path.join(bin, 'arm-none-eabi-gcc' + suffix), 'fixture gcc');
+  await fs.writeFile(path.join(bin, 'arm-none-eabi-objcopy' + suffix), 'fixture objcopy');
+  const exporter = new OfflineTools(f.options),
+    result = await exporter.exportInstalled({ id: `gnu-arm:${version}`, confirm: true });
+  assert.equal(result.toolId, `gnu-arm:${version}`);
+  assert.equal(f.network(), 0);
+  const state = await new ToolVersions(f.options).toolVersionsState();
+  assert.ok(state.localTools?.some((item) => item.id === `gnu-arm:${version}` && item.exportable));
+  assert.equal(state.archives?.find((item) => item.id === result.id)?.sha256, result.sha256);
+  const clientTools = path.join(f.root, 'client-tools'),
+    clientData = path.join(f.root, 'client-data');
+  await fs.mkdir(clientTools);
+  await fs.mkdir(clientData);
+  const imported = await new OfflineTools({
+    ...f.options,
+    root: clientTools,
+    dataRoot: clientData,
+    fetcher: async () => {
+      assert.fail('offline import must never fetch');
+    },
+  }).install({ path: exporter.downloadFile(result.id).path, confirm: true });
+  assert.equal(imported.entries.find((item) => item.id === result.toolId)?.installed, true);
+  assert.equal(
+    await fs.readFile(
+      path.join(clientTools, 'versions', 'gnu-arm', version, 'bin', 'arm-none-eabi-gcc' + suffix),
+      'utf8',
+    ),
+    'fixture gcc',
+  );
+});
+
+test('installed Arduino versions export separately and rebase paths during offline import', async (t) => {
+  if (!['win32', 'linux'].includes(process.platform)) return t.skip();
+  const f = await fixture(t);
+  const version = '2.0.17';
+  const cli = path.join(f.tools, 'versions', 'arduino-cli', '1.2.2', 'bin');
+  const esp = path.join(f.tools, 'versions', 'arduino-esp32', version);
+  await fs.mkdir(cli, { recursive: true });
+  await fs.writeFile(
+    path.join(cli, 'arduino-cli' + (process.platform === 'win32' ? '.exe' : '')),
+    'fixture cli',
+  );
+  const platform = path.join(esp, 'arduino-data', 'packages', 'esp32', 'hardware', 'esp32', version);
+  await fs.mkdir(platform, { recursive: true });
+  await fs.writeFile(path.join(platform, 'platform.txt'), 'name=ESP32 fixture');
+  await fs.writeFile(
+    path.join(esp, 'arduino-cli.yaml'),
+    JSON.stringify({ network: { proxy: 'PRIVATE-CREDENTIAL' } }),
+  );
+  await fs.writeFile(path.join(esp, 'installed.json'), JSON.stringify({ version }));
+  await fs.writeFile(path.join(esp, '.env'), 'PRIVATE-CREDENTIAL');
+  const exporter = new OfflineTools(f.options);
+  const state = await new ToolVersions(f.options).toolVersionsState();
+  assert.ok(state.localTools?.some((item) => item.id === 'arduino-esp32:2.0.17'));
+  assert.ok(!state.localTools?.some((item) => item.id === 'arduino-esp32:3.0.7'));
+  const result = await exporter.exportInstalled({ id: 'arduino-esp32:' + version, confirm: true });
+  const bytes = readComponentZip(await fs.readFile(exporter.downloadFile(result.id).path));
+  assert.ok(!bytes.has('files/.env'));
+  assert.ok(!bytes.get('files/arduino-cli.yaml')!.toString().includes('PRIVATE-CREDENTIAL'));
+  const root = path.join(f.root, 'clean-tools'),
+    dataRoot = path.join(f.root, 'clean-data');
+  await fs.mkdir(root);
+  await fs.mkdir(dataRoot);
+  await new OfflineTools({
+    ...f.options,
+    root,
+    dataRoot,
+    fetcher: async () => assert.fail('no network'),
+  }).install({ path: exporter.downloadFile(result.id).path, confirm: true });
+  const imported = JSON.parse(
+    await fs.readFile(path.join(root, 'versions', 'arduino-esp32', version, 'arduino-cli.yaml'), 'utf8'),
+  );
+  assert.equal(
+    imported.directories.data,
+    path.join(root, 'versions', 'arduino-esp32', version, 'arduino-data'),
+  );
+  assert.equal(f.network(), 0);
+});
+
+test('managed GNU is listed and exportable without a matching download catalog version', async (t) => {
+  if (!['win32', 'linux'].includes(process.platform)) return t.skip();
+  const f = await fixture(t);
+  const bin = path.join(f.tools, 'armgcc', 'bin');
+  await fs.mkdir(bin, { recursive: true });
+  const suffix = process.platform === 'win32' ? '.exe' : '';
+  for (const name of ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'])
+    await fs.writeFile(path.join(bin, name + suffix), 'fixture compiler');
+  const options = {
+    ...f.options,
+    env: { PATH: '', Path: '' },
+    runner: async (cmd: string, args: string[], opts: any = {}) =>
+      cmd.includes('arm-none-eabi-gcc')
+        ? { code: 0, output: 'arm-none-eabi-gcc 12.3.1' }
+        : f.options.runner(cmd, args, opts),
+  };
+  const state = await new ToolVersions(options).toolVersionsState();
+  const tool = state.localTools!.find((item) => item.kind === 'gnu-arm')!;
+  assert.equal(tool.version, '12.3.1');
+  assert.equal(tool.exportable, true);
+  const exporter = new OfflineTools(options);
+  const result = await exporter.exportInstalled({ id: tool.id, confirm: true });
+  const root = path.join(f.root, 'imported-tools'),
+    dataRoot = path.join(f.root, 'imported-data');
+  await fs.mkdir(root);
+  await fs.mkdir(dataRoot);
+  await new OfflineTools({ ...options, root, dataRoot }).install({
+    path: exporter.downloadFile(result.id).path,
+    confirm: true,
+  });
+  assert.equal(
+    await fs.readFile(
+      path.join(root, 'versions', 'gnu-arm', '12.3.1', 'bin', 'arm-none-eabi-gcc' + suffix),
+      'utf8',
+    ),
+    'fixture compiler',
+  );
+});
+
 test('symbolic links in a publisher archive are rejected before installation', async (t) => {
   if (!['win32', 'linux'].includes(process.platform)) return t.skip();
   const f = await fixture(t);
@@ -361,4 +489,196 @@ test('symbolic links in a publisher archive are rejected before installation', a
     false,
   );
   assert.equal(await fs.stat(path.join(f.root, 'outside')).catch(() => null), null);
+});
+
+test('custom Arm Compiler and ST-Link export/import with dependencies and exclude unrelated host files', async (t) => {
+  if (!['win32', 'linux'].includes(process.platform)) return t.skip();
+  const f = await fixture(t);
+  const arm = path.join(f.root, 'external-arm', 'bin'),
+    stlink = path.join(f.root, 'external-stlink', 'bin');
+  const suffix = process.platform === 'win32' ? '.exe' : '';
+  for (const directory of [arm, stlink]) await fs.mkdir(directory, { recursive: true });
+  for (const name of ['armclang', 'armlink', 'fromelf'])
+    await fs.writeFile(path.join(arm, name + suffix), 'arm fixture');
+  for (const name of ['st-info', 'st-util', 'st-flash'])
+    await fs.writeFile(path.join(stlink, name + suffix), 'stlink fixture');
+  await fs.writeFile(path.join(arm, 'runtime.dll'), 'required DLL');
+  await fs.writeFile(path.join(stlink, 'libusb.dll'), 'USB DLL');
+  await fs.writeFile(path.join(arm, 'unrelated.txt'), 'do not export');
+  await fs.writeFile(path.join(arm, 'private.key'), 'do not export');
+  await fs.mkdir(path.join(path.dirname(arm), 'lib'), { recursive: true });
+  await fs.writeFile(path.join(path.dirname(arm), 'lib', 'runtime.a'), 'required library');
+  const config = getBoardAdapter('STM32F103C8T6').createConfig();
+  config.toolchain.armCompilerDirectory = arm;
+  config.toolchain.stlinkDirectory = stlink;
+  const options = {
+    ...f.options,
+    archiver: new BundledArchiveWriter({ root: path.resolve('vendor/7zip'), dataRoot: f.data }),
+    config: () => config,
+    env: { PATH: '', Path: '' },
+    runner: async (cmd: string, args: string[], opts: any = {}) =>
+      cmd.includes('armclang')
+        ? { code: 0, output: 'Arm Compiler 6.22' }
+        : cmd.includes('st-info')
+          ? { code: 0, output: 'st-info 1.9.0' }
+          : f.options.runner(cmd, args, opts),
+  };
+  const state = await new ToolVersions(options).toolVersionsState();
+  const root = path.join(f.root, 'client'),
+    dataRoot = path.join(f.root, 'client-data');
+  await fs.mkdir(root);
+  await fs.mkdir(dataRoot);
+  const exporter = new OfflineTools(options),
+    receiver = new OfflineTools({
+      ...options,
+      root,
+      dataRoot,
+      config: () => getBoardAdapter('auto').createConfig(),
+    });
+  for (const kind of ['armclang', 'stlink']) {
+    const tool = state.localTools!.find((tool) => tool.kind === kind)!;
+    assert.equal(tool.exportable, true);
+    const result = await exporter.exportInstalled({ id: tool.id, confirm: true });
+    const files = readComponentZip(await fs.readFile(exporter.downloadFile(result.id).path));
+    assert.ok(!files.has('files/bin/unrelated.txt'));
+    assert.ok(!files.has('files/bin/private.key'));
+    assert.ok(files.has('files/bin/' + (kind === 'armclang' ? 'runtime.dll' : 'libusb.dll')));
+    await receiver.install({ path: exporter.downloadFile(result.id).path, confirm: true });
+    const directory = path.join(root, 'versions', kind, tool.version, 'bin');
+    assert.equal(
+      await fs.readFile(
+        path.join(directory, (kind === 'armclang' ? 'armclang' : 'st-info') + suffix),
+        'utf8',
+      ),
+      kind === 'armclang' ? 'arm fixture' : 'stlink fixture',
+    );
+  }
+  const local = (
+    await new ToolVersions({
+      ...options,
+      root,
+      dataRoot,
+      config: () => getBoardAdapter('auto').createConfig(),
+    }).toolVersionsState()
+  ).localTools!;
+  assert.ok(local.some((tool) => tool.kind === 'armclang' && tool.exportable));
+  assert.ok(local.some((tool) => tool.kind === 'stlink' && tool.exportable));
+});
+
+test('tool export delivery announces export before work starts', async (t) => {
+  const f = await fixture(t),
+    version = '13.3.1-1.1';
+  const bin = path.join(f.tools, 'versions', 'gnu-arm', version, 'bin');
+  await fs.mkdir(bin, { recursive: true });
+  for (const name of ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'])
+    await fs.writeFile(path.join(bin, name + (process.platform === 'win32' ? '.exe' : '')), 'fixture');
+  const events: any[] = [],
+    tracker = new InstallationTracker((event) => events.push(event));
+  const delivery = createDeliveryRoutes({
+    dataRoot: f.data,
+    projectRoot: () => '',
+    toolOptions: f.options,
+    runInstallation: async (tool, action, operation) => {
+      await tracker.run(
+        tool,
+        () => action({ progress: tracker.progress, log() {}, signal: new AbortController().signal }),
+        operation,
+      );
+    },
+  });
+  await delivery.routes.toolVersionExport.run({ id: 'gnu-arm:' + version, confirm: true });
+  assert.equal(events[0].message, 'status.exportStarting');
+  assert.equal(events[0].installation.operation, 'export');
+  assert.ok(!events.some((event) => event.message.startsWith('status.install')));
+});
+
+test('each tool export rescans changed, added and removed files and reports fresh archive details', async (t) => {
+  const f = await fixture(t),
+    version = '13.3.1-1.1';
+  const root = path.join(f.tools, 'versions', 'gnu-arm', version);
+  const bin = path.join(root, 'bin'),
+    include = path.join(root, 'arm-none-eabi', 'include');
+  await fs.mkdir(bin, { recursive: true });
+  await fs.mkdir(include, { recursive: true });
+  for (const name of ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'])
+    await fs.writeFile(path.join(bin, name + (process.platform === 'win32' ? '.exe' : '')), 'fixture');
+  await fs.writeFile(path.join(include, 'config.h'), 'before');
+  await fs.writeFile(path.join(include, 'removed.h'), 'removed');
+  const logs: string[] = [];
+  const delivery = createDeliveryRoutes({
+    dataRoot: f.data,
+    projectRoot: () => '',
+    toolOptions: {
+      ...f.options,
+      archiver: new BundledArchiveWriter({ root: path.resolve('vendor/7zip'), dataRoot: f.data }),
+    },
+    runInstallation: async (tool, action, operation) => {
+      const tracker = new InstallationTracker(() => {});
+      await tracker.run(
+        tool,
+        () =>
+          action({
+            progress: tracker.progress,
+            log: (line) => {
+              logs.push(line);
+            },
+            signal: new AbortController().signal,
+          }),
+        operation,
+      );
+    },
+  });
+  const first = await delivery.routes.toolVersionExport.run({ id: 'gnu-arm:' + version, confirm: true });
+  const firstFile = await delivery.download(first.id);
+  const firstBytes = await fs.readFile(firstFile.path);
+  const old = readComponentZip(firstBytes);
+  assert.equal(old.get('files/arm-none-eabi/include/config.h')?.toString(), 'before');
+  assert.ok(old.has('files/arm-none-eabi/include/removed.h'));
+
+  // Same length and timestamp: a previous manifest must never stand in for fresh hashing.
+  const stamp = await fs.stat(path.join(include, 'config.h'));
+  await fs.writeFile(path.join(include, 'config.h'), 'after!');
+  await fs.utimes(path.join(include, 'config.h'), stamp.atime, stamp.mtime);
+  await fs.unlink(path.join(include, 'removed.h'));
+  await fs.writeFile(path.join(include, 'added.h'), 'new header');
+  logs.length = 0;
+  const second = await delivery.routes.toolVersionExport.run({ id: 'gnu-arm:' + version, confirm: true });
+  const fresh = readComponentZip(await fs.readFile((await delivery.download(second.id)).path));
+  const manifest = JSON.parse(fresh.get('blode-tool-snapshot.json')!.toString());
+  assert.notEqual(second.id, first.id);
+  assert.notEqual(second.sha256, first.sha256);
+  assert.equal(fresh.get('files/arm-none-eabi/include/config.h')?.toString(), 'after!');
+  assert.equal(fresh.get('files/arm-none-eabi/include/added.h')?.toString(), 'new header');
+  assert.ok(!fresh.has('files/arm-none-eabi/include/removed.h'));
+  assert.equal(
+    manifest.files.find((file: { path: string }) => file.path.endsWith('/config.h')).sha256,
+    createHash('sha256').update('after!').digest('hex'),
+  );
+  assert.ok(!manifest.files.some((file: { path: string }) => file.path.endsWith('/removed.h')));
+  assert.deepEqual(await fs.readFile(firstFile.path), firstBytes);
+  assert.equal(logs[0], 'status.exportRefreshInventory');
+  for (const key of [
+    'exportTool',
+    'exportSourceDirectory',
+    'exportPlatform',
+    'exportScanDirectory',
+    'exportCurrentFile',
+    'exportManifestFiles',
+    'exportManifestSize',
+    'exportManifestWritten',
+    'exportCompressionProgress',
+    'exportArchiveSize',
+    'exportChecksum',
+    'exportArchiveName',
+    'exportElapsed',
+  ])
+    assert.ok(
+      logs.some((line) => line.startsWith('status.' + key + ': ')),
+      key,
+    );
+  assert.ok(logs.includes('status.exportChecksum: ' + second.sha256));
+  assert.ok(logs.includes('status.exportManifestFiles: ' + manifest.files.length));
+  assert.ok(
+    logs.some((line) => line.startsWith('status.archiveEngine: ') || line === 'status.archiveFallback'),
+  );
 });

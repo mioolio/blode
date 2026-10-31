@@ -59,10 +59,11 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
         version: entry.name,
       }));
   };
-  const [gnuVersions, cliVersions, coreVersions] = await Promise.all([
+  const [gnuVersions, cliVersions, coreVersions, armVersions] = await Promise.all([
     versions('gnu-arm'),
     versions('arduino-cli'),
     versions('arduino-esp32'),
+    versions('armclang'),
   ]);
   const commands = new Map<string, Promise<string>>();
   const version = (file: string, cli = false) => {
@@ -123,6 +124,7 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
     { directory: path.join(root, 'armclang'), source: 'managed' as const },
     { directory: path.join(root, 'armgcc'), source: 'managed' as const },
     ...gnuVersions,
+    ...armVersions,
     ...paths.map((directory) => ({ directory, source: 'path' as const })),
   ];
   const checkedCompilers = new Set<string>();

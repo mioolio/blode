@@ -55,7 +55,14 @@ module.exports = {
             filter: ['**/*', '!**/*.map'],
           },
         ]
-      : ['dist/main.cjs', 'dist/preload.cjs', 'dist/mcp-bridge.mjs', 'dist/renderer/**/*']),
+      : [
+          'dist/main.cjs',
+          'dist/preload.cjs',
+          'dist/mcp-bridge.mjs',
+          'dist/renderer/**/*',
+          'dist/device-modules/**/*',
+          'dist/archive-tools/**/*',
+        ]),
     'config/application.json',
     'package.json',
     'LICENSE',

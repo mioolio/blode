@@ -103,6 +103,14 @@ export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
   'ai.chat.state': 'Read a private model conversation using its session token.',
   'ai.chat.cancel': 'Stop an active model conversation.',
   'tools.downloadVersion': 'Download a shareable offline tool archive without installing it.',
+  'tools.exportVersion': 'Export an installed managed toolchain as an offline ZIP for another client.',
+  'devices.packages':
+    'List installed device modules, versions and supported chips, independently of toolchain installation.',
+  'devices.review': 'Review a device module folder or ZIP without executing its code.',
+  'devices.install':
+    'Load the exact reviewed device module into the host registry; confirm=true is required. Execution still requires runtime trust.',
+  'devices.export':
+    'Export a standalone device module ZIP without machine trust or host credentials; confirm=true is required.',
   'tools.importVersion': 'Validate and install a previously downloaded offline tool archive.',
   'tools.cancelVersionTransfer': 'Cancel the current offline tool transfer.',
   'components.export': 'Export configured components and dependencies as a portable ZIP package.',

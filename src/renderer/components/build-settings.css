@@ -18,6 +18,17 @@
   font-size: 16px;
   margin: 0;
 }
+.build-settings-no-project {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 18px 0 8px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
 .build-settings-body {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
@@ -130,6 +141,38 @@
   overscroll-behavior: contain;
   contain: paint;
   padding: 22px;
+}
+.build-settings-group {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.build-settings-group + .build-settings-group {
+  margin-top: 14px;
+}
+.build-group-head h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.build-group-head .subtle-note {
+  margin: 4px 0 0;
+}
+.build-settings-group .build-mode-fields {
+  padding-bottom: 0;
+  border-bottom: 0;
+  padding-top: 14px;
+}
+.build-settings-group .build-plugin-compiler {
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+}
+.build-settings-group .build-tool-heading {
+  align-items: flex-start;
+  margin: 0 0 12px;
+}
+.build-settings-group .build-compiler-row:last-child {
+  margin-bottom: 0;
 }
 .build-mode-fields,
 .build-compiler-fields {

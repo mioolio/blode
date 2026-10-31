@@ -1,18 +1,9 @@
 import { CircleCheck, CircleX, Download, LoaderCircle } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import type { InstallationProgress, InstallationState } from '../../shared/contracts';
+import type { InstallationState } from '../../shared/contracts';
+import { toolPhaseKey } from '../../shared/tool-operation';
 import { useI18n } from '../i18n';
 import './installation-output.css';
-
-const phaseKeys: Record<InstallationProgress['phase'], string> = {
-  starting: 'status.installStarting',
-  downloading: 'status.installDownloading',
-  verifying: 'status.installVerifying',
-  extracting: 'status.installExtracting',
-  installing: 'status.installInstalling',
-  completed: 'status.installCompleted',
-  failed: 'status.installFailed',
-};
 
 const bytesLabel = (value: number) => `${(value / 1024 / 1024).toFixed(1)} MiB`;
 
@@ -48,15 +39,16 @@ export function InstallationOutput({
     typeof total === 'number' &&
     Number.isFinite(total) &&
     total > 0;
-  const percent = canMeasure ? Math.min(100, Math.max(0, (received / total) * 100)) : undefined;
+  const percent =
+    typeof current?.percent === 'number' && Number.isFinite(current.percent)
+      ? Math.min(100, Math.max(0, current.percent))
+      : canMeasure
+        ? Math.min(100, Math.max(0, (received / total) * 100))
+        : current?.totalFiles && typeof current.processedFiles === 'number'
+          ? Math.min(100, (current.processedFiles / current.totalFiles) * 100)
+          : undefined;
   const logs = current?.logs.filter((entry) => !entry.progressOnly).slice(-250) ?? [];
-  const phaseLabel = phase
-    ? t(
-        phase === 'completed' && current?.operation === 'download'
-          ? 'status.downloadCompleted'
-          : phaseKeys[phase],
-      )
-    : t('settings.installIdle');
+  const phaseLabel = phase ? t(toolPhaseKey(phase, current?.operation)) : t('settings.installIdle');
   const status = running ? 'running' : (current?.status ?? 'idle');
 
   useEffect(() => {
@@ -70,7 +62,15 @@ export function InstallationOutput({
   return (
     <section className={`settings-card installation-output installation-${status}`}>
       <div className="installation-heading">
-        <h3>{t('settings.installOutput')}</h3>
+        <h3>
+          {t(
+            current?.operation === 'export'
+              ? 'settings.exportOutput'
+              : current?.operation === 'download'
+                ? 'settings.downloadOutput'
+                : 'settings.installOutput',
+          )}
+        </h3>
         <span className="installation-status" role="status" aria-live="polite">
           {running ? (
             <LoaderCircle className="spin" size={14} aria-hidden="true" />
@@ -95,6 +95,16 @@ export function InstallationOutput({
                 {bytesLabel(received)}
                 {canMeasure ? ` / ${bytesLabel(total)} · ${percent!.toFixed(0)}%` : ''}
               </span>
+            )}
+            {typeof current?.processedFiles === 'number' ? (
+              <span>
+                {current.processedFiles}
+                {current.totalFiles ? ` / ${current.totalFiles}` : ''} {t('devices.files')}
+              </span>
+            ) : (
+              phase !== 'downloading' &&
+              running &&
+              percent !== undefined && <span>{percent.toFixed(0)}%</span>
             )}
           </div>
           {running && (

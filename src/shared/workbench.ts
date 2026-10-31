@@ -1,3 +1,5 @@
+import type { DevicePackagesApi } from './device-packages';
+
 export type UiAction =
   | 'home'
   | 'project'
@@ -50,7 +52,7 @@ export interface UiCommandReply {
   clientId: string;
   error?: string;
 }
-export interface WorkbenchApi {
+export interface WorkbenchApi extends DevicePackagesApi {
   uiPublishState(state: UiState): Promise<void>;
   uiCommandReply(reply: UiCommandReply): Promise<void>;
   onUiCommand(callback: (request: UiRequest) => void): () => void;

@@ -148,3 +148,33 @@ test('ESP32 core versions use isolated stores and an exact install target', asyn
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test('standalone managed CLI and clangd are listed at their physical locations without an ESP core', async (t) => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'blode-local-cli-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const suffix = process.platform === 'win32' ? '.exe' : '';
+  const cli = path.join(root, 'bin');
+  const clangd = path.join(root, 'clangd', 'bin');
+  await fs.mkdir(cli, { recursive: true });
+  await fs.mkdir(clangd, { recursive: true });
+  await fs.writeFile(path.join(cli, 'arduino-cli' + suffix), 'fixture');
+  await fs.writeFile(path.join(clangd, 'clangd' + suffix), 'fixture');
+  const manager = new ToolVersions({
+    root,
+    dataRoot: root,
+    config: () => getBoardAdapter('auto').createConfig(),
+    env: { PATH: '', Path: '' },
+    runner: async () => ({ code: 0, output: 'arduino-cli Version: 1.3.1' }),
+  });
+  const state = await manager.toolVersionsState();
+  assert.ok(
+    state.localTools?.some(
+      (tool) => tool.kind === 'arduino-cli' && tool.exportable && tool.version === '1.3.1',
+    ),
+  );
+  assert.equal(
+    state.localTools?.find((tool) => tool.kind === 'clangd')?.directory,
+    path.join(root, 'clangd'),
+  );
+  assert.ok(!state.entries.some((tool) => tool.kind === 'arduino-esp32' && tool.installed));
+});

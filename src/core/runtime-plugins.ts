@@ -348,8 +348,9 @@ export class RuntimePlugins {
     // Recheck package-bound entry points after authorization and before import.
     await this.packageFile(record, record.manifest.runtime);
   }
-  async discover(): Promise<RuntimePluginsState> {
-    if (this.packages.size) return this.state();
+  async discover(refresh = false): Promise<RuntimePluginsState> {
+    if (this.packages.size && !refresh) return this.state();
+    if (refresh) this.errors = [];
     for (const root of [...new Set(this.options.roots.map((root) => path.resolve(root)))]) {
       const info = await fs.lstat(root).catch(() => null);
       if (!info?.isDirectory() || info.isSymbolicLink()) continue;
@@ -365,6 +366,11 @@ export class RuntimePlugins {
           const stat = await fs.lstat(file).catch(() => null);
           if (!stat?.isFile() || stat.isSymbolicLink() || stat.size > 256_000) continue;
           const json = JSON.parse(await fs.readFile(file, 'utf8'));
+          const existing = this.packages.get(json.id);
+          if (existing) {
+            if (existing.directory === directory) continue;
+            fail('error.runtimePluginDuplicate');
+          }
           // Trusted built-ins are bundled statically, never replaced by a directory's code.
           let registeredBoard = false;
           try {
@@ -493,6 +499,20 @@ export class RuntimePlugins {
             .map((record) => ({ directory: record.directory, message: record.lastError! })),
         ].slice(0, 200),
       ),
+    };
+  }
+  packageInventory(): RuntimePluginsState {
+    return {
+      plugins: [...this.packages.values()].map((record) => ({
+        id: record.manifest.id,
+        name: record.manifest.name,
+        directory: record.directory,
+        fingerprint: record.fingerprint,
+        trust: record.trust,
+        restartRequired: record.restartRequired,
+        manifest: structuredClone(record.manifest),
+      })),
+      errors: structuredClone(this.errors),
     };
   }
   async trust(input: RuntimePluginTrustRequest) {
@@ -628,6 +648,7 @@ export class RuntimePlugins {
     this.host = host;
     this.builtins = builtins;
     return [...this.packages.values()].map((record) => {
+      if (record.wrapper) return record.wrapper;
       const manifest = record.manifest;
       const base = (config?: ProjectConfig) =>
         this.builtins.find(

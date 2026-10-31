@@ -1,0 +1,13 @@
+{
+  "version": "26.05",
+  "sourceUrl": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605-src.tar.xz",
+  "sourceSha256": "0b6080b8c3e7a579161d2d495224c0e51c467576cb4c7048b0ab485ef44cc22e",
+  "platforms": {
+    "win32-x64": {
+      "file": "win32-x64/7za.exe",
+      "sha256": "7ddf0a3bc451e166679296be630d6f0573eb386159c04184761c43020c484291",
+      "archiveUrl": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605-extra.7z",
+      "archiveSha256": "f27a8f103c84785026edcba1f67faf1357225df9d19ddb0b7760d55947141bc7"
+    }
+  }
+}

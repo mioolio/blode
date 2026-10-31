@@ -19,6 +19,17 @@ export interface ToolVersionsState {
   arch: string;
   entries: ToolVersionEntry[];
   installedTools?: InstalledBuildTool[];
+  localTools?: LocalToolchain[];
+}
+export interface LocalToolchain {
+  id: string;
+  name: string;
+  version: string;
+  kind: ToolVersionKind | 'armclang';
+  directory?: string;
+  source: InstalledBuildTool['source'];
+  exportable: boolean;
+  binaryDirectory?: string;
 }
 export interface InstalledBuildTool {
   id: string;
@@ -33,6 +44,7 @@ export interface InstalledBuildTool {
 }
 export interface ToolVersionsApi {
   toolVersionDownload(request: { id: string; confirm: true }): Promise<ToolPackageResult>;
+  toolVersionExport(request: { id: string; confirm: true }): Promise<ToolPackageResult>;
   toolVersionImport(request: { path: string; confirm: true }): Promise<ToolVersionsState>;
   toolVersionPackageSave(id: string): Promise<boolean>;
   toolVersionCancel(): Promise<void>;

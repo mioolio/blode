@@ -101,7 +101,6 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
     setConfig,
     saveConfig,
     busy,
-    install,
     installDriver,
     refreshDrivers,
     copy,
@@ -253,8 +252,13 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
       setPreferencesTarget((current) => ({ section: target, revision: (current?.revision ?? 0) + 1 }));
       setPreferencesOpen(true);
     };
+    const closePreferences = () => setPreferencesOpen(false);
     window.addEventListener('blode:preferences', openPreferences);
-    return () => window.removeEventListener('blode:preferences', openPreferences);
+    window.addEventListener('blode:build-settings', closePreferences);
+    return () => {
+      window.removeEventListener('blode:preferences', openPreferences);
+      window.removeEventListener('blode:build-settings', closePreferences);
+    };
   }, []);
   useEffect(() => {
     const openSymbolSearch = () => setSymbolSearchOpen(true);
@@ -700,7 +704,6 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                 workspaceOpen={!!state.workspaceOpen}
                 onChange={setConfig}
                 onSave={saveConfig}
-                onInstall={install}
                 onInstallDriver={installDriver}
                 onRefreshDrivers={refreshDrivers}
                 busy={!!busy}

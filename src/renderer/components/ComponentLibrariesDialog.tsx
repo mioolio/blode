@@ -17,9 +17,10 @@ import { pickHostPath } from '../workspace/hostPicker';
 import { ComponentLibrariesModel } from './componentLibrariesModel';
 import { InstallationOutput } from './InstallationOutput';
 import { ModernSelect } from './ModernSelect';
+import { DeviceModuleLibrary } from './DeviceModuleLibrary';
 import './component-libraries.css';
 
-type LibraryTab = 'installed' | 'browse' | 'import';
+type LibraryTab = 'devices' | 'installed' | 'browse' | 'import';
 
 export default function ComponentLibrariesDialog({
   studio,
@@ -34,7 +35,8 @@ export default function ComponentLibrariesDialog({
       new ComponentLibrariesModel(window.blode, studio.state?.workspaceOpen ? studio.state.projectRoot : ''),
   );
   const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
-  const [tab, setTab] = useState<LibraryTab>('installed');
+  const [tab, setTab] = useState<LibraryTab>('devices');
+  const [deviceBusy, setDeviceBusy] = useState(false);
   const [selected, setSelected] = useState('');
   const [localSelected, setLocalSelected] = useState('');
   const [localQuery, setLocalQuery] = useState('');
@@ -47,7 +49,7 @@ export default function ComponentLibrariesDialog({
   const root = useRef<HTMLElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
-  const blocked = !!snapshot.operation || !!studio.busy || picking;
+  const blocked = !!snapshot.operation || !!studio.busy || picking || deviceBusy;
   const blockedRef = useRef(blocked);
   blockedRef.current = blocked;
   const currentProject = studio.state?.workspaceOpen ? studio.state.projectRoot : '';
@@ -75,24 +77,28 @@ export default function ComponentLibrariesDialog({
   useEffect(() => {
     model.activate();
     const unsubscribe = window.blode.onEvent((event) => model.receive(event));
-    void model.load();
     return () => {
       model.dispose();
       unsubscribe();
     };
   }, [model]);
   useEffect(() => {
+    if (tab !== 'devices' && !snapshot.data && !snapshot.loading && model.projectRoot) void model.load();
+  }, [tab, model]);
+  useEffect(() => {
     const previous = document.activeElement;
     root.current?.querySelector<HTMLButtonElement>('.component-close')?.focus();
     const key = (event: KeyboardEvent) => {
       if (event.defaultPrevented || document.querySelector('.host-picker-backdrop')) return;
       if (event.key === 'Escape' && !blockedRef.current) {
+        if (root.current?.querySelector('.device-module-review')) return;
         event.preventDefault();
         close.current();
       }
       if (event.key === 'Tab') {
+        const scope = root.current?.querySelector('.device-module-review') ?? root.current;
         const elements = [
-          ...(root.current?.querySelectorAll<HTMLElement>(
+          ...(scope?.querySelectorAll<HTMLElement>(
             'button:not(:disabled), input:not(:disabled), [tabindex="0"], a[href]',
           ) ?? []),
         ].filter((element) => element.getClientRects().length && !element.closest('[aria-hidden="true"]'));
@@ -174,6 +180,7 @@ export default function ComponentLibrariesDialog({
           </h2>
           <button
             className="icon-button"
+            hidden={tab === 'devices'}
             disabled={blocked || snapshot.loading || !model.projectRoot}
             aria-label={t('action.refresh')}
             title={t('action.refresh')}
@@ -192,10 +199,11 @@ export default function ComponentLibrariesDialog({
           </button>
         </header>
         <nav className="component-tabs" aria-label={t('components.title')}>
-          {(['installed', 'browse', 'import'] as const).map((item) => (
+          {(['devices', 'installed', 'browse', 'import'] as const).map((item) => (
             <button
               key={item}
               className={tab === item ? 'active' : ''}
+              disabled={blocked}
               aria-pressed={tab === item}
               onClick={() => setTab(item)}
             >
@@ -204,7 +212,7 @@ export default function ComponentLibrariesDialog({
             </button>
           ))}
         </nav>
-        {(snapshot.error || snapshot.completed) && (
+        {tab !== 'devices' && (snapshot.error || snapshot.completed) && (
           <div
             className={`component-notice${snapshot.error ? ' error-text' : ''}`}
             role={snapshot.error ? 'alert' : 'status'}
@@ -215,6 +223,7 @@ export default function ComponentLibrariesDialog({
           </div>
         )}
         <div className={`component-content component-page-${tab}`}>
+          {tab === 'devices' && <DeviceModuleLibrary studio={studio} onBusyChange={setDeviceBusy} />}
           {tab === 'installed' && (
             <>
               <div className="component-toolbar">

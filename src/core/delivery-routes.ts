@@ -12,6 +12,7 @@ export const deliveryParameterSchemas = {
     })
     .strict(),
   'tools.downloadVersion': z.object({ id: z.string().min(1).max(128), confirm: z.literal(true) }).strict(),
+  'tools.exportVersion': z.object({ id: z.string().min(1).max(128), confirm: z.literal(true) }).strict(),
   'tools.importVersion': z.object({ path: z.string().min(1).max(4096), confirm: z.literal(true) }).strict(),
   'tools.cancelVersionTransfer': z.object({}).strict(),
 };
@@ -25,23 +26,33 @@ export function createDeliveryRoutes(options: {
   const components = new ComponentPackages(options);
   const archives = new Map<string, { path: string; name: string }>();
   let active: AbortController | undefined;
-  const perform = async <T>(tool: string, run: (offline: OfflineTools) => Promise<T>) => {
+  const perform = async <T>(
+    tool: string,
+    run: (offline: OfflineTools) => Promise<T>,
+    operation: 'install' | 'download' | 'export',
+  ) => {
     if (active) throw new Error('error.busy');
     const controller = new AbortController();
     active = controller;
     let result!: T;
     try {
-      await options.runInstallation(tool, async (hooks) => {
-        const signal = hooks.signal ? AbortSignal.any([controller.signal, hooks.signal]) : controller.signal;
-        const offline = new OfflineTools({
-          ...options.toolOptions,
-          signal,
-          fetcher: hooks.fetcher ?? options.toolOptions.fetcher,
-          onProgress: hooks.progress,
-          onLine: hooks.log,
-        });
-        result = await run(offline);
-      });
+      await options.runInstallation(
+        tool,
+        async (hooks) => {
+          const signal = hooks.signal
+            ? AbortSignal.any([controller.signal, hooks.signal])
+            : controller.signal;
+          const offline = new OfflineTools({
+            ...options.toolOptions,
+            signal,
+            fetcher: hooks.fetcher ?? options.toolOptions.fetcher,
+            onProgress: hooks.progress,
+            onLine: hooks.log,
+          });
+          result = await run(offline);
+        },
+        operation,
+      );
       return result;
     } finally {
       if (active === controller) active = undefined;
@@ -53,16 +64,33 @@ export function createDeliveryRoutes(options: {
       toolVersionDownload: {
         args: z.tuple([deliveryParameterSchemas['tools.downloadVersion']]),
         run: (request: z.infer<(typeof deliveryParameterSchemas)['tools.downloadVersion']>) =>
-          perform(request.id, async (offline) => {
-            const result = await offline.download(request);
-            archives.set(result.id, offline.downloadFile(result.id));
-            return result;
-          }),
+          perform(
+            request.id,
+            async (offline) => {
+              const result = await offline.download(request);
+              archives.set(result.id, offline.downloadFile(result.id));
+              return result;
+            },
+            'download',
+          ),
+      },
+      toolVersionExport: {
+        args: z.tuple([deliveryParameterSchemas['tools.exportVersion']]),
+        run: (request: z.infer<(typeof deliveryParameterSchemas)['tools.exportVersion']>) =>
+          perform(
+            request.id,
+            async (offline) => {
+              const result = await offline.exportInstalled(request);
+              archives.set(result.id, offline.downloadFile(result.id));
+              return result;
+            },
+            'export',
+          ),
       },
       toolVersionImport: {
         args: z.tuple([deliveryParameterSchemas['tools.importVersion']]),
         run: (request: z.infer<(typeof deliveryParameterSchemas)['tools.importVersion']>) =>
-          perform('offline-tool', (offline) => offline.install(request)),
+          perform('offline-tool', (offline) => offline.install(request), 'install'),
       },
       toolVersionCancel: {
         args: z.tuple([]),

@@ -12,6 +12,8 @@ import { FirmwareStore, prepareBuildExport } from './firmware';
 import { GitService, createGitRoutes } from './git';
 import { ToolVersions } from './tool-versions';
 import { ProjectPackages } from './project-package';
+import { DevicePackages } from './device-packages';
+import { BundledArchiveWriter } from './archive-writer';
 import { HostTerminals } from './terminal-sessions';
 import { ComponentLibraries } from './components';
 import { createDeliveryRoutes } from './delivery-routes';
@@ -37,6 +39,8 @@ import type { RuntimeDebugger } from './runtime-debugger';
 import { isRuntimeViewKind, type RuntimeViewContribution, type RuntimeViewKind } from '../shared/plugins';
 
 interface Options {
+  builtinDevicePackagesRoot?: string;
+  builtinArchiveRoot?: string;
   extensionExamplesRoot?: string;
   openExtensionView?: (id: string, view: RuntimeViewContribution) => Promise<void>;
   openExtensionPanel?: (id: string, view: RuntimeViewContribution) => Promise<void>;
@@ -180,8 +184,19 @@ export function createHostServices(options: Options) {
     runner: toolRunner,
     env: options.toolchainEnv,
     fetcher: options.fetcher,
+    archiver: new BundledArchiveWriter({
+      root: options.builtinArchiveRoot ?? path.resolve('dist/archive-tools'),
+      dataRoot: options.dataRoot,
+      runner: toolRunner,
+    }),
   };
   const tools = new ToolVersions(toolOptions);
+  const devicePackages = new DevicePackages({
+    dataRoot: options.dataRoot,
+    builtinRoot: options.builtinDevicePackagesRoot ?? path.resolve('dist/device-modules'),
+    plugins: () => Promise.resolve(core.runtimePlugins.packageInventory?.() ?? core.runtimePlugins.state()),
+    reload: () => core.refreshDeviceModules(),
+  });
   const delivery = createDeliveryRoutes({
     dataRoot: options.dataRoot,
     projectRoot: () => core.currentProjectRoot(),
@@ -195,6 +210,32 @@ export function createHostServices(options: Options) {
     ...extensionRoutes.routes,
     ...modelRoutes.routes,
     ...delivery.routes,
+    devicePackagesState: { args: noArgs, run: () => devicePackages.state() },
+    devicePackageReview: {
+      args: z.tuple([hostParameterSchemas['devices.review']]),
+      run: (request) => devicePackages.review(request),
+    },
+    devicePackageInstall: {
+      args: z.tuple([hostParameterSchemas['devices.install']]),
+      run: async (request) => {
+        let result;
+        await core.runHardwareAction(async () => {
+          result = await devicePackages.install(request);
+        });
+        return result;
+      },
+    },
+    devicePackageExport: {
+      args: z.tuple([hostParameterSchemas['devices.export']]),
+      run: (request) => devicePackages.export(request),
+    },
+    devicePackageSave: {
+      args: z.tuple([z.string().uuid()]),
+      run: (id) => {
+        if (!options.savePackage) throw new Error('rpc.desktopOnly');
+        return options.savePackage(devicePackages.download(id));
+      },
+    },
     componentsState: { args: noArgs, run: () => components.list() },
     componentsSearch: {
       args: z.tuple([hostParameterSchemas['components.search'].shape.query]),
@@ -578,8 +619,13 @@ export function createHostServices(options: Options) {
     'components.remove': ['componentsRemove', (p) => [p]],
     'components.export': ['componentsExport', (p) => [p]],
     'tools.downloadVersion': ['toolVersionDownload', (p) => [p]],
+    'tools.exportVersion': ['toolVersionExport', (p) => [p]],
     'tools.importVersion': ['toolVersionImport', (p) => [p]],
     'tools.cancelVersionTransfer': ['toolVersionCancel', () => []],
+    'devices.packages': ['devicePackagesState', () => []],
+    'devices.review': ['devicePackageReview', (p) => [p]],
+    'devices.install': ['devicePackageInstall', (p) => [p]],
+    'devices.export': ['devicePackageExport', (p) => [p]],
     'runtime.plugins': ['runtimePluginsState', () => []],
     'runtime.context': ['runtimePluginContext', (p) => [p.id]],
     'runtime.configure': ['runtimePluginConfigure', (p) => [p.id, p.value]],
@@ -637,7 +683,11 @@ export function createHostServices(options: Options) {
           try {
             return generalExtensions.download(id);
           } catch {
-            return packages.download(id);
+            try {
+              return devicePackages.download(id);
+            } catch {
+              return packages.download(id);
+            }
           }
         }
       },

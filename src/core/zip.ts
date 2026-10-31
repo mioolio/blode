@@ -27,7 +27,7 @@ export interface FileZipEntry {
 export async function writeZip(
   file: string,
   entries: AsyncIterable<ZipEntry | FileZipEntry>,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; maxEntries?: number; maxBytes?: number } = {},
 ): Promise<number> {
   const handle = await fs.open(file, 'wx');
   const central: Buffer[] = [];
@@ -37,7 +37,7 @@ export async function writeZip(
   const write = async (bytes: Buffer) => {
     await handle.writeFile(bytes);
     offset += bytes.length;
-    if (offset > 2_000_000_000) throw new Error('error.packageTooLarge');
+    if (offset > (options.maxBytes ?? 2_000_000_000)) throw new Error('error.packageTooLarge');
   };
   try {
     for await (const entry of entries) {
@@ -48,7 +48,7 @@ export async function writeZip(
       )
         throw new Error('error.invalidArguments');
       if (
-        ++count > 10000 ||
+        ++count > (options.maxEntries ?? 10000) ||
         entry.path.startsWith('/') ||
         entry.path.split('/').some((part) => part === '..' || part === '.' || !part) ||
         /[\\:\0]/.test(entry.path) ||
@@ -65,7 +65,7 @@ export async function writeZip(
       const data = streamed ? null : deflateRawSync(entry.data as Buffer, { level: 6 });
       let checksum = streamed ? 0 : crc32(entry.data as Buffer);
       const packedSize = data?.length ?? originalSize;
-      if (originalSize > 1_500_000_000) throw new Error('error.packageTooLarge');
+      if (originalSize > (options.maxBytes ?? 1_500_000_000)) throw new Error('error.packageTooLarge');
       const start = offset;
       const header = Buffer.alloc(30);
       header.writeUInt32LE(0x04034b50);

@@ -4,14 +4,14 @@ import type { Studio } from '../workspace/useStudio';
 const BuildSettingsDialog = lazy(() => import('./BuildSettingsDialog'));
 
 export function BuildSettingsLauncher({ studio }: { studio: Studio }) {
-  const [open, setOpen] = useState(false);
+  const [revision, setRevision] = useState<number>();
   useEffect(() => {
-    const show = () => setOpen(true);
+    const show = () => setRevision((current) => (current ?? 0) + 1);
     window.addEventListener('blode:build-settings', show);
     return () => window.removeEventListener('blode:build-settings', show);
   }, []);
-  useEffect(() => setOpen(false), [studio.state?.projectRoot]);
-  if (!open || !studio.state?.workspaceOpen) return null;
+  useEffect(() => setRevision(undefined), [studio.state?.projectRoot]);
+  if (revision === undefined) return null;
   return (
     <Suspense
       fallback={
@@ -20,7 +20,7 @@ export function BuildSettingsLauncher({ studio }: { studio: Studio }) {
         </div>
       }
     >
-      <BuildSettingsDialog studio={studio} onClose={() => setOpen(false)} />
+      <BuildSettingsDialog key={revision} studio={studio} onClose={() => setRevision(undefined)} />
     </Suspense>
   );
 }

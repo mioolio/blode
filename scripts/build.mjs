@@ -2,7 +2,11 @@ import { build } from 'esbuild';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { nodeLanguageAssetsPlugin } from './node-json-assets.mjs';
+import { buildDeviceModules } from './build-device-modules.mjs';
+import { stageArchiveTools } from './stage-archive-tools.mjs';
 const output = process.env.BLODE_RELEASE_DIST || 'dist';
+await buildDeviceModules(output);
+await stageArchiveTools(output);
 
 const development =
   process.env.BLODE_BUILD_MODE === 'development' ||

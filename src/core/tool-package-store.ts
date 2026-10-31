@@ -10,7 +10,7 @@ const schema = z
       .min(1)
       .max(255)
       .regex(/^[^\\/:\0-\x1f]+\.zip$/),
-    size: z.number().int().positive().max(2_000_000_000),
+    size: z.number().int().positive().max(3_900_000_000),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
     toolId: z.string().max(128),
     platform: z.string().max(32),

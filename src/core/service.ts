@@ -95,6 +95,7 @@ export interface CoreOptions {
 export interface CoreService extends CoreApi {
   buildEvidenceState(): Promise<{ success: boolean; stale: boolean; records?: BuildEvidenceRecord[] }>;
   readonly runtimePlugins: RuntimePlugins;
+  refreshDeviceModules(): Promise<void>;
   currentProjectRoot(): string;
   currentConfig(): ProjectConfig;
   languageConfiguration(): Promise<import('../shared/module-languages').ModuleLanguageState | undefined>;
@@ -108,7 +109,11 @@ export interface CoreService extends CoreApi {
   runDebuggerAction(action: () => Promise<void>): Promise<void>;
   runDebuggerConnect(config: ProjectConfig, action: () => Promise<void>): Promise<void>;
   debuggerSaveSettings(request: DebuggerSettingsRequest): Promise<void>;
-  runInstallation(tool: string, action: (reporter: InstallationReporter) => Promise<void>): Promise<void>;
+  runInstallation(
+    tool: string,
+    action: (reporter: InstallationReporter) => Promise<void>,
+    operation?: InstallationProgress['operation'],
+  ): Promise<void>;
   /** Coalesce OS device notifications; hardware is enumerated only after operations are idle. */
   notifyDevicesChanged(): void;
   driverStatuses(refresh?: boolean): Promise<DriverStatus[]>;
@@ -118,7 +123,7 @@ export interface CoreService extends CoreApi {
 /** Hardware and filesystem services have one owner, independent of any window. */
 export async function createCore(options: CoreOptions): Promise<CoreService> {
   const runtimePlugins = new RuntimePlugins({
-    roots: options.pluginRoots ?? [path.join(options.dataRoot, 'plugins')],
+    roots: [...new Set([...(options.pluginRoots ?? []), path.join(options.dataRoot, 'plugins')])],
     dataRoot: options.dataRoot,
     openView: options.openRuntimeView,
   });
@@ -659,6 +664,16 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   }
   const api: CoreService = {
     runtimePlugins,
+    async refreshDeviceModules() {
+      await runtimePlugins.discover(true);
+      for (const runtime of runtimePlugins.attach(host, builtinRuntimes)) {
+        if (runtimeById.has(runtime.id)) continue;
+        runtimeById.set(runtime.id, runtime);
+        runtimes.push(runtime);
+      }
+      invalidateRuntimes();
+      emit('status.runtimeModulesChanged', 'info', 'status');
+    },
     currentProjectRoot: () => projectRoot,
     currentConfig: () => structuredClone(config),
     buildEvidenceState: () =>
@@ -979,18 +994,21 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         await action();
       });
     },
-    async runInstallation(tool, action) {
+    async runInstallation(tool, action, operation = 'install') {
       await pendingDeviceScan;
       return withLock(async () => {
         requireHardware();
         try {
-          await installation.run(tool, () =>
-            action({
-              progress: installation.progress,
-              log: (line) => emit(line),
-              fetcher: options.fetcher,
-              signal: lifecycle.signal,
-            }),
+          await installation.run(
+            tool,
+            () =>
+              action({
+                progress: installation.progress,
+                log: (line) => emit(line),
+                fetcher: options.fetcher,
+                signal: lifecycle.signal,
+              }),
+            operation,
           );
         } finally {
           invalidateRuntimes();

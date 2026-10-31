@@ -108,7 +108,6 @@ function settings(config: ProjectConfig): string {
       workspaceOpen: true,
       onChange: () => {},
       onSave: () => {},
-      onInstall: () => {},
       onInstallDriver: () => {},
       onRefreshDrivers: () => {},
       busy: false,
@@ -117,11 +116,10 @@ function settings(config: ProjectConfig): string {
   );
 }
 
-test('automatic and STM32 preferences expose the Arm Compiler path and actual detected version', () => {
+test('automatic and STM32 preferences expose the Arm Compiler path', () => {
   for (const platform of ['auto', 'STM32F103C8T6']) {
     const html = settings(getBoardAdapter(platform).createConfig());
     assert.ok(html.includes('value="C:\\tools\\armclang\\bin"'));
-    assert.match(html, /Arm Compiler 6\.24/);
   }
   const esp = settings(getBoardAdapter('Esp32_S3_CAM').createConfig());
   assert.doesNotMatch(esp, /Arm Compiler 6\.24/);

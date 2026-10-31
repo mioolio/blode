@@ -683,6 +683,8 @@ async function bootstrap(): Promise<void> {
   const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
   const protection = protectSharedWorkspace(core, collaboration);
   hostServices = createHostServices({
+    builtinDevicePackagesRoot: path.join(app.getAppPath(), 'dist', 'device-modules'),
+    builtinArchiveRoot: path.join(app.getAppPath(), 'dist', 'archive-tools'),
     ai,
     extensionExamplesRoot: app.isPackaged
       ? path.join(process.resourcesPath, 'extensions', 'plugins')

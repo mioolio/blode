@@ -1,265 +1,192 @@
-import { ModernSelect } from './ModernSelect';
-import { useEffect, useState } from 'react';
-import { Download, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Download, ExternalLink, FolderOpen, RefreshCw, X } from 'lucide-react';
 import type { ProjectConfig } from '../../shared/contracts';
-import type { ToolVersionsApi, ToolVersionsState } from '../../shared/tool-versions';
+import type { ToolVersionKind, ToolVersionsApi, ToolVersionsState } from '../../shared/tool-versions';
 import { useI18n } from '../i18n';
-import { ToolOfflineActions } from './ToolOfflineActions';
+import { pickHostPath } from '../workspace/hostPicker';
+import { ModernSelect } from './ModernSelect';
 
-const sourceLabels = {
-  managed: 'settings.versions.source.managed',
-  versioned: 'settings.versions.source.versioned',
-  custom: 'settings.versions.source.custom',
-  path: 'settings.versions.source.path',
+const names: Record<ToolVersionKind, string> = {
+  'gnu-arm': 'GNU Arm GCC',
+  'arduino-cli': 'Arduino CLI',
+  'arduino-esp32': 'Arduino-ESP32',
+  stlink: 'ST-Link',
+  clangd: 'clangd',
 };
-
 export function ToolVersionSettings({
-  config,
-  onChange,
   busy,
-  workspaceOpen,
 }: {
-  config: ProjectConfig;
-  onChange: (value: ProjectConfig) => void;
+  config?: ProjectConfig;
+  onChange?: (value: ProjectConfig) => void;
   busy: boolean;
   workspaceOpen: boolean;
 }) {
   const { t } = useI18n();
   const api: Partial<ToolVersionsApi> = typeof window === 'undefined' ? {} : window.blode;
   const [state, setState] = useState<ToolVersionsState>();
-  const [tab, setTab] = useState<'installed' | 'catalog'>('installed');
-  const [selected, setSelected] = useState('');
-  const [localSelected, setLocalSelected] = useState('');
+  const [kind, setKind] = useState<ToolVersionKind>('gnu-arm');
   const [pending, setPending] = useState(false);
-  const [offlinePending, setOfflinePending] = useState(false);
-  const unavailable = busy || pending || offlinePending;
   const [notice, setNotice] = useState('');
-  const acceptState = (next: ToolVersionsState) => {
-    setState(next);
-    setSelected((current) =>
-      next.entries.some((entry) => entry.id === current)
-        ? current
-        : (next.entries.find(
-            (entry) => entry.kind === (config.boardId === 'STM32F103C8T6' ? 'gnu-arm' : 'arduino-esp32'),
-          )?.id ??
-          next.entries[0]?.id ??
-          ''),
-    );
-    setLocalSelected((current) => {
-      const installed = next.installedTools ?? [];
-      return installed.some((entry) => entry.id === current)
-        ? current
-        : (installed.find((entry) =>
-            entry.platforms.includes(config.boardId as 'STM32F103C8T6' | 'Esp32_S3_CAM'),
-          )?.id ??
-            installed[0]?.id ??
-            '');
-    });
-  };
-  const refresh = async () => {
-    if (api.toolVersionsState) acceptState(await api.toolVersionsState());
-  };
+  const locked = useRef(false);
   useEffect(() => {
-    void refresh().catch((error) => setNotice(String(error)));
+    let active = true;
+    void api
+      .toolVersionsState?.()
+      .then((next) => {
+        if (active) setState(next);
+      })
+      .catch((error) => {
+        if (active) setNotice(String(error));
+      });
+    return () => {
+      active = false;
+    };
   }, []);
-  const entry = state?.entries.find((item) => item.id === selected);
-  const local = state?.installedTools?.find((item) => item.id === localSelected);
   const perform = async (action: () => Promise<void>) => {
+    if (busy || locked.current) return;
+    locked.current = true;
     setPending(true);
     setNotice('');
     try {
       await action();
     } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
-      setNotice(t(text.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')));
+      setNotice(
+        t(
+          (error instanceof Error ? error.message : String(error)).replace(
+            /^Error invoking remote method '[^']+': (?:Error: )?/,
+            '',
+          ),
+        ),
+      );
     } finally {
+      locked.current = false;
       setPending(false);
     }
   };
-  const useTool = (id: string) =>
-    void perform(async () => {
-      const patch = await api.toolVersionSelect!({ id });
-      onChange({ ...config, toolchain: { ...config.toolchain, ...patch } });
-      setNotice(t('settings.versions.selected'));
-    });
+  const unavailable = busy || pending;
   return (
-    <section className="tool-versions" aria-label={t('settings.versions.title')}>
-      <div className="settings-card-head">
-        <h3>{t('settings.versions.title')}</h3>
-        <button className="text-button" disabled={unavailable} onClick={() => void perform(refresh)}>
-          <RefreshCw size={12} />
-          {t('action.refresh')}
+    <section className="tool-catalog" aria-label={t('settings.versions.title')}>
+      <div className="tool-catalog-toolbar">
+        <label className="tool-catalog-filter">
+          <span>{t('buildSettings.family')}</span>
+          <ModernSelect value={kind} onChange={(event) => setKind(event.target.value as ToolVersionKind)}>
+            {Object.entries(names).map(([id, name]) => (
+              <option value={id} key={id}>
+                {name}
+              </option>
+            ))}
+          </ModernSelect>
+        </label>
+        <button
+          disabled={unavailable || !api.toolVersionImport}
+          onClick={() =>
+            void perform(async () => {
+              const file = await pickHostPath({ kind: 'file', extensions: ['zip'] });
+              if (file) {
+                setState(await api.toolVersionImport!({ path: file, confirm: true }));
+                setNotice(t('settings.versions.imported'));
+              }
+            })
+          }
+        >
+          <FolderOpen size={14} />
+          {t('settings.versions.importOffline')}
         </button>
+        <button
+          className="icon-button"
+          disabled={unavailable || !api.toolVersionsState}
+          title={t('action.refresh')}
+          aria-label={t('action.refresh')}
+          onClick={() => void perform(async () => setState(await api.toolVersionsState!()))}
+        >
+          <RefreshCw size={15} />
+        </button>
+        {pending && (
+          <button className="text-button" onClick={() => void api.toolVersionCancel?.()}>
+            <X size={14} />
+            {t('action.cancel')}
+          </button>
+        )}
       </div>
       {!api.toolVersionsState ? (
         <p className="subtle-note">{t('settings.versions.restart')}</p>
+      ) : !state ? (
+        <p role="status">{t('device.connectionChecking')}</p>
       ) : (
-        <>
-          <div className="tool-version-tabs" role="tablist" aria-label={t('settings.versions.title')}>
-            <button
-              role="tab"
-              aria-selected={tab === 'installed'}
-              className={tab === 'installed' ? 'active' : ''}
-              onClick={() => setTab('installed')}
-            >
-              {t('settings.versions.local')}
-            </button>
-            <button
-              role="tab"
-              aria-selected={tab === 'catalog'}
-              className={tab === 'catalog' ? 'active' : ''}
-              onClick={() => setTab('catalog')}
-            >
-              {t('settings.versions.catalog')}
-            </button>
+        <div className="tool-catalog-table" role="table" aria-label={names[kind]}>
+          <div className="tool-catalog-row tool-catalog-labels" role="row">
+            <span role="columnheader">{t('buildSettings.version')}</span>
+            <span role="columnheader">{t('settings.catalog.state')}</span>
+            <span role="columnheader">{t('settings.catalog.actions')}</span>
           </div>
-          {tab === 'installed' ? (
-            <div className="tool-version-panel" role="tabpanel">
-              {!state ? (
-                <p className="subtle-note">{t('device.connectionChecking')}</p>
-              ) : !state.installedTools ? (
-                <p className="subtle-note">{t('settings.versions.restart')}</p>
-              ) : !state.installedTools.length ? (
-                <p className="subtle-note">{t('settings.versions.localEmpty')}</p>
-              ) : (
-                <>
-                  <label>
-                    {t('settings.versions.localChoose')}
-                    <ModernSelect
-                      value={localSelected}
-                      disabled={unavailable}
-                      onChange={(event) => setLocalSelected(event.target.value)}
-                    >
-                      {state.installedTools.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} · {t(sourceLabels[item.source])}
-                        </option>
-                      ))}
-                    </ModernSelect>
-                  </label>
-                  {local && (
-                    <>
-                      <dl className="tool-installed-details">
-                        {local.directory && (
-                          <>
-                            <dt>{t('settings.versions.toolDirectory')}</dt>
-                            <dd>{local.directory}</dd>
-                          </>
-                        )}
-                        {local.arduinoCli && (
-                          <>
-                            <dt>{t('settings.versions.cliPath')}</dt>
-                            <dd>{local.arduinoCli}</dd>
-                          </>
-                        )}
-                        {local.packageDirectory && (
-                          <>
-                            <dt>{t('settings.versions.coreStore')}</dt>
-                            <dd>{local.packageDirectory}</dd>
-                          </>
-                        )}
-                      </dl>
-                      <div className="tool-version-actions">
-                        <button
-                          className="primary"
-                          disabled={unavailable || !workspaceOpen}
-                          onClick={() => useTool(local.id)}
-                        >
-                          {t('settings.versions.use')}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="tool-version-panel" role="tabpanel">
-              <label>
-                {t('settings.versions.choose')}
-                <ModernSelect
-                  value={selected}
-                  disabled={unavailable}
-                  onChange={(event) => {
-                    setSelected(event.target.value);
-                    setNotice('');
-                  }}
-                >
-                  {['clangd', 'gnu-arm', 'arduino-cli', 'arduino-esp32', 'stlink'].map((kind) => (
-                    <optgroup key={kind} label={kind}>
-                      {state?.entries
-                        .filter((item) => item.kind === kind)
-                        .map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name}
-                            {item.installed ? ' · ' + t('settings.available') : ''}
-                          </option>
-                        ))}
-                    </optgroup>
-                  ))}
-                </ModernSelect>
-              </label>
-              {entry && (
-                <>
-                  <div className="tool-version-meta">
-                    <span>
-                      {state?.platform} / {state?.arch}
-                    </span>
-                    <a href={entry.releaseUrl} target="_blank" rel="noreferrer">
-                      {t('settings.versions.release')}
-                    </a>
-                    {entry.downloadUrl && (
-                      <a href={entry.downloadUrl} target="_blank" rel="noreferrer">
-                        {t('settings.versions.downloadLink')}
-                      </a>
-                    )}
-                  </div>
-                  {entry.note && <p className="subtle-note">{t(entry.note)}</p>}
-                  {state?.platform === 'linux' && (
-                    <p className="subtle-note">{t('settings.versions.linuxNote')}</p>
-                  )}
-                  <div className="tool-version-actions">
+          {state.entries
+            .filter((entry) => entry.kind === kind)
+            .map((entry) => (
+              <div className="tool-catalog-row" role="row" key={entry.id}>
+                <div role="cell" className="tool-catalog-version">
+                  <strong>{entry.version}</strong>
+                  <a
+                    href={entry.releaseUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={t('settings.versions.release')}
+                    aria-label={t('settings.versions.release')}
+                  >
+                    <ExternalLink size={13} />
+                  </a>
+                </div>
+                <span role="cell" className="tool-catalog-state">
+                  {entry.installed && <Check size={13} />}{' '}
+                  {t(entry.installed ? 'settings.versions.installedBadge' : 'settings.versions.notInstalled')}
+                </span>
+                <div role="cell" className="tool-catalog-actions">
+                  {!entry.installed && entry.installable && (
                     <button
-                      className="secondary"
-                      disabled={unavailable || !entry.installable || entry.installed}
+                      className="primary"
+                      disabled={unavailable}
                       onClick={() =>
                         void perform(async () => {
-                          acceptState(await api.toolVersionInstall!({ id: entry.id, confirm: true }));
+                          setState(await api.toolVersionInstall!({ id: entry.id, confirm: true }));
                           setNotice(t('settings.versions.installed'));
                         })
                       }
                     >
                       <Download size={13} />
-                      {t('settings.versions.install')}
+                      {t('settings.catalog.install')}
                     </button>
+                  )}
+                  {entry.installable ? (
                     <button
-                      className="primary"
-                      disabled={
-                        unavailable || !workspaceOpen || !entry.installed || entry.kind === 'clangd'
+                      disabled={unavailable}
+                      onClick={() =>
+                        void perform(async () => {
+                          const result = await api.toolVersionDownload!({ id: entry.id, confirm: true });
+                          const saved = await api.toolVersionPackageSave!(result.id);
+                          setNotice(t(saved ? 'settings.versions.packageSaved' : 'action.cancelled'));
+                        })
                       }
-                      onClick={() => useTool(entry.id)}
                     >
-                      {t('settings.versions.use')}
+                      {t('settings.catalog.download')}
                     </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </>
+                  ) : entry.downloadUrl ? (
+                    <a href={entry.downloadUrl} target="_blank" rel="noreferrer">
+                      {t('settings.versions.downloadLink')}
+                    </a>
+                  ) : (
+                    <a href={entry.releaseUrl} target="_blank" rel="noreferrer">
+                      {t('settings.versions.release')}
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+        </div>
       )}
       {notice && (
         <p className="tool-version-notice" role="status">
           {notice}
         </p>
       )}
-      <ToolOfflineActions
-        entry={tab === 'catalog' && entry?.kind !== 'clangd' ? entry : undefined}
-        state={state}
-        disabled={busy || pending}
-        onInstalled={acceptState}
-        onPendingChange={setOfflinePending}
-      />
     </section>
   );
 }

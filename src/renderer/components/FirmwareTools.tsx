@@ -71,6 +71,15 @@ export function FirmwareTools() {
   if (!mode) return null;
   const standalone = mode === 'flash';
   const stlink = config?.boardId === 'STM32F103C8T6';
+  const flashBoards = (state?.boards ?? []).filter((board) => {
+    if (!board.capabilities.includes('flash')) return false;
+    try {
+      getBoardAdapter(board.id);
+      return true;
+    } catch {
+      return false;
+    }
+  });
   const selectedConnected = stlink
     ? !!state?.debugProbes.some(
         (probe) => probe.serialNumber.toLowerCase() === config?.programmer?.serialNumber.toLowerCase(),
@@ -194,8 +203,11 @@ export function FirmwareTools() {
                 disabled={busy}
                 onChange={(event) => changeBoard(event.target.value)}
               >
-                <option value="STM32F103C8T6">STM32 / ST-Link</option>
-                <option value="Esp32_S3_CAM">ESP32-S3</option>
+                {flashBoards.map((board) => (
+                  <option key={board.id} value={board.id}>
+                    {board.name}
+                  </option>
+                ))}
               </ModernSelect>
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>

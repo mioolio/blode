@@ -191,3 +191,30 @@ test('host plugin configuration patches preserve other values and reject iframe 
   };
   assert.deepEqual(contextValue.values, { channel: 'B', speed: 10 });
 });
+
+test('newly loaded device modules join the live runtime registry without replacing existing wrappers', async (t) => {
+  const context = await fixture(t);
+  const id = 'Loaded_' + randomUUID().replaceAll('-', '');
+  const destination = path.join(context.dataRoot, 'plugins', id);
+  await fs.cp(context.directory, destination, { recursive: true });
+  const manifest = JSON.parse(await fs.readFile(path.join(destination, 'manifest.json'), 'utf8'));
+  manifest.id = id;
+  manifest.defaultConfig.boardId = id;
+  await fs.writeFile(path.join(destination, 'manifest.json'), JSON.stringify(manifest));
+  await context.core.refreshDeviceModules();
+  await context.core.refreshDeviceModules();
+  const state = await context.core.getState();
+  assert.equal(state.boards.filter((board) => board.id === context.id).length, 1);
+  assert.equal(state.boards.filter((board) => board.id === id).length, 1);
+  assert.equal((globalThis as Record<string, unknown>)[context.executionMarker], undefined);
+  await context.core.saveConfig({ ...context.config, boardId: id });
+  await assert.rejects(context.core.probe(), /runtimePluginTrustRequired/);
+  const plugin = (await context.core.runtimePlugins.state()).plugins.find((plugin) => plugin.id === id)!;
+  await context.core.runtimePlugins.trust({
+    id,
+    fingerprint: plugin.fingerprint,
+    confirm: true,
+    permanent: false,
+  });
+  assert.equal(await context.core.probe(), 'selected=usb-fixture-7');
+});

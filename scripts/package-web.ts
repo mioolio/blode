@@ -169,6 +169,8 @@ async function* payload(
     yield { path: 'LICENSE', data: await fs.readFile(license) };
   yield { path: 'dist/web-server.cjs', data: await fs.readFile(path.join(distDirectory, 'web-server.cjs')) };
   yield* releaseFiles(path.join(distDirectory, 'renderer'), 'dist/renderer');
+  yield* releaseFiles(path.join(distDirectory, 'device-modules'), 'dist/device-modules', true);
+  yield* releaseFiles(path.join(distDirectory, 'archive-tools'), 'dist/archive-tools');
   yield* releaseFiles(path.join(root, 'extensions', 'plugins'), 'extensions/plugins', true);
   const boards = path.join(root, 'extensions', 'boards');
   for (const entry of await fs.readdir(boards, { withFileTypes: true })) {

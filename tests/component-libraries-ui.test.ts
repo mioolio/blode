@@ -69,10 +69,11 @@ test('opening the library dialog without a project renders a clear state and doe
     } as unknown as Studio;
     const html = renderToStaticMarkup(createElement(ComponentLibrariesDialog, { studio, onClose() {} }));
     assert.match(html, /role="dialog"/);
-    assert.match(html, /请先打开项目/);
-    assert.match(html, /查找库/);
-    assert.match(html, /本地导入/);
-    assert.match(html, /disabled="" aria-label="刷新"/);
+    assert.match(html, /设备模块/);
+    assert.match(html, /加载 ZIP/);
+    assert.match(html, /查找组件/);
+    assert.match(html, /导入组件/);
+    assert.equal((html.match(/aria-label="刷新"/g) ?? []).length, 2);
     assert.equal(calls, 0);
   } finally {
     if (previous) Object.defineProperty(globalThis, 'window', previous);

@@ -127,6 +127,8 @@ export async function startStandaloneHost(options: StandaloneHostOptions = {}) {
   // Browser peers cannot claim the trusted local client's global undo permission.
   const assistance = createAssistanceRoutes(ai, collaboration, ui, false);
   const services = createHostServices({
+    builtinDevicePackagesRoot: path.join(appRoot, 'dist', 'device-modules'),
+    builtinArchiveRoot: path.join(appRoot, 'dist', 'archive-tools'),
     extensionExamplesRoot: path.join(appRoot, 'extensions', 'plugins'),
     openExtensionPanel: async (id, view) => {
       await ui.command({ action: 'console', tab: generalExtensionPanelKey(id, view.id) });

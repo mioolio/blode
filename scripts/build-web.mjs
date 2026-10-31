@@ -4,9 +4,13 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { rm } from 'node:fs/promises';
 import { nodeLanguageAssetsPlugin } from './node-json-assets.mjs';
+import { buildDeviceModules } from './build-device-modules.mjs';
+import { stageArchiveTools } from './stage-archive-tools.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const output = path.resolve(root, process.env.BLODE_RELEASE_DIST || 'dist');
+await buildDeviceModules(output);
+await stageArchiveTools(output);
 const result = await build({
   absWorkingDir: root,
   entryPoints: ['scripts/web-server.ts'],

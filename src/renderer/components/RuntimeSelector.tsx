@@ -39,12 +39,20 @@ export function RuntimeSelector({ studio }: { studio: Studio }) {
           setStale(true);
         }}
       >
-        {state?.boards.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.name}
-          </option>
-        ))}
+        {state?.boards
+          .filter((item) => ['auto', 'Esp32_S3_CAM', 'STM32F103C8T6', config?.boardId].includes(item.id))
+          .map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
       </ModernSelect>
+      <button
+        className="text-button"
+        onClick={() => window.dispatchEvent(new CustomEvent('blode:component-libraries'))}
+      >
+        {t('components.title')}
+      </button>
       {!!state?.runtimePlugins?.errors.length && (
         <details className="runtime-load-errors">
           <summary>

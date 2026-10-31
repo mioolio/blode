@@ -120,6 +120,7 @@ if (!scope.blode) {
     componentsPackageSave: (id) => window.blode.projectPackageSave(id),
     generalExtensionPackageSave: (id) => window.blode.projectPackageSave(id),
     toolVersionPackageSave: (id) => window.blode.projectPackageSave(id),
+    devicePackageSave: (id) => window.blode.projectPackageSave(id),
     firmwareExport: async (format) => {
       const destination = await pickHostPath({
         kind: 'save',

@@ -1,16 +1,5 @@
 import { ModernSelect } from './ModernSelect';
-import {
-  Bot,
-  CircleCheck,
-  CircleX,
-  Download,
-  RefreshCw,
-  Save,
-  Settings2,
-  Terminal,
-  Usb,
-  Wrench,
-} from 'lucide-react';
+import { Bot, CircleCheck, CircleX, RefreshCw, Save, Settings2, Terminal, Usb, Wrench } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type {
@@ -23,8 +12,9 @@ import type {
 import { useI18n, type Locale } from '../i18n';
 import { InstallationOutput } from './InstallationOutput';
 import { AiCompletionSettings } from './AiCompletionSettings';
-import { ToolVersionSettings } from './ToolVersionSettings';
 import { ContextHelp } from './ContextHelp';
+import { ToolVersionSettings } from './ToolVersionSettings';
+import { ToolchainExportSettings } from './ToolchainExportSettings';
 import type { DesktopLifecycleState } from '../../shared/desktop-lifecycle';
 import './preferences.css';
 
@@ -40,7 +30,6 @@ interface Props {
   workspaceOpen: boolean;
   onChange: (value: ProjectConfig) => void;
   onSave: () => void;
-  onInstall: () => void;
   onInstallDriver: (id: DriverId) => void;
   onRefreshDrivers: () => void;
   busy: boolean;
@@ -48,24 +37,15 @@ interface Props {
   initializing?: boolean;
 }
 
-const tools = [
-  { id: 'arduinoCli', name: 'Arduino CLI', versionKey: 'arduinoCli' },
-  { id: 'esp32Core', name: 'Arduino-ESP32', versionKey: 'esp32' },
-  { id: 'python', name: 'Python', versionKey: 'python' },
-  { id: 'esptool', name: 'esptool', versionKey: 'esptool' },
-] as const;
-
 export function Settings({
   target,
   config,
-  status,
   drivers,
   installation,
   installPending,
   workspaceOpen,
   onChange,
   onSave,
-  onInstall,
   onInstallDriver,
   onRefreshDrivers,
   busy,
@@ -108,14 +88,6 @@ export function Settings({
   const installationPanel = useRef<HTMLDivElement>(null);
   const isAutomatic = config.boardId === 'auto';
   const usesStlink = config.boardId === 'STM32F103C8T6' || config.programmer?.transport === 'stlink';
-  const stlinkTool = { id: 'stlink' as const, name: 'stlink-tools', versionKey: 'stlink' };
-  const armCompilerTool = { id: 'armCompiler' as const, name: 'Arm Compiler 6', versionKey: 'armCompiler' };
-  const gnuTool = { id: 'gnuArm' as const, name: 'GNU Arm GCC', versionKey: 'gnuArm' };
-  const shownTools = isAutomatic
-    ? [...tools, stlinkTool, armCompilerTool, gnuTool]
-    : usesStlink
-      ? [stlinkTool, armCompilerTool, gnuTool]
-      : tools;
   useEffect(() => {
     if (!target) return;
     setActive(target.section);
@@ -267,79 +239,74 @@ export function Settings({
           <div className="settings-card-head">
             <h3>{t('settings.toolchain')}</h3>
           </div>
-          {(active === 'toolchain' || visited.has('toolchain')) && (
+          {active === 'toolchain' && (
             <ToolVersionSettings
               config={config}
               onChange={onChange}
-              busy={busy || installation?.status === 'running'}
+              busy={busy}
               workspaceOpen={workspaceOpen}
             />
           )}
-          <fieldset disabled={busy || !workspaceOpen} style={{ display: 'contents' }}>
-            {!isAutomatic && (
-              <div className="segmented">
-                <button
-                  className={config.toolchain.mode === 'managed' ? 'active' : ''}
-                  onClick={() => tool({ mode: 'managed' })}
-                >
-                  {t('settings.managed')}
-                </button>
-                <button
-                  className={config.toolchain.mode === 'custom' ? 'active' : ''}
-                  onClick={() => tool({ mode: 'custom' })}
-                >
-                  {t('settings.custom')}
-                </button>
-              </div>
-            )}
-            {isAutomatic ? (
-              <>
-                {serialToolPaths}
-                {stlinkToolPath}
-                {armCompilerToolPath}
-              </>
-            ) : usesStlink ? (
-              <>
-                {stlinkToolPath}
-                {armCompilerToolPath}
-              </>
-            ) : (
-              <>
-                {config.toolchain.mode === 'custom' && serialToolPaths}
-                <label>
-                  {t('settings.fqbn')}
-                  <input
-                    value={config.toolchain.fqbn}
-                    onChange={(event) => tool({ fqbn: event.target.value })}
-                  />
-                </label>
-                <label>
-                  {t('settings.urls')}
-                  <textarea
-                    rows={3}
-                    value={urlsText}
-                    onChange={(event) => {
-                      setUrlsText(event.target.value);
-                      tool({
-                        additionalUrls: event.target.value
-                          .split('\n')
-                          .map((value) => value.trim())
-                          .filter(Boolean),
-                      });
-                    }}
-                  />
-                </label>
-              </>
-            )}
-          </fieldset>
-          <button
-            className="secondary"
-            onClick={onInstall}
-            disabled={busy || initializing || installation?.status === 'running'}
-          >
-            <Download size={13} strokeWidth={1.9} aria-hidden="true" />
-            {t('action.install')}
-          </button>
+          <details className="tool-path-settings">
+            <summary>{t('settings.catalog.paths')}</summary>
+            <fieldset disabled={busy || !workspaceOpen} className="tool-path-fields">
+              {!isAutomatic && (
+                <div className="segmented">
+                  <button
+                    className={config.toolchain.mode === 'managed' ? 'active' : ''}
+                    onClick={() => tool({ mode: 'managed' })}
+                  >
+                    {t('settings.managed')}
+                  </button>
+                  <button
+                    className={config.toolchain.mode === 'custom' ? 'active' : ''}
+                    onClick={() => tool({ mode: 'custom' })}
+                  >
+                    {t('settings.custom')}
+                  </button>
+                </div>
+              )}
+              {isAutomatic ? (
+                <>
+                  {serialToolPaths}
+                  {stlinkToolPath}
+                  {armCompilerToolPath}
+                </>
+              ) : usesStlink ? (
+                <>
+                  {stlinkToolPath}
+                  {armCompilerToolPath}
+                </>
+              ) : (
+                <>
+                  {config.toolchain.mode === 'custom' && serialToolPaths}
+                  <label>
+                    {t('settings.fqbn')}
+                    <input
+                      value={config.toolchain.fqbn}
+                      onChange={(event) => tool({ fqbn: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    {t('settings.urls')}
+                    <textarea
+                      rows={3}
+                      value={urlsText}
+                      onChange={(event) => {
+                        setUrlsText(event.target.value);
+                        tool({
+                          additionalUrls: event.target.value
+                            .split('\n')
+                            .map((value) => value.trim())
+                            .filter(Boolean),
+                        });
+                      }}
+                    />
+                  </label>
+                </>
+              )}
+            </fieldset>
+          </details>
         </section>
         <section
           className="settings-card"
@@ -417,32 +384,9 @@ export function Settings({
             );
           })}
         </section>
-        <section className="settings-card" hidden={active !== 'status'}>
+        <section className="settings-card" data-preferences-section="status" hidden={active !== 'status'}>
           <h3>{t('settings.status')}</h3>
-          <div className="toolchain-grid">
-            {shownTools.map(({ id, name, versionKey }) => (
-              <div className="toolchain-item" key={id}>
-                {initializing && !status[id] ? (
-                  <RefreshCw size={14} className="muted" aria-hidden="true" />
-                ) : status[id] ? (
-                  <CircleCheck size={14} strokeWidth={1.9} className="tone-ok" aria-hidden="true" />
-                ) : (
-                  <CircleX size={14} strokeWidth={1.9} className="tone-missing" aria-hidden="true" />
-                )}
-                <span>{name}</span>
-                <small>
-                  {status.versions[versionKey] ||
-                    t(
-                      initializing
-                        ? 'device.connectionChecking'
-                        : status[id]
-                          ? 'settings.available'
-                          : 'settings.missing',
-                    )}
-                </small>
-              </div>
-            ))}
-          </div>
+          {active === 'status' && <ToolchainExportSettings busy={busy} />}
         </section>
       </main>
     </div>
