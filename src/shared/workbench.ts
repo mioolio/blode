@@ -1,4 +1,5 @@
 import type { DevicePackagesApi } from './device-packages';
+import type { PackageSigningApi } from './package-signing';
 
 export type UiAction =
   | 'home'
@@ -52,7 +53,7 @@ export interface UiCommandReply {
   clientId: string;
   error?: string;
 }
-export interface WorkbenchApi extends DevicePackagesApi {
+export interface WorkbenchApi extends DevicePackagesApi, PackageSigningApi {
   uiPublishState(state: UiState): Promise<void>;
   uiCommandReply(reply: UiCommandReply): Promise<void>;
   onUiCommand(callback: (request: UiRequest) => void): () => void;

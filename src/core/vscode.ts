@@ -78,7 +78,7 @@ async function compilerPath(config: Pick<ProjectConfig, 'toolchain'>, platform: 
   const directory = config.toolchain.armCompilerDirectory?.trim();
   if (!directory || !path.isAbsolute(directory)) return;
   const suffix = platform === 'win32' ? '.exe' : '';
-  for (const name of [`arm-none-eabi-gcc${suffix}`, `armclang${suffix}`])
+  for (const name of [`arm-none-eabi-gcc${suffix}`, `armclang${suffix}`, `armcc${suffix}`])
     for (const file of [path.join(directory, name), path.join(directory, 'bin', name)])
       if ((await fs.stat(file).catch(() => undefined))?.isFile()) return file;
 }

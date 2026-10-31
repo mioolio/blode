@@ -58,6 +58,15 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
   const [baseSettings, setBaseSettings] = useState<BuildSettings>(() =>
     structuredClone(session?.draft.build.settings ?? {}),
   );
+  const [cStandard, setCStandard] = useState(() => {
+    const draft = session?.draft;
+    const settings = draft?.build.settings;
+    const platform = draft && settings?.platforms?.[draft.config.boardId];
+    let family: CompilerChoice['family'] = 'inherit';
+    for (const choice of [settings?.common, platform?.common, platform?.c])
+      if (choice && choice.family !== 'inherit') family = choice.family;
+    return draft?.build.cStandard ?? (family === 'armcc' ? 'c99' : 'c17');
+  });
   const [targets, setTargets] = useState<BuildTarget[]>(() =>
     structuredClone(session?.draft.build.targets ?? []),
   );
@@ -190,8 +199,10 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
     return () => window.removeEventListener('keydown', key);
   }, [busy, onClose]);
   const choiceFor = (language: BuildCompilerLanguage) => buildCompilerChoice(settings, scope, language);
-  const updateChoice = (language: BuildCompilerLanguage, choice: CompilerChoice) =>
+  const updateChoice = (language: BuildCompilerLanguage, choice: CompilerChoice) => {
+    if (choice.family === 'armcc' && !target && !session?.draft.build.cStandard) setCStandard('c99');
     setSettings((value) => updateBuildCompilerChoice(value, scope, language, choice));
+  };
   const save = () =>
     void studio.perform('action.save', async () => {
       if (!session) throw new Error('error.invalidProjectDescriptor');
@@ -219,6 +230,7 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
         throw new Error('error.invalidBuildTarget');
       const draft = {
         ...session.draft,
+        cStandard,
         config,
         build: {
           ...session.draft.build,
@@ -266,8 +278,8 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
       base === 'Esp32_S3_CAM'
         ? ['arduino']
         : base === 'STM32F103C8T6'
-          ? ['gnu-arm', 'armclang']
-          : ['gnu-arm', 'armclang', 'arduino'];
+          ? ['gnu-arm', 'armcc', 'armclang']
+          : ['gnu-arm', 'armcc', 'armclang', 'arduino'];
     return (
       <section className="build-compiler-row" key={language}>
         <label>
@@ -360,7 +372,9 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
                       ? 'GNU Arm GCC'
                       : family === 'armclang'
                         ? 'Arm Compiler 6'
-                        : 'Arduino / ESP32'}
+                        : family === 'armcc'
+                          ? 'Arm Compiler 5'
+                          : 'Arduino / ESP32'}
                   </option>
                 ))}
               </ModernSelect>
@@ -618,6 +632,24 @@ export default function BuildSettingsDialog({ studio, onClose }: { studio: Studi
                   {pending && <p role="status">{t('buildSettings.detecting')}</p>}
                   <fieldset disabled={!!busy || pending} className="build-compiler-fields">
                     {renderChoice('common')}
+                    {!target &&
+                      (scope === 'STM32F103C8T6' ||
+                        projectRuntime?.compiler.baseRuntime === 'STM32F103C8T6' ||
+                        choiceFor('common')?.family === 'armcc') && (
+                        <label className="build-c-standard">
+                          {t('buildTargets.cStandard')}
+                          <ModernSelect
+                            value={cStandard}
+                            onChange={(event) => setCStandard(event.target.value as typeof cStandard)}
+                          >
+                            {['c99', 'c11', 'c17', 'c23'].map((standard) => (
+                              <option key={standard} value={standard}>
+                                {standard.toUpperCase()}
+                              </option>
+                            ))}
+                          </ModernSelect>
+                        </label>
+                      )}
                     {scope && (
                       <CompilerOptions
                         className="build-language-options"

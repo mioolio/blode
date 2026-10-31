@@ -5,6 +5,7 @@ import type { ToolVersionKind, ToolVersionsApi, ToolVersionsState } from '../../
 import { useI18n } from '../i18n';
 import { pickHostPath } from '../workspace/hostPicker';
 import { ModernSelect } from './ModernSelect';
+import { approvePackageSource } from './PackageTrustDialog';
 
 const names: Record<ToolVersionKind, string> = {
   'gnu-arm': 'GNU Arm GCC',
@@ -83,7 +84,9 @@ export function ToolVersionSettings({
             void perform(async () => {
               const file = await pickHostPath({ kind: 'file', extensions: ['zip'] });
               if (file) {
-                setState(await api.toolVersionImport!({ path: file, confirm: true }));
+                const approval = await approvePackageSource(file, 'tool', t);
+                if (!approval) return;
+                setState(await api.toolVersionImport!({ path: file, confirm: true, approval }));
                 setNotice(t('settings.versions.imported'));
               }
             })

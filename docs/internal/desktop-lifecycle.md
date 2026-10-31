@@ -4,10 +4,10 @@ This behavior is part of the current internal development update.
 
 ## Desktop
 
-- Closing a clean main window exits directly.
+- Closing the main window hides it to the system tray by default. **File → Quit** and the tray's **Quit** action exit the application.
 - Unsaved files, project configuration or shared host documents open one decision dialog: **Save and close**, **Discard and close**, or **Cancel**.
 - Saving includes the host's shared documents. A failed save, a collaboration conflict or new edits during the save keeps the window open.
-- **Preferences → General → Minimize to tray on close** changes the main window's close button to hide the window. It is disabled by default and works without an open project.
+- `closeToTray` in the user-data `desktop-lifecycle.json` defaults to `true`. Setting it to `false` makes the main close button quit; the tray remains available while the application is open.
 - Click the tray icon to restore the window. The tray menu's **Quit** action uses the same save decision as a normal exit.
 
 The shutdown controller coalesces repeated close requests, rejects expired replies and rechecks shared documents under the collaboration write lock. A renderer that stops responding does not grant permission to discard data. Tray preferences are stored in the application's data directory.
@@ -20,6 +20,6 @@ The Web version registers the browser's unsaved-changes warning for local file a
 
 ## Validation
 
-Automated tests cover clean close, cancellation, shared edits arriving after a close request, save failure, stale replies, optional tray hide/quit, preference restoration, renderer timeouts, long save transactions, PNG structure and content-based unsaved-state comparison. These tests use a native-window substitute and do not mark a live Windows tray interaction as passed.
+Automated tests cover clean quit, cancellation, shared edits arriving after a close request, save failure, stale replies, tray hide/restore/quit, preference restoration, renderer timeouts, long save transactions, PNG structure and content-based unsaved-state comparison. Unit tests use a native-window substitute. A separate Windows Electron smoke check verified native tray creation and exercised the hide/restore/quit callbacks; manual interaction with the full workbench remains a separate acceptance step.
 
 Manual acceptance should cover closing dirty files and project configuration, a collaborator editing while closing, cancelling and continuing to type, saving with a write error, tray restore/quit, language switching, and browser refresh/close with unsaved changes.

@@ -35,9 +35,13 @@ async function fixture(t: TestContext) {
     },
     closeSerial: async () => {},
     runCommand: async (command, args) => {
-      assert.deepEqual(args, ['--version']);
       const tool = path.basename(command).replace(/\.exe$/i, '');
       calls.push(tool);
+      if (tool === 'armcc') {
+        assert.deepEqual(args, ['--vsn']);
+        return { code: 0, output: 'ARM Compiler 5.06 update 5 (build 528)' };
+      }
+      assert.deepEqual(args, ['--version']);
       if (tool === 'armclang') return { code: 0, output: 'Arm Compiler for Embedded 6.22' };
       assert.equal(tool, 'arm-none-eabi-gcc');
       return brokenGnu
@@ -75,12 +79,33 @@ async function fixture(t: TestContext) {
     config: stm32Adapter.createConfig(),
     compiler: new Stm32Compiler(host),
     installAc6: () => install(ac6, ['armclang', 'armlink', 'fromelf']),
+    installAc5: () =>
+      install(path.join(tools, 'versions/armcc/5.06-u5-b528/bin'), ['armcc', 'armasm', 'armlink', 'fromelf']),
     installGnu: (directory = gnu) => install(directory, ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy']),
     breakGnu: () => {
       brokenGnu = true;
     },
   };
 }
+
+test('an unselected AC5 version reports installed without AC6 and works as the automatic compiler', async (t) => {
+  const f = await fixture(t);
+  await f.installAc5();
+  const status = await f.runtime.status(f.config);
+  assert.equal(status.armCompiler, true);
+  assert.equal(status.gnuArm, false);
+  assert.equal(status.versions.armCompiler, '5.06-u5-b528');
+  assert.deepEqual(await f.compiler.status(f.config), {
+    installed: true,
+    version: '5.06-u5-b528',
+    gnu: false,
+  });
+  f.config.toolchain.armCompilerDirectory = path.join(f.tools, 'missing');
+  assert.equal((await f.runtime.status(f.config)).armCompiler, true);
+  f.config.toolchain.armCompilerDirectory = '';
+  await fs.rm(path.join(f.tools, 'versions/armcc/5.06-u5-b528/bin', executable('armasm')));
+  assert.equal((await f.compiler.status(f.config)).installed, false);
+});
 
 test('AC6 and GNU installations report their own versions while compilation keeps AC6 priority', async (t) => {
   const f = await fixture(t);

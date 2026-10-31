@@ -82,7 +82,8 @@ async function* resources(
       relative === 'manifest.json' ||
       relative === 'package.json' ||
       relative === 'package-lock.json' ||
-      relative === 'package-manifest.json'
+      relative === 'package-manifest.json' ||
+      relative === 'obe'
     )
       continue;
     yield { relative, source };

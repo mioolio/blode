@@ -504,6 +504,29 @@
   gap: 8px;
   align-items: center;
 }
+.device-module-health {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-width: 52px;
+  font-size: 12px;
+}
+.device-module-health > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.device-module-health.normal {
+  color: var(--success, #21945c);
+}
+.device-module-health.abnormal {
+  color: var(--warning, #ab7600);
+}
+.device-module-health.danger {
+  color: var(--error, #d44242);
+}
 .device-module-actions button {
   min-height: 32px;
   padding: 5px 10px;

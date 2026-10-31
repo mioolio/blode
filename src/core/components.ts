@@ -17,6 +17,8 @@ import type {
   ComponentRemoveRequest,
 } from '../shared/components';
 import { readComponentZip } from './component-zip';
+import { assertPackageApproval, verifyPackageFiles } from './package-signing';
+import type { PackageApproval } from '../shared/package-signing';
 import {
   compareComponentVersions,
   componentVersionMatches,
@@ -64,6 +66,7 @@ const skipped = new Set([
   '.hg',
   '.blode',
   '.tools',
+  '.signing',
   'node_modules',
   '.DS_Store',
   '__MACOSX',
@@ -171,6 +174,7 @@ export interface ComponentOperationHooks {
   fetcher?: typeof fetch;
 }
 interface Options {
+  enforceSignatures?: boolean;
   projectRoot: () => string;
   dataRoot: string;
   toolchainRoot?: string;
@@ -219,12 +223,13 @@ function slug(name: string) {
       .slice(0, 63) || `Library_${hash(name).slice(0, 12)}`;
   return safeRelative(value) ? value : `Library_${hash(name).slice(0, 12)}`;
 }
-function unwrap(files: Map<string, Buffer>): Map<string, Buffer> {
+export function unwrapComponentFiles(files: Map<string, Buffer>): Map<string, Buffer> {
   const filtered = [...files].filter(([file]) => !file.split('/').some((part) => skipped.has(part)));
   const first = filtered[0]?.[0].split('/')[0];
   const prefix = first && filtered.every(([file]) => file.startsWith(first + '/')) ? first + '/' : '';
   return new Map(filtered.map(([file, bytes]) => [prefix ? file.slice(prefix.length) : file, bytes]));
 }
+const unwrap = unwrapComponentFiles;
 function payload(files: Map<string, Buffer>, fallback: string, source: ComponentLibrary['source']): Payload {
   const props = properties(files.get('library.properties'));
   const arduino = files.has('library.properties');
@@ -859,6 +864,8 @@ export class ComponentLibraries {
     )
       throw new Error('error.invalidArguments');
     componentVersionMatches(request.version);
+    if (this.options.enforceSignatures && !request.allowUntrusted)
+      throw new Error('error.packageApprovalRequired');
     return this.mutate(() =>
       this.transaction(request.expectedProjectRoot, hooks, async (_root, manifest, provided) => {
         if (manifest.components.some((item) => keyOf(item.name) === keyOf(request.name)))
@@ -878,13 +885,17 @@ export class ComponentLibraries {
     directory: string,
     expectedProjectRoot: string,
     hooks: ComponentOperationHooks = {},
+    approval?: PackageApproval,
   ): Promise<ComponentLibrariesState> {
     if (typeof expectedProjectRoot !== 'string' || !expectedProjectRoot)
       throw new Error('error.invalidArguments');
     return this.mutate(() =>
       this.transaction(expectedProjectRoot, hooks, async (root, manifest, provided) => {
         if (within(await fs.realpath(directory), root)) throw new Error('error.componentPath');
-        const item = payload(await readComponentDirectory(directory), path.basename(directory), {
+        const files = await readComponentDirectory(directory);
+        if (this.options.enforceSignatures || approval)
+          assertPackageApproval(verifyPackageFiles(files, { kind: 'component' }), approval);
+        const item = payload(files, path.basename(directory), {
           type: 'directory',
         });
         if (provided.some((value) => keyOf(value.name) === keyOf(item.library.name)))
@@ -903,6 +914,7 @@ export class ComponentLibraries {
     file: string,
     expectedProjectRoot: string,
     hooks: ComponentOperationHooks = {},
+    approval?: PackageApproval,
   ): Promise<ComponentLibrariesState> {
     if (typeof expectedProjectRoot !== 'string' || !expectedProjectRoot)
       throw new Error('error.invalidArguments');
@@ -912,6 +924,8 @@ export class ComponentLibraries {
         if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_TOTAL)
           throw new Error('error.componentArchive');
         const files = unwrap(readComponentZip(await fs.readFile(file), { maxArchive: MAX_TOTAL }));
+        if (this.options.enforceSignatures || approval)
+          assertPackageApproval(verifyPackageFiles(files, { kind: 'component' }), approval);
         const { readComponentPackage } = await import('./component-package');
         const bundle = readComponentPackage(files);
         if (bundle) {

@@ -25,6 +25,9 @@ test('project delivery excludes host model credentials and profiles while retain
     'src/core/model-service/index.ts': 'export const source = true;',
     '.env': 'SECRET=not-shared',
     '.env.example': 'SECRET=example',
+    '.signing/blode-studio-ed25519.pem': 'SENTINEL-DO-NOT-SHARE',
+    '.signing/windows-signing.json': 'SENTINEL-DO-NOT-SHARE',
+    '.signing/blode-studio.pfx': 'SENTINEL-DO-NOT-SHARE',
   };
   for (const [name, body] of Object.entries(files)) {
     const file = path.join(project, name);

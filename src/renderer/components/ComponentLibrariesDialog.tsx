@@ -18,6 +18,7 @@ import { ComponentLibrariesModel } from './componentLibrariesModel';
 import { InstallationOutput } from './InstallationOutput';
 import { ModernSelect } from './ModernSelect';
 import { DeviceModuleLibrary } from './DeviceModuleLibrary';
+import { approvePackageSource, approveCatalogComponent } from './PackageTrustDialog';
 import './component-libraries.css';
 
 type LibraryTab = 'devices' | 'installed' | 'browse' | 'import';
@@ -530,8 +531,10 @@ export default function ComponentLibrariesDialog({
                               className="primary"
                               disabled={blocked || !projectAvailable || !selectedVersion}
                               onClick={() =>
-                                run('components.install', () =>
-                                  model.install(selectedLibrary.name, selectedVersion),
+                                run('components.install', async () =>
+                                  (await approveCatalogComponent(t))
+                                    ? model.install(selectedLibrary.name, selectedVersion, true)
+                                    : false,
                                 )
                               }
                             >
@@ -553,7 +556,10 @@ export default function ComponentLibrariesDialog({
               className="component-import"
               onSubmit={(event) => {
                 event.preventDefault();
-                run('components.importAction', () => model.import(importPath.trim(), importKind));
+                run('components.importAction', async () => {
+                  const approval = await approvePackageSource(importPath.trim(), 'component', t);
+                  return approval ? model.import(importPath.trim(), importKind, approval) : false;
+                });
               }}
             >
               <Package size={32} strokeWidth={1.2} />

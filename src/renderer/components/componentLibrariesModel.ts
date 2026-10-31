@@ -178,14 +178,30 @@ export class ComponentLibrariesModel {
     }
   }
 
-  install(name: string, version: string) {
+  install(name: string, version: string, allowUntrusted?: true) {
     return this.mutate('install', (expectedProjectRoot) =>
-      this.api.componentsInstall({ name, version, expectedProjectRoot, confirm: true }),
+      this.api.componentsInstall({
+        name,
+        version,
+        expectedProjectRoot,
+        confirm: true,
+        ...(allowUntrusted ? { allowUntrusted } : {}),
+      }),
     );
   }
-  import(path: string, kind: 'directory' | 'archive') {
+  import(
+    path: string,
+    kind: 'directory' | 'archive',
+    approval?: import('../../shared/package-signing').PackageApproval,
+  ) {
     return this.mutate('import', (expectedProjectRoot) =>
-      this.api.componentsImport({ path, kind, expectedProjectRoot, confirm: true }),
+      this.api.componentsImport({
+        path,
+        kind,
+        expectedProjectRoot,
+        confirm: true,
+        ...(approval ? { approval } : {}),
+      }),
     );
   }
   remove(id: string) {

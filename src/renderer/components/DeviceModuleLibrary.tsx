@@ -11,8 +11,10 @@ import {
 } from 'lucide-react';
 import type { DevicePackageReview, DevicePackagesState } from '../../shared/device-packages';
 import type { Studio } from '../workspace/useStudio';
+import type { PackageHealth } from '../../shared/package-health';
 import { pickHostPath } from '../workspace/hostPicker';
 import { deviceModulePage } from './deviceModuleModel';
+import { approvePackageVerification } from './PackageTrustDialog';
 
 export function DeviceModuleLibrary({
   studio,
@@ -25,6 +27,7 @@ export function DeviceModuleLibrary({
   const [state, setState] = useState<DevicePackagesState>();
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
+  const [health, setHealth] = useState<Record<string, PackageHealth>>({});
   const [pending, setPending] = useState(false);
   const [review, setReview] = useState<DevicePackageReview>();
   const [notice, setNotice] = useState('');
@@ -95,6 +98,30 @@ export function DeviceModuleLibrary({
       if (path) setReview(await window.blode.devicePackageReview({ path }));
     });
   const result = useMemo(() => deviceModulePage(state?.packages ?? [], query, page), [state, query, page]);
+  useEffect(() => {
+    let active = true;
+    if (!state || !result.entries.length) return;
+    const ids = result.entries.map((entry) => entry.id);
+    setHealth({});
+    if (typeof window.blode.devicePackagesVerify !== 'function') {
+      setHealth(Object.fromEntries(ids.map((id) => [id, 'abnormal'])));
+      return;
+    }
+    const timer = setTimeout(() => {
+      void window.blode
+        .devicePackagesVerify(ids)
+        .then((entries) => {
+          if (active) setHealth(Object.fromEntries(entries.map((entry) => [entry.id, entry.health])));
+        })
+        .catch(() => {
+          if (active) setHealth(Object.fromEntries(ids.map((id) => [id, 'abnormal'])));
+        });
+    }, 150);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [state, result]);
   const unavailable = pending || !!studio.busy;
   return (
     <div className="device-module-library">
@@ -149,33 +176,28 @@ export function DeviceModuleLibrary({
                   </span>
                   <small>{entry.support.join(' · ')}</small>
                 </div>
-                <span className="device-module-origin">
-                  {t(entry.source === 'builtin' ? 'settings.devices.builtin' : 'settings.devices.plugin')}
-                </span>
+                <button
+                  className="text-button device-module-origin"
+                  disabled={unavailable}
+                  onClick={() => void perform(() => window.blode.devicePackageOpenLocation(entry.id))}
+                >
+                  <FolderOpen size={13} />
+                  {t('packageTrust.openLocation')}
+                </button>
                 <div className="device-module-actions">
-                  <button
-                    disabled={
-                      unavailable || !studio.state?.workspaceOpen || studio.config?.boardId === entry.id
-                    }
-                    onClick={() => {
-                      const config = current.current.config;
-                      const selected = current.current.state?.boards.find((board) => board.id === entry.id);
-                      if (!config || !selected) return;
-                      current.current.setConfig({
-                        ...config,
-                        ...structuredClone(selected.defaultConfig),
-                        name: config.name,
-                        port: config.port,
-                        toolchain: {
-                          ...config.toolchain,
-                          fqbn: selected.defaultConfig.toolchain?.fqbn ?? config.toolchain.fqbn,
-                        },
-                      });
-                      current.current.setStale(true);
-                    }}
+                  <span
+                    className={`device-module-health${health[entry.id] ? ` ${health[entry.id]}` : ''}`}
+                    role="status"
                   >
-                    {t(studio.config?.boardId === entry.id ? 'devices.current' : 'devices.use')}
-                  </button>
+                    {health[entry.id] ? (
+                      <>
+                        <span aria-hidden="true" />
+                        {t(`packageHealth.${health[entry.id]}`)}
+                      </>
+                    ) : (
+                      <RefreshCw size={13} className="spin" aria-label={t('packageHealth.checking')} />
+                    )}
+                  </span>
                   <button
                     disabled={unavailable}
                     onClick={() =>
@@ -253,7 +275,11 @@ export function DeviceModuleLibrary({
                 disabled={unavailable}
                 onClick={() =>
                   void perform(async () => {
+                    if (!review.verification) throw new Error('error.packageApprovalRequired');
+                    const approval = await approvePackageVerification(review.verification, t);
+                    if (!approval) return;
                     const next = await window.blode.devicePackageInstall({
+                      approval,
                       ticket: review.ticket,
                       fingerprint: review.fingerprint,
                       confirm: true,

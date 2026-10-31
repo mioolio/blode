@@ -149,6 +149,12 @@
 .build-backend-options {
   margin-top: 18px;
 }
+.build-c-standard {
+  display: grid;
+  gap: 8px;
+  max-width: 280px;
+  margin-top: 16px;
+}
 .build-language-options > summary,
 .build-backend-options > summary {
   cursor: pointer;

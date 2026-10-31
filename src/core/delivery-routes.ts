@@ -1,4 +1,5 @@
 import * as z from 'zod';
+import { packageApprovalSchema } from './package-signing-schemas';
 import { ComponentPackages } from './component-package';
 import { OfflineTools, type OfflineToolOptions } from './tool-offline';
 import type { CoreService } from './service';
@@ -13,7 +14,13 @@ export const deliveryParameterSchemas = {
     .strict(),
   'tools.downloadVersion': z.object({ id: z.string().min(1).max(128), confirm: z.literal(true) }).strict(),
   'tools.exportVersion': z.object({ id: z.string().min(1).max(128), confirm: z.literal(true) }).strict(),
-  'tools.importVersion': z.object({ path: z.string().min(1).max(4096), confirm: z.literal(true) }).strict(),
+  'tools.importVersion': z
+    .object({
+      path: z.string().min(1).max(4096),
+      confirm: z.literal(true),
+      approval: packageApprovalSchema.optional(),
+    })
+    .strict(),
   'tools.cancelVersionTransfer': z.object({}).strict(),
 };
 export function createDeliveryRoutes(options: {

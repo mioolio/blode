@@ -1,4 +1,5 @@
 import * as z from 'zod';
+import { packageApprovalSchema, packageInspectSchema } from './package-signing-schemas';
 import { generalExtensionParameterSchemas } from './general-extensions/schema';
 import { languageParameterSchemas } from './language-schemas';
 import { terminalParameterSchemas } from './terminal-schemas';
@@ -10,6 +11,9 @@ import { configSchema } from './config-schema';
 import { RUNTIME_VIEW_KIND_PATTERN } from '../shared/plugins';
 const empty = z.object({}).strict();
 export const hostParameterSchemas = {
+  'packages.inspect': packageInspectSchema,
+  'devices.openLocation': z.object({ id: z.string().min(1).max(80) }).strict(),
+  'devices.verify': z.object({ ids: z.array(z.string().min(1).max(80)).max(25) }).strict(),
   ...generalExtensionParameterSchemas,
   ...languageParameterSchemas,
   ...modelServiceParameterSchemas,
@@ -18,6 +22,7 @@ export const hostParameterSchemas = {
   'devices.review': z.object({ path: z.string().min(1).max(4096) }).strict(),
   'devices.install': z
     .object({
+      approval: packageApprovalSchema.optional(),
       ticket: z.string().uuid(),
       fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
       confirm: z.literal(true),
@@ -28,6 +33,7 @@ export const hostParameterSchemas = {
   'components.search': z.object({ query: z.string().trim().min(1).max(200) }).strict(),
   'components.install': z
     .object({
+      allowUntrusted: z.literal(true).optional(),
       name: z.string().trim().min(1).max(160),
       version: z.string().trim().min(1).max(80),
       expectedProjectRoot: z.string().min(1).max(4096),
@@ -36,6 +42,7 @@ export const hostParameterSchemas = {
     .strict(),
   'components.import': z
     .object({
+      approval: packageApprovalSchema.optional(),
       path: z.string().min(1).max(4096),
       kind: z.enum(['directory', 'archive']),
       expectedProjectRoot: z.string().min(1).max(4096),

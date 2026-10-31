@@ -12,6 +12,7 @@ const skipped = new Set([
   '.blode',
   '.blode-share',
   '.tools',
+  '.signing',
   'tools',
   'build',
   'dist',
@@ -19,7 +20,7 @@ const skipped = new Set([
   'release',
 ]);
 const privateEntry = (name: string) =>
-  /^(?:\.env(?:\..*)?|\.npmrc|\.pypirc|\.netrc|\.ssh|\.aws|\.gnupg|model-credentials|model-service\.json|.*\.credential)$/i.test(
+  /^(?:\.signing|\.env(?:\..*)?|\.npmrc|\.pypirc|\.netrc|\.ssh|\.aws|\.gnupg|model-credentials|model-service\.json|.*\.credential)$/i.test(
     name,
   ) && !/^\.env\.(?:example|sample|template)$/i.test(name);
 const textExtensions = new Set([

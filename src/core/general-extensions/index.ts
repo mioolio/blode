@@ -19,6 +19,8 @@ import {
 } from './package';
 import { extensionId, extensionValuesSchema } from './schema';
 import { renderExtensionDocument } from './view';
+import { assertPackageApproval, verifyPackageFiles } from '../package-signing';
+import type { PackageApproval } from '../../shared/package-signing';
 
 interface Record {
   directory: string;
@@ -62,6 +64,7 @@ export class GeneralExtensions {
     private readonly options: {
       dataRoot: string;
       examplesRoot?: string;
+      enforceSignatures?: boolean;
       changed?: () => void;
       log?: (message: string) => void;
       openView?: (id: string, view: RuntimeViewContribution) => Promise<void>;
@@ -390,16 +393,30 @@ export class GeneralExtensions {
         manifest: pack.manifest,
         files: [...pack.files.keys()],
         bytes: pack.bytes,
+        verification: verifyPackageFiles(pack.files, {
+          kind: 'extension',
+          id: pack.manifest.id,
+          version: pack.manifest.version,
+        }),
       };
     });
   }
-  install(request: { ticket: string; fingerprint: string; confirm: true }) {
+  install(request: { ticket: string; fingerprint: string; confirm: true; approval?: PackageApproval }) {
     return this.locked(async () => {
       if (request.confirm !== true) throw new Error('error.extensionConfirm');
       await this.initialize();
       const review = this.reviews.get(request.ticket);
       if (!review || review.expires <= Date.now()) throw new Error('error.extensionReviewExpired');
       const pack = await readExtensionSource(review.source);
+      if (this.options.enforceSignatures || request.approval)
+        assertPackageApproval(
+          verifyPackageFiles(pack.files, {
+            kind: 'extension',
+            id: pack.manifest.id,
+            version: pack.manifest.version,
+          }),
+          request.approval,
+        );
       if (pack.fingerprint !== request.fingerprint || pack.fingerprint !== review.package.fingerprint)
         throw new Error('error.extensionChanged');
       const target = path.join(this.directory, pack.manifest.id);

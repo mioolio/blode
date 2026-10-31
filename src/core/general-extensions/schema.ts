@@ -1,4 +1,5 @@
 import * as z from 'zod';
+import { packageApprovalSchema } from '../package-signing-schemas';
 import { extensionPermissions } from '../../shared/general-extensions';
 
 export const extensionId = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,47}$/);
@@ -171,6 +172,7 @@ export const extensionValuesSchema = z.record(
 const id = z.object({ id: extensionId }).strict();
 const reviewed = z
   .object({
+    approval: packageApprovalSchema.optional(),
     ticket: z.string().uuid(),
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     confirm: z.literal(true),

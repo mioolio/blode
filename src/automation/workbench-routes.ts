@@ -82,6 +82,9 @@ export const workbenchRouteSchemas = {
 export type WorkbenchRouteName = keyof typeof workbenchRouteSchemas;
 
 export const workbenchDescriptions: Record<WorkbenchRouteName, string> = {
+  'packages.inspect': 'Verify a host package OBE signature and current file hashes before installation.',
+  'devices.openLocation': 'Open the installed device module directory on the host.',
+  'devices.verify': 'Verify signatures and file integrity for up to 25 installed device modules.',
   'extensions.state': 'List installed general extensions, permissions, enabled state and official examples.',
   'extensions.review': 'Inspect a host extension folder or ZIP without executing its code.',
   'extensions.install': 'Install the exact reviewed package without enabling it; confirm=true is required.',

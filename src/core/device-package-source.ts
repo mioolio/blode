@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { readZip } from './zip-reader';
 import { parseRuntimePluginManifest } from './runtime-plugin-schema';
+import { verifyPackageFiles } from './package-signing';
 
 export const privateDeviceFile = (name: string) =>
   name.startsWith('.') ||
@@ -96,14 +97,19 @@ export async function readDevicePackage(source: string) {
   for (const file of requiredFiles(manifest))
     if (!files.has(file.replaceAll('\\', '/'))) throw new Error('error.runtimePluginPath');
   const checksum = files.get('package-manifest.json');
-  if (checksum) {
+  const verification = verifyPackageFiles(files, {
+    kind: 'device',
+    id: manifest.id,
+    version: manifest.version,
+  });
+  if (checksum && verification.status !== 'tampered') {
     if (checksum.length > 4_000_000) throw new Error('error.runtimePluginSize');
     const integrity = JSON.parse(checksum.toString('utf8'));
     if (
       integrity.id !== manifest.id ||
       integrity.version !== manifest.version ||
       !Array.isArray(integrity.files) ||
-      integrity.files.length !== files.size - 1
+      integrity.files.length !== files.size - 1 - Number(files.has('obe'))
     )
       throw new Error('error.toolPackageChecksum');
     const seen = new Set<string>();

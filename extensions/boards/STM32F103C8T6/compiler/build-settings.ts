@@ -24,7 +24,7 @@ export function optimizationFlags(settings?: BuildSettings): string[] {
 export async function installedCompilerRoots(
   host: RuntimeHost,
   config: ProjectConfig,
-  family: 'gnu-arm' | 'armclang',
+  family: 'gnu-arm' | 'armclang' | 'armcc',
   version: string,
 ): Promise<string[]> {
   const root = host.toolchainRoot ?? path.join(host.dataRoot, 'toolchains');
@@ -48,7 +48,7 @@ export async function installedCompilerRoots(
       path.join(store, version),
       ...entries.map((entry) => path.join(store, entry.name)),
       ...(config.toolchain.armCompilerDirectory ? [config.toolchain.armCompilerDirectory] : []),
-      path.join(root, family === 'gnu-arm' ? 'armgcc' : 'armclang'),
+      path.join(root, family === 'gnu-arm' ? 'armgcc' : family),
       ...searchPath
         .split(path.delimiter)
         .map((value) => value.trim().replace(/^"(.*)"$/, '$1'))

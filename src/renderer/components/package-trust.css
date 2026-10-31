@@ -1,0 +1,47 @@
+.package-trust-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #17223566;
+}
+.package-trust-dialog {
+  width: min(580px, 100%);
+  max-height: 80dvh;
+  overflow: auto;
+  padding: 26px;
+}
+.package-trust-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  margin: 0 0 18px;
+}
+.package-trust-dialog p {
+  line-height: 1.7;
+}
+.package-trust-dialog dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 18px;
+  font-size: 13px;
+  margin: 20px 0;
+}
+.package-trust-dialog dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.package-trust-key {
+  font-family: monospace;
+  color: var(--muted, #68748b);
+}
+.package-trust-dialog details {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.package-trust-dialog .modal-actions {
+  margin-top: 24px;
+}

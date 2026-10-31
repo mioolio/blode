@@ -1,4 +1,4 @@
-export type CompilerFamily = 'inherit' | 'auto' | 'gnu-arm' | 'armclang' | 'arduino' | 'plugin';
+export type CompilerFamily = 'inherit' | 'auto' | 'gnu-arm' | 'armclang' | 'armcc' | 'arduino' | 'plugin';
 
 export interface CompilerChoice {
   family: CompilerFamily;

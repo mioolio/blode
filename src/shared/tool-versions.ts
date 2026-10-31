@@ -25,7 +25,7 @@ export interface LocalToolchain {
   id: string;
   name: string;
   version: string;
-  kind: ToolVersionKind | 'armclang';
+  kind: ToolVersionKind | 'armclang' | 'armcc';
   directory?: string;
   source: InstalledBuildTool['source'];
   exportable: boolean;
@@ -33,7 +33,7 @@ export interface LocalToolchain {
 }
 export interface InstalledBuildTool {
   id: string;
-  family: 'gnu-arm' | 'armclang' | 'arduino';
+  family: 'gnu-arm' | 'armclang' | 'armcc' | 'arduino';
   name: string;
   version: string;
   directory?: string;
@@ -45,7 +45,11 @@ export interface InstalledBuildTool {
 export interface ToolVersionsApi {
   toolVersionDownload(request: { id: string; confirm: true }): Promise<ToolPackageResult>;
   toolVersionExport(request: { id: string; confirm: true }): Promise<ToolPackageResult>;
-  toolVersionImport(request: { path: string; confirm: true }): Promise<ToolVersionsState>;
+  toolVersionImport(request: {
+    path: string;
+    confirm: true;
+    approval?: import('./package-signing').PackageApproval;
+  }): Promise<ToolVersionsState>;
   toolVersionPackageSave(id: string): Promise<boolean>;
   toolVersionCancel(): Promise<void>;
   toolVersionsState(): Promise<ToolVersionsState>;

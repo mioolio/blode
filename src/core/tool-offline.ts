@@ -1,6 +1,8 @@
 import { promises as fs, createReadStream } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { assertPackageApproval, verifyPackageDirectory } from './package-signing';
+import type { PackageApproval, PackageVerification } from '../shared/package-signing';
 import { Readable } from 'node:stream';
 import * as z from 'zod';
 import { ToolVersions, arduinoCliAsset } from './tool-versions';
@@ -24,7 +26,15 @@ const MANIFEST = 'blode-tool-package.json',
   SNAPSHOT_TOTAL = 3_500_000_000,
   SNAPSHOT_ENTRIES = 60_000,
   MAX_PACKAGE = SNAPSHOT_TOTAL + 400_000_000;
-const TOOL_KINDS = ['gnu-arm', 'arduino-cli', 'arduino-esp32', 'stlink', 'clangd', 'armclang'] as const;
+const TOOL_KINDS = [
+  'gnu-arm',
+  'arduino-cli',
+  'arduino-esp32',
+  'stlink',
+  'clangd',
+  'armclang',
+  'armcc',
+] as const;
 type SnapshotTool = Omit<ToolVersionEntry, 'kind'> & {
   kind: (typeof TOOL_KINDS)[number];
   binaryDirectory?: string;
@@ -86,6 +96,7 @@ const snapshotSchema = z
   .strict();
 type SnapshotManifest = z.infer<typeof snapshotSchema>;
 export interface OfflineToolOptions {
+  enforceSignatures?: boolean;
   archiver?: ArchiveWriter;
   root: string;
   dataRoot: string;
@@ -200,7 +211,8 @@ export class OfflineTools {
         if (
           entry.name.startsWith('.') ||
           /^(?:cache|tmp|temp|downloads|logs|__pycache__)$/i.test(entry.name) ||
-          /\.(?:key|pem|pfx|p12|log|pyc)$/i.test(entry.name)
+          /\.(?:key|pem|pfx|p12|lic|licx|log|pyc)$/i.test(entry.name) ||
+          /^(?:tools\.ini|license\.dat)$/i.test(entry.name)
         )
           continue;
         const file = path.join(current, entry.name),
@@ -256,7 +268,10 @@ export class OfflineTools {
       }
     };
     let files: SnapshotManifest['files'];
-    if (entry.kind === 'arduino-esp32') {
+    if (await this.exists(path.join(source, 'obe'))) {
+      files = await this.snapshotFiles(source, undefined, onFile);
+      for (const file of files) sources.set(file.path, path.join(source, file.path));
+    } else if (entry.kind === 'arduino-esp32') {
       files = (
         await this.snapshotFiles(path.join(source, 'arduino-data', 'packages'), undefined, onFile)
       ).map((file) => ({
@@ -282,6 +297,7 @@ export class OfflineTools {
       const main: { [kind: string]: string } = {
         'gnu-arm': 'arm-none-eabi-gcc',
         armclang: 'armclang',
+        armcc: 'armcc',
         stlink: 'st-info',
         clangd: 'clangd',
         'arduino-cli': 'arduino-cli',
@@ -298,8 +314,8 @@ export class OfflineTools {
         /\.dll$/i.test(name) ||
         (entry.kind === 'gnu-arm'
           ? /^arm-none-eabi-/i.test(name)
-          : entry.kind === 'armclang'
-            ? /^(?:armclang|armlink|fromelf|armar|armasm|llvm-[\w-]+)(?:\.exe)?$/i.test(name)
+          : entry.kind === 'armclang' || entry.kind === 'armcc'
+            ? /^(?:armcc|armclang|armlink|fromelf|armar|armasm|llvm-[\w-]+)(?:\.exe)?$/i.test(name)
             : entry.kind === 'stlink'
               ? /^(?:st-[\w-]+|stlink[\w.-]*)(?:\.exe)?$/i.test(name)
               : name === main[entry.kind] + suffix);
@@ -315,7 +331,7 @@ export class OfflineTools {
       const roots =
         entry.kind === 'gnu-arm'
           ? ['arm-none-eabi', 'lib/gcc/arm-none-eabi', 'libexec/gcc/arm-none-eabi', 'lib64/gcc/arm-none-eabi']
-          : entry.kind === 'armclang'
+          : entry.kind === 'armclang' || entry.kind === 'armcc'
             ? ['lib', 'include', 'sw']
             : entry.kind === 'clangd'
               ? ['lib/clang']
@@ -763,7 +779,42 @@ export class OfflineTools {
     };
     await verify(destination);
   }
-  async install(request: { path: string; confirm: true }): Promise<ToolVersionsState> {
+  private async packageVerification(unpack: string): Promise<PackageVerification> {
+    const snapshot = path.join(unpack, SNAPSHOT);
+    if (await this.exists(snapshot)) {
+      if ((await fs.stat(snapshot)).size > 50_000_000) throw new Error('error.toolPackageInvalid');
+      const manifest = snapshotSchema.parse(JSON.parse(await fs.readFile(snapshot, 'utf8')));
+      return verifyPackageDirectory(
+        path.join(unpack, 'files'),
+        { kind: 'tool', id: manifest.toolId, version: manifest.toolVersion },
+        { signal: this.options.signal },
+      );
+    }
+    return verifyPackageDirectory(unpack, { kind: 'tool' }, { signal: this.options.signal });
+  }
+  async inspect(source: string): Promise<PackageVerification> {
+    if (!path.isAbsolute(source)) throw new Error('error.invalidArguments');
+    const parent = path.join(this.options.root, 'offline-imports');
+    await fs.mkdir(parent, { recursive: true });
+    const stage = await fs.mkdtemp(path.join(parent, 'review-'));
+    try {
+      const info = await fs.lstat(source);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_PACKAGE)
+        throw new Error('error.toolPackageInvalid');
+      this.extractedBytes = 0;
+      this.extractedCount = 0;
+      const unpack = path.join(stage, 'package');
+      await this.extract(source, unpack, MAX_PACKAGE, SNAPSHOT_ENTRIES + 2, false);
+      return await this.packageVerification(unpack);
+    } finally {
+      await fs.rm(stage, { recursive: true, force: true });
+    }
+  }
+  async install(request: {
+    path: string;
+    confirm: true;
+    approval?: PackageApproval;
+  }): Promise<ToolVersionsState> {
     this.operation = 'install';
     this.extractedBytes = 0;
     this.extractedCount = 0;
@@ -778,8 +829,12 @@ export class OfflineTools {
       this.progress('offline-tool', 'extracting');
       const unpack = path.join(stage, 'package');
       await this.extract(request.path, unpack, MAX_PACKAGE, SNAPSHOT_ENTRIES + 2, false);
+      const verification = await this.packageVerification(unpack);
+      if (this.options.enforceSignatures || request.approval)
+        assertPackageApproval(verification, request.approval);
       const snapshotManifest = path.join(unpack, SNAPSHOT);
-      if (await this.exists(snapshotManifest)) return await this.installSnapshot(unpack, snapshotManifest);
+      if (await this.exists(snapshotManifest))
+        return await this.installSnapshot(unpack, snapshotManifest, verification.status === 'tampered');
       const manifestFile = path.join(unpack, MANIFEST);
       if (!(await this.exists(manifestFile))) throw new Error('error.toolPackageInvalid');
       if ((await fs.stat(manifestFile)).size > 1_000_000) throw new Error('error.toolPackageInvalid');
@@ -810,6 +865,7 @@ export class OfflineTools {
             outerCount++;
             if (
               file !== manifestFile &&
+              file !== path.join(unpack, 'obe') &&
               !manifest.files.some((item) => path.join(unpack, item.path) === file)
             )
               throw new Error('error.toolPackageInvalid');
@@ -817,7 +873,8 @@ export class OfflineTools {
         }
       };
       await countOuter(unpack);
-      if (outerCount !== manifest.files.length + 1) throw new Error('error.toolPackageIncomplete');
+      if (outerCount !== manifest.files.length + 1 + Number(await this.exists(path.join(unpack, 'obe'))))
+        throw new Error('error.toolPackageIncomplete');
       let total = 0;
       for (const item of manifest.files) {
         this.options.signal?.throwIfAborted();
@@ -890,6 +947,12 @@ export class OfflineTools {
     const executable = (name: string) =>
       path.join(directory, 'bin', name + (this.platform === 'win32' ? '.exe' : ''));
     if (kind === 'stlink') return this.exists(executable('st-info'));
+    if (kind === 'armcc')
+      return (
+        await Promise.all(
+          ['armcc', 'armasm', 'armlink', 'fromelf'].map((name) => this.exists(executable(name))),
+        )
+      ).every(Boolean);
     if (kind === 'armclang')
       return (
         await Promise.all(['armclang', 'armlink', 'fromelf'].map((name) => this.exists(executable(name))))
@@ -920,7 +983,7 @@ export class OfflineTools {
       );
     return false;
   }
-  private async installSnapshot(unpack: string, manifestFile: string) {
+  private async installSnapshot(unpack: string, manifestFile: string, allowModified = false) {
     const info = await fs.stat(manifestFile).catch(() => null);
     // The manifest may describe up to 60,000 SDK files with SHA-256 and long paths.
     if (!info?.isFile() || info.size > 48_000_000) throw new Error('error.toolPackageInvalid');
@@ -975,9 +1038,9 @@ export class OfflineTools {
         total += stat.size;
         if (
           !stat.isFile() ||
-          stat.size !== record.size ||
+          (!allowModified && stat.size !== record.size) ||
           total > SNAPSHOT_TOTAL ||
-          (await digest(file, this.options.signal)) !== record.sha256
+          (!allowModified && (await digest(file, this.options.signal)) !== record.sha256)
         )
           throw new Error('error.toolPackageChecksum');
         if (record.mode !== undefined && this.platform !== 'win32') await fs.chmod(file, record.mode);

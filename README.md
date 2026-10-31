@@ -62,12 +62,16 @@ ESP32-S3 + CH340 烧录底座已在 Windows 参考固件上完成断点、单步
 
 ### 目标设备
 
-| 运行时          | 芯片范围          | 编译                                  | 烧录          | 硬件调试                                               |
-| --------------- | ----------------- | ------------------------------------- | ------------- | ------------------------------------------------------ |
-| `Esp32_S3_CAM`  | ESP32-S3          | Arduino CLI + Arduino-ESP32           | esptool／串口 | UART GDB：Windows 参考固件已验证；USB-JTAG：待实机验收 |
-| `STM32F103C8T6` | STM32F103C8／C8T6 | GNU Arm GCC 或已授权的 Arm Compiler 6 | ST-Link／SWD  | ST-Link + GDB；指令修改待实机验收                      |
+| 运行时          | 芯片范围          | 编译                           | 烧录          | 硬件调试                                               |
+| --------------- | ----------------- | ------------------------------ | ------------- | ------------------------------------------------------ |
+| `Esp32_S3_CAM`  | ESP32-S3          | Arduino CLI + Arduino-ESP32    | esptool／串口 | UART GDB：Windows 参考固件已验证；USB-JTAG：待实机验收 |
+| `STM32F103C8T6` | STM32F103C8／C8T6 | GNU Arm GCC、Arm Compiler 5／6 | ST-Link／SWD  | ST-Link + GDB；指令修改待实机验收                      |
 
 ESP32-S3 摄像头引脚由工程配置。旧工程的 `esp32-s3`、`stm32` 标识在读取时迁移；扩展包自行声明芯片范围、连接协议和工具要求。详见[平台支持](docs/PLATFORM-SUPPORT.md)与[硬件调试](docs/HARDWARE-DEBUGGING.md)。
+
+Arm Compiler 5 支持 C99、C++03、Keil 启动文件及按版本选择；安装与配置见 [AC5 使用说明](docs/ARM-COMPILER-5.md)。
+
+组件安装统一验证 `obe` 签名和文件哈希；官方签名、未知发布者和文件改动分别展示，详见[组件与发行签名](docs/PACKAGE-SIGNING.md)。
 
 ### 宿主系统
 

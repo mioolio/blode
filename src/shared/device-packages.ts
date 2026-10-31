@@ -18,6 +18,7 @@ export interface DevicePackageExport {
   sha256: string;
 }
 export interface DevicePackageReview {
+  verification?: import('./package-signing').PackageVerification;
   ticket: string;
   fingerprint: string;
   id: string;
@@ -28,11 +29,16 @@ export interface DevicePackageReview {
   bytes: number;
 }
 export interface DevicePackagesApi {
+  devicePackagesVerify(
+    ids: string[],
+  ): Promise<{ id: string; health: import('./package-health').PackageHealth }[]>;
+  devicePackageOpenLocation(id: string): Promise<void>;
   devicePackagesState(): Promise<DevicePackagesState>;
   devicePackageExport(request: { id: string; confirm: true }): Promise<DevicePackageExport>;
   devicePackageSave(id: string): Promise<boolean>;
   devicePackageReview(request: { path: string }): Promise<DevicePackageReview>;
   devicePackageInstall(request: {
+    approval?: import('./package-signing').PackageApproval;
     ticket: string;
     fingerprint: string;
     confirm: true;

@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import type { ExtensionReview, GeneralExtensionInfo } from '../../shared/general-extensions';
 import { pickHostPath } from '../workspace/hostPicker';
 import { ModernSelect } from '../components/ModernSelect';
+import { approvePackageVerification } from '../components/PackageTrustDialog';
 import {
   extensionLabel,
   openGeneralExtensionView,
@@ -97,9 +98,14 @@ export default function ExtensionManager({ onClose }: { onClose(): void }) {
     const target =
       approval ?? (review ? { id: review.manifest.id, fingerprint: review.fingerprint } : undefined);
     if (!target) return;
+    const signatureApproval = review?.verification
+      ? await approvePackageVerification(review.verification, t)
+      : undefined;
+    if (review && !signatureApproval) return;
     if (review)
       updateGeneralExtensions(
         await window.blode.generalExtensionInstall({
+          approval: signatureApproval,
           ticket: review.ticket,
           fingerprint: review.fingerprint,
           confirm: true,

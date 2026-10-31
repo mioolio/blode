@@ -18,6 +18,8 @@ class WindowDouble extends EventEmitter {
   destroyed = false;
   hidden = 0;
   shown = 0;
+  minimized = false;
+  restored = 0;
   messages: AppCloseRequest[] = [];
   webContents = {
     isDestroyed: () => this.destroyed,
@@ -40,6 +42,13 @@ class WindowDouble extends EventEmitter {
     this.hidden++;
   }
   focus() {}
+  isMinimized() {
+    return this.minimized;
+  }
+  restore() {
+    this.minimized = false;
+    this.restored++;
+  }
   close() {
     let prevented = false;
     this.emit('close', {
@@ -114,6 +123,35 @@ test('the default close action hides the window in the tray without a save promp
     assert.equal(f.window.hidden, 1);
     assert.equal(f.window.messages.length, 0);
     assert.equal(f.counts().exited, 0);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test('the tray stays available when close-to-tray is disabled, and restores minimized windows', async () => {
+  const f = await fixture();
+  try {
+    assert.equal(f.controller.state().closeToTray, false);
+    assert.equal(f.trays.length, 1);
+    f.window.minimized = true;
+    f.trays[0].spec.show();
+    assert.equal(f.window.restored, 1);
+    assert.equal(f.window.minimized, false);
+    assert.equal(f.window.shown, 1);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test('explicit File Exit bypasses hiding even while closing the title bar goes to the tray', async () => {
+  const f = await fixture({}, null);
+  try {
+    const done = f.controller.requestQuit();
+    await tick();
+    assert.equal(f.window.hidden, 0);
+    await f.controller.reply({ id: f.controller.state().pendingClose!.id, decision: 'clean' });
+    await done;
+    assert.equal(f.counts().exited, 1);
   } finally {
     await f.dispose();
   }
@@ -226,13 +264,14 @@ test('tray close hides drafts without prompting; tray quit uses the save decisio
       JSON.parse(await fs.readFile(path.join(f.directory, 'desktop-lifecycle.json'), 'utf8')).closeToTray,
       true,
     );
-    assert.equal(f.trays[0].spec.locale, 'en');
+    const tray = f.trays.at(-1)!;
+    assert.equal(tray.spec.locale, 'en');
     assert.equal(f.window.close(), true);
     assert.equal(f.window.hidden, 1);
     assert.equal(f.window.messages.length, 0);
-    f.trays[0].spec.show();
+    tray.spec.show();
     assert.equal(f.window.shown, 1);
-    f.trays[0].spec.quit();
+    tray.spec.quit();
     await tick();
     const pending = f.controller.state().pendingClose!;
     assert.equal(pending.sharedDirty, true);
@@ -241,6 +280,7 @@ test('tray close hides drafts without prompting; tray quit uses the save decisio
     await done;
     await f.controller.configure({ closeToTray: false });
     assert.equal(f.trays[0].destroyed, true);
+    assert.equal(tray.destroyed, false);
     assert.equal(f.counts().exited, 0);
   } finally {
     await f.dispose();

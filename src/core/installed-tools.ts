@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { armccVersion } from '../shared/armcc';
 import type { ProjectConfig, ProjectBuildInputs } from '../shared/contracts';
 import type { CompilerChoice } from '../shared/build-settings';
 import type { InstalledBuildTool } from '../shared/tool-versions';
@@ -59,26 +60,28 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
         version: entry.name,
       }));
   };
-  const [gnuVersions, cliVersions, coreVersions, armVersions] = await Promise.all([
+  const [gnuVersions, cliVersions, coreVersions, armVersions, ac5Versions] = await Promise.all([
     versions('gnu-arm'),
     versions('arduino-cli'),
     versions('arduino-esp32'),
     versions('armclang'),
+    versions('armcc'),
   ]);
   const commands = new Map<string, Promise<string>>();
-  const version = (file: string, cli = false) => {
-    const key = `${identity(file)}\0${cli}`;
+  const version = (file: string, cli = false, ac5 = false) => {
+    const key = `${identity(file)}\0${cli}\0${ac5}`;
     let pending = commands.get(key);
     if (!pending) {
       pending = (async () => {
         if (options.signal?.aborted || !(await regular(file))) return '';
         try {
-          const result = await options.runner(file, [cli ? 'version' : '--version'], {
+          const result = await options.runner(file, [cli ? 'version' : ac5 ? '--vsn' : '--version'], {
             timeout: 10_000,
             signal: options.signal,
             env: options.env,
           });
           if (result.code !== 0) return '';
+          if (ac5) return armccVersion(result.output);
           return (
             /(?:Version:\s*|Arm Compiler for Embedded\s+)?(\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?)/i.exec(
               result.output,
@@ -118,13 +121,15 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
         (choice) =>
           choice.directory &&
           path.isAbsolute(choice.directory) &&
-          ['gnu-arm', 'armclang'].includes(choice.family),
+          ['gnu-arm', 'armclang', 'armcc'].includes(choice.family),
       )
       .map((choice) => ({ directory: path.resolve(choice.directory!), source: 'custom' as const })),
     { directory: path.join(root, 'armclang'), source: 'managed' as const },
+    { directory: path.join(root, 'armcc'), source: 'managed' as const },
     { directory: path.join(root, 'armgcc'), source: 'managed' as const },
     ...gnuVersions,
     ...armVersions,
+    ...ac5Versions,
     ...paths.map((directory) => ({ directory, source: 'path' as const })),
   ];
   const checkedCompilers = new Set<string>();
@@ -132,6 +137,7 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
     for (const directory of [...new Set([path.join(candidate.directory, 'bin'), candidate.directory])]) {
       for (const [family, required, title] of [
         ['armclang', ['armclang', 'armlink', 'fromelf'], 'Arm Compiler'],
+        ['armcc', ['armcc', 'armasm', 'armlink', 'fromelf'], 'Arm Compiler 5'],
         ['gnu-arm', ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy'], 'GNU Arm GCC'],
       ] as const) {
         const key = `${family}\0${identity(directory)}`;
@@ -143,7 +149,7 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
           )
         )
           continue;
-        const detected = await version(path.join(directory, required[0] + suffix));
+        const detected = await version(path.join(directory, required[0] + suffix), false, family === 'armcc');
         if (!detected) continue;
         const actual =
           candidate.version && family === 'gnu-arm' && candidate.version.startsWith(detected)
@@ -151,7 +157,7 @@ export async function discoverInstalledBuildTools(options: Options): Promise<Ins
             : detected;
         add({
           family,
-          name: `${title} ${actual}`,
+          name: family === 'armcc' ? `${title} · ${actual}` : `${title} ${actual}`,
           version: actual,
           directory,
           source: candidate.source,

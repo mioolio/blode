@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "keys": [
+    {
+      "publisher": "Blode Studio",
+      "keyId": "0d671b913aed3ef36eb5cce7d9fc8fff1de3e024cb9f45a5db028afe59ab59eb",
+      "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAp/q0QKPgr5OKx7NhQ9DGxjs7WXUbcWigQHioms0MmHU=\n-----END PUBLIC KEY-----\n"
+    }
+  ]
+}

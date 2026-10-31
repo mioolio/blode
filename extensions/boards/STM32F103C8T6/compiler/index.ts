@@ -7,6 +7,7 @@ import {
   createF1GnuStartup,
   createF1Scatter,
   createF1Startup,
+  createF1Ac5Startup,
   F1_MEDIUM_DENSITY,
 } from './templates.js';
 import { appRegionSize } from '../layout/index.js';
@@ -15,6 +16,7 @@ import { parseKeilProject, type KeilInputs } from './keil.js';
 import { migrateLegacyCmsis } from './cmsis.js';
 import { compilerChoice, installedCompilerRoots, optimizationFlags } from './build-settings.js';
 import type { BuildSettings, CompilerChoice } from '../../../../src/shared/build-settings.js';
+import { armccVersion } from './version.js';
 
 const sourceExtensions = new Set(['.c', '.cpp', '.cc', '.cxx']);
 const inputExtensions = new Set([
@@ -49,11 +51,11 @@ interface CompilerInstallation {
   version: string;
 }
 interface SelectedCompiler {
-  kind: 'ac6' | 'gnu';
+  kind: 'ac5' | 'ac6' | 'gnu';
   directory: string;
 }
 
-/** Arm Compiler 6 host integration; no project script or shell command is executed. */
+/** Native Arm Compiler 5/6 and GNU builds share project discovery and artifact validation. */
 
 /** Share the exact compiler flags with clangd instead of guessing target/defines. */
 async function writeCompileDatabase(
@@ -132,14 +134,30 @@ export class Stm32Compiler {
     return null;
   }
 
-  private async resolveToolchain(
-    config: ProjectConfig,
-  ): Promise<{ kind: 'ac6' | 'gnu'; directory: string } | null> {
+  private async ac5Directory(config: ProjectConfig): Promise<string | null> {
+    const supplied = config.toolchain.armCompilerDirectory?.trim();
+    if (supplied && (!path.isAbsolute(supplied) || /[\r\n\0]/.test(supplied)))
+      throw new Error('error.buildCompilerPath');
+    if (supplied) return this.completeDirectory(supplied, 'ac5');
+    for (const root of await installedCompilerRoots(this.host, config, 'armcc', '')) {
+      const found = await this.completeDirectory(root, 'ac5');
+      if (found) return found;
+    }
+    return null;
+  }
+
+  private async resolveToolchain(config: ProjectConfig): Promise<SelectedCompiler | null> {
     // An installed Arm Compiler keeps Keil projects on their native toolchain.
     const ac6 = await this.directory(config);
     if (ac6) return { kind: 'ac6', directory: ac6 };
+    if (config.toolchain.armCompilerDirectory) {
+      const ac5 = await this.ac5Directory(config);
+      if (ac5) return { kind: 'ac5', directory: ac5 };
+    }
     const gnu = await this.gnuDirectory(config);
     if (gnu) return { kind: 'gnu', directory: gnu };
+    const ac5 = await this.ac5Directory(config);
+    if (ac5) return { kind: 'ac5', directory: ac5 };
     return null;
   }
 
@@ -152,9 +170,9 @@ export class Stm32Compiler {
       throw new Error('error.buildCompilerVersion');
     const directory = choice.directory;
     if (!directory && choice.version) {
-      if (choice.family !== 'gnu-arm' && choice.family !== 'armclang')
+      if (choice.family !== 'gnu-arm' && choice.family !== 'armclang' && choice.family !== 'armcc')
         throw new Error('error.buildCompilerVersion');
-      const kind = choice.family === 'gnu-arm' ? 'gnu' : 'ac6';
+      const kind = choice.family === 'gnu-arm' ? 'gnu' : choice.family === 'armcc' ? 'ac5' : 'ac6';
       for (const root of await installedCompilerRoots(this.host, config, choice.family, choice.version)) {
         const found = await this.completeDirectory(root, kind);
         if (found && (await this.matchesVersion({ kind, directory: found }, choice.version)))
@@ -174,7 +192,12 @@ export class Stm32Compiler {
       },
     };
     let selected: SelectedCompiler | null;
-    if (choice.family === 'armclang') {
+    if (choice.family === 'armcc') {
+      const found = directory
+        ? await this.completeDirectory(directory, 'ac5')
+        : await this.ac5Directory(selectedConfig);
+      selected = found ? { kind: 'ac5', directory: found } : null;
+    } else if (choice.family === 'armclang') {
       const found = directory
         ? await this.completeDirectory(directory, 'ac6')
         : await this.directory(selectedConfig);
@@ -187,11 +210,24 @@ export class Stm32Compiler {
       selected = found ? { kind: 'gnu', directory: found } : null;
     } else if (directory) {
       const ac6 = await this.completeDirectory(directory, 'ac6');
-      const gnu = ac6 ? null : await this.completeDirectory(directory, 'gnu');
-      selected = ac6 ? { kind: 'ac6', directory: ac6 } : gnu ? { kind: 'gnu', directory: gnu } : null;
+      const ac5 = ac6 ? null : await this.completeDirectory(directory, 'ac5');
+      const gnu = ac6 || ac5 ? null : await this.completeDirectory(directory, 'gnu');
+      selected = ac6
+        ? { kind: 'ac6', directory: ac6 }
+        : ac5
+          ? { kind: 'ac5', directory: ac5 }
+          : gnu
+            ? { kind: 'gnu', directory: gnu }
+            : null;
     } else selected = await this.resolveToolchain(selectedConfig);
     if (!selected)
-      throw new Error(choice.version ? 'error.buildCompilerVersion' : 'errors.stm32CompilerMissing');
+      throw new Error(
+        choice.version
+          ? 'error.buildCompilerVersion'
+          : choice.family === 'armcc'
+            ? 'error.armccMissing'
+            : 'errors.stm32CompilerMissing',
+      );
     if (choice.version && !(await this.matchesVersion(selected, choice.version)))
       throw new Error('error.buildCompilerVersion');
     return selected;
@@ -202,28 +238,44 @@ export class Stm32Compiler {
       const result = await this.host.runCommand(
         path.join(
           selected.directory,
-          this.executable(selected.kind === 'ac6' ? 'armclang' : 'arm-none-eabi-gcc'),
+          this.executable(
+            selected.kind === 'ac6' ? 'armclang' : selected.kind === 'ac5' ? 'armcc' : 'arm-none-eabi-gcc',
+          ),
         ),
-        ['--version'],
+        [selected.kind === 'ac5' ? '--vsn' : '--version'],
         { timeout: 10_000, env: this.host.env, signal: this.host.signal },
       );
       const actual =
-        selected.kind === 'ac6'
-          ? /Arm Compiler for Embedded\s+([\d.]+)/i.exec(result.output)?.[1]
-          : /(\d+\.\d+\.\d+)/.exec(result.output)?.[1];
-      return result.code === 0 && !!actual && (version === actual || version.startsWith(actual + '-'));
+        selected.kind === 'ac5'
+          ? armccVersion(result.output)
+          : selected.kind === 'ac6'
+            ? /Arm Compiler for Embedded\s+([\d.]+)/i.exec(result.output)?.[1]
+            : /(\d+\.\d+\.\d+)/.exec(result.output)?.[1];
+      if (selected.kind === 'ac5' && result.code !== 0 && /9555|licen[sc]e|flexnet/i.test(result.output)) {
+        this.host.emit(result.output, 'error');
+        throw new Error('error.armccLicense');
+      }
+      return (
+        result.code === 0 &&
+        !!actual &&
+        (version === actual ||
+          (selected.kind === 'ac5' ? actual.startsWith(version + '-') : version.startsWith(actual + '-')))
+      );
     } catch (error) {
-      if (this.host.signal.aborted) throw error;
+      if (this.host.signal.aborted || (error instanceof Error && error.message === 'error.armccLicense'))
+        throw error;
       return false;
     }
   }
 
-  private async completeDirectory(root: string, kind: 'ac6' | 'gnu'): Promise<string | null> {
+  private async completeDirectory(root: string, kind: SelectedCompiler['kind']): Promise<string | null> {
     for (const directory of new Set([path.join(root, 'bin'), root])) {
       const found = await Promise.all(
-        (kind === 'ac6'
-          ? ['armclang', 'armlink', 'fromelf']
-          : ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy']
+        (kind === 'ac5'
+          ? ['armcc', 'armasm', 'armlink', 'fromelf']
+          : kind === 'ac6'
+            ? ['armclang', 'armlink', 'fromelf']
+            : ['arm-none-eabi-gcc', 'arm-none-eabi-objcopy']
         ).map(async (name) => {
           const file = await fs.stat(path.join(directory, this.executable(name))).catch(() => null);
           return file?.isFile();
@@ -306,53 +358,50 @@ export class Stm32Compiler {
         return { installed: false, version: '' };
       }
     };
-    const [armCompiler, gnuArm] = await Promise.all([inspect(ac6, 'armCompiler'), inspect(gnu, 'gnuArm')]);
+    let [armCompiler, gnuArm] = await Promise.all([inspect(ac6, 'armCompiler'), inspect(gnu, 'gnuArm')]);
+    if (!armCompiler.installed) {
+      try {
+        const ac5 = (await this.ac5Directory(config)) ?? (await this.ac5Directory(automatic));
+        if (ac5) {
+          const result = await this.host.runCommand(path.join(ac5, this.executable('armcc')), ['--vsn'], {
+            timeout: 10000,
+            signal: this.host.signal,
+            env: this.host.env,
+          });
+          armCompiler = { installed: result.code === 0, version: armccVersion(result.output) };
+        }
+      } catch (error) {
+        if (this.host.signal.aborted) throw error;
+      }
+    }
     return { armCompiler, gnuArm };
   }
 
   async status(config: ProjectConfig): Promise<{ installed: boolean; version: string; gnu: boolean }> {
-    const directory = await this.directory(config);
-    if (directory) {
-      try {
-        const result = await this.host.runCommand(
-          path.join(directory, this.executable('armclang')),
-          ['--version'],
-          {
-            timeout: 10_000,
-            signal: this.host.signal,
-            env: this.host.env,
-          },
-        );
-        return {
-          installed: result.code === 0,
-          version: /Arm Compiler for Embedded\s+([\d.]+)/i.exec(result.output)?.[1] ?? result.output.trim(),
-          gnu: false,
-        };
-      } catch (error) {
-        if (this.host.signal.aborted) throw error;
-        return { installed: false, version: '', gnu: false };
-      }
-    }
-    const gnuDirectory = await this.gnuDirectory(config);
-    if (!gnuDirectory) return { installed: false, version: '', gnu: false };
+    const selected = await this.resolveToolchain(config);
+    if (!selected) return { installed: false, version: '', gnu: false };
     try {
+      const tool =
+        selected.kind === 'ac5' ? 'armcc' : selected.kind === 'ac6' ? 'armclang' : 'arm-none-eabi-gcc';
       const result = await this.host.runCommand(
-        path.join(gnuDirectory, this.executable('arm-none-eabi-gcc')),
-        ['--version'],
-        {
-          timeout: 10_000,
-          signal: this.host.signal,
-          env: this.host.env,
-        },
+        path.join(selected.directory, this.executable(tool)),
+        [selected.kind === 'ac5' ? '--vsn' : '--version'],
+        { timeout: 10000, signal: this.host.signal, env: this.host.env },
       );
+      const version =
+        selected.kind === 'ac5'
+          ? armccVersion(result.output)
+          : selected.kind === 'ac6'
+            ? /Arm Compiler for Embedded\s+([\d.]+)/i.exec(result.output)?.[1]
+            : /(\d+\.\d+\.\d+)/.exec(result.output)?.[1];
       return {
         installed: result.code === 0,
-        version: /(\d+\.\d+\.\d+)/.exec(result.output)?.[1] ?? result.output.trim(),
-        gnu: true,
+        version: version ?? result.output.trim(),
+        gnu: selected.kind === 'gnu',
       };
     } catch (error) {
       if (this.host.signal.aborted) throw error;
-      return { installed: false, version: '', gnu: false };
+      return { installed: false, version: '', gnu: selected.kind === 'gnu' };
     }
   }
 
@@ -487,7 +536,7 @@ export class Stm32Compiler {
       );
     if (tool.kind === 'gnu') return this.buildGnu(config, inputs, tool.directory);
     try {
-      return await this.buildAc6(config, inputs, tool.directory);
+      return await this.buildArmCompiler(config, inputs, tool.directory);
     } catch (error) {
       // A native startup needs armasm. When only that piece is missing and a
       // GNU compiler exists, the generated F1 startup can take over.
@@ -516,11 +565,19 @@ export class Stm32Compiler {
     }
   }
 
-  private async buildAc6(
+  private async buildArmCompiler(
     config: ProjectConfig,
     inputs: CompilationInputs,
     directory: string,
   ): Promise<BuildResult> {
+    const ac5 = inputs.tools?.link.kind === 'ac5';
+    if (
+      ac5 &&
+      inputs.sources.some((source) => /\.c$/i.test(source)) &&
+      inputs.cStandard &&
+      inputs.cStandard !== 'c99'
+    )
+      throw new Error('error.armccStandard');
     if (inputs.scatter.length > 1) throw new Error('error.stm32ScatterAmbiguous');
     const appSize = appRegionSize(config);
     const outputDirectory = await this.host.resetDirectory('.blode/build');
@@ -528,13 +585,22 @@ export class Stm32Compiler {
     await fs.mkdir(objectDirectory);
     const output: string[] = [];
     const run = async (tool: string, args: string[], timeout = 60_000, toolDirectory = directory) => {
-      const result = await this.host.runCommand(path.join(toolDirectory, this.executable(tool)), args, {
-        timeout,
-        signal: this.host.signal,
-        env: this.host.env,
-        cwd: this.host.projectRoot(),
-        onLine: (line) => this.host.emit(line),
-      });
+      // AC5's ANSI path handling works with Unicode workspace parents when
+      // project-owned input/output paths are passed relative to its cwd.
+      const commandArgs = ac5
+        ? args.map((arg) => (path.isAbsolute(arg) ? path.relative(this.host.projectRoot(), arg) || '.' : arg))
+        : args;
+      const result = await this.host.runCommand(
+        path.join(toolDirectory, this.executable(tool)),
+        commandArgs,
+        {
+          timeout,
+          signal: this.host.signal,
+          env: this.host.env,
+          cwd: this.host.projectRoot(),
+          onLine: (line) => this.host.emit(line),
+        },
+      );
       output.push(result.output);
       if (result.code !== 0) throw new Error(result.output || 'error.stm32CompileFailed');
       return result;
@@ -548,38 +614,54 @@ export class Stm32Compiler {
         ...inputs.sources.map((file) => path.dirname(path.join(this.host.projectRoot(), file))),
       ]),
     ];
-    const flags = [
-      '--target=arm-arm-none-eabi',
-      '-mcpu=cortex-m3',
-      '-mthumb',
-      '-mfloat-abi=soft',
-      ...optimizationFlags(inputs.settings),
-      '-ffunction-sections',
-      '-fdata-sections',
-      '-ffreestanding',
-      '-fno-builtin',
-      '-fno-common',
-      '-DSTM32F10X_MD',
-      ...(inputs.keil?.defines.map((value) => `-D${value}`) ?? []),
-      ...includes.flatMap((include) => ['-I', include]),
-    ];
+    const flags = ac5
+      ? [
+          '--cpu=Cortex-M3',
+          '--thumb',
+          '--split_sections',
+          ...(inputs.settings?.mode === 'debug'
+            ? ['-O0']
+            : ['-O2', inputs.settings?.optimizeForSize === false ? '-Otime' : '-Ospace']),
+          '-g',
+          '-DSTM32F10X_MD',
+          ...(inputs.keil?.defines.map((value) => `-D${value}`) ?? []),
+          ...includes.flatMap((include) => ['-I', include]),
+        ]
+      : [
+          '--target=arm-arm-none-eabi',
+          '-mcpu=cortex-m3',
+          '-mthumb',
+          '-mfloat-abi=soft',
+          ...optimizationFlags(inputs.settings),
+          '-ffunction-sections',
+          '-fdata-sections',
+          '-ffreestanding',
+          '-fno-builtin',
+          '-fno-common',
+          '-DSTM32F10X_MD',
+          ...(inputs.keil?.defines.map((value) => `-D${value}`) ?? []),
+          ...includes.flatMap((include) => ['-I', include]),
+        ];
     const objects: string[] = [];
     let firmwareTag = false;
     const compile = async (source: string, cxx = false) => {
       const object = path.join(objectDirectory, `${objects.length}.o`);
       await run(
-        'armclang',
+        ac5 ? 'armcc' : 'armclang',
         [
           // C++ needs hosted main naming and AC6's constructor runtime; exceptions
           // and RTTI stay disabled, as on typical embedded C++ builds.
           ...flags.filter((flag) => !cxx || flag !== '-ffreestanding'),
-          ...(cxx
-            ? ['-std=gnu++17', '-fno-exceptions', '-fno-rtti']
-            : [`-std=gnu${inputs.cStandard?.slice(1) ?? '17'}`]),
+          ...(ac5
+            ? cxx
+              ? ['--cpp', '--no_exceptions', '--no_rtti']
+              : ['--c99']
+            : cxx
+              ? ['-std=gnu++17', '-fno-exceptions', '-fno-rtti']
+              : [`-std=gnu${inputs.cStandard?.slice(1) ?? '17'}`]),
           '-c',
           source,
-          '-MD',
-          '-MF',
+          ...(ac5 ? ['--depend'] : ['-MD', '-MF']),
           object + '.d',
           '-o',
           object,
@@ -590,9 +672,23 @@ export class Stm32Compiler {
       objects.push(object);
     };
     await writeCompileDatabase(outputDirectory, this.host.projectRoot(), inputs.sources, (source) => [
-      path.join(directory, this.executable('armclang')),
-      ...flags,
-      `-std=gnu${/\.(?:cpp|cc|cxx)$/i.test(source) ? '++17' : (inputs.cStandard?.slice(1) ?? '17')}`,
+      ac5 ? 'clang' : path.join(directory, this.executable('armclang')),
+      ...(ac5
+        ? [
+            '--target=arm-arm-none-eabi',
+            '-mcpu=cortex-m3',
+            '-mthumb',
+            '-D__CC_ARM',
+            '-D__ARMCC_VERSION=5060000',
+            '-fms-extensions',
+            '-DSTM32F10X_MD',
+            ...(inputs.keil?.defines.map((value) => `-D${value}`) ?? []),
+            ...includes.flatMap((include) => ['-I', include]),
+            '-isystem',
+            path.resolve(directory, '..', 'include'),
+          ]
+        : flags),
+      `-std=gnu${/\.(?:cpp|cc|cxx)$/i.test(source) ? (ac5 ? '++03' : '++17') : ac5 ? '99' : (inputs.cStandard?.slice(1) ?? '17')}`,
       '-c',
       path.join(this.host.projectRoot(), source),
     ]);
@@ -602,7 +698,7 @@ export class Stm32Compiler {
       );
       let compilePath = await this.host.resolveWorkspacePath(source);
       const migrated =
-        path.basename(source).toLowerCase() === 'core_cm3.c'
+        !ac5 && path.basename(source).toLowerCase() === 'core_cm3.c'
           ? migrateLegacyCmsis(await fs.readFile(compilePath, 'utf8'))
           : null;
       if (migrated) {
@@ -625,8 +721,15 @@ export class Stm32Compiler {
       } else {
         const object = path.join(objectDirectory, `${objects.length}.o`);
         await run(
-          'armclang',
-          [...flags, '-c', full, '-o', object],
+          ac5 ? 'armasm' : 'armclang',
+          [
+            ...(ac5
+              ? ['--cpu=Cortex-M3', '--debug', ...includes.flatMap((include) => ['-I', include])]
+              : [...flags, '-c']),
+            full,
+            '-o',
+            object,
+          ],
           60_000,
           inputs.tools?.c.directory ?? directory,
         );
@@ -667,11 +770,15 @@ export class Stm32Compiler {
     } else {
       if (inputs.scatter.length || projectStartups.length || inputs.all.some((file) => file.endsWith('.ld')))
         this.host.emit('status.stm32UsingF1Startup', 'warning');
-      const startup = path.join(outputDirectory, 'startup_f1_md.c');
+      const startup = path.join(outputDirectory, ac5 ? 'startup_f1_md.s' : 'startup_f1_md.c');
       scatter = path.join(outputDirectory, 'stm32_f1_md.sct');
-      await fs.writeFile(startup, createF1Startup());
+      await fs.writeFile(startup, ac5 ? createF1Ac5Startup() : createF1Startup());
       await fs.writeFile(scatter, createF1Scatter(config.flashSize, firmwareTag));
-      await compile(startup);
+      if (ac5) {
+        const object = path.join(objectDirectory, `${objects.length}.o`);
+        await run('armasm', ['--cpu=Cortex-M3', '--debug', startup, '-o', object]);
+        objects.push(object);
+      } else await compile(startup);
     }
     const elf = path.join(outputDirectory, 'firmware.elf');
     const binary = path.join(outputDirectory, 'firmware.bin');

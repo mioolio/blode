@@ -25,6 +25,7 @@ export async function readExtensionDirectory(directory: string): Promise<Map<str
   const walk = async (current: string, depth: number) => {
     if (depth > 20) throw new Error('error.extensionSize');
     for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+      if (entry.name === '.signing') continue;
       if (entry.name === '.uel' && current === directory) continue;
       if (entry.isSymbolicLink()) throw new Error('error.extensionPath');
       const file = path.join(current, entry.name),

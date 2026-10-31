@@ -43,7 +43,7 @@ const buildPath = z
   .refine((value) => !/[\0\r\n]/.test(value));
 const compilerChoiceSchema = z
   .object({
-    family: z.enum(['inherit', 'auto', 'gnu-arm', 'armclang', 'arduino', 'plugin']),
+    family: z.enum(['inherit', 'auto', 'gnu-arm', 'armclang', 'armcc', 'arduino', 'plugin']),
     pluginId: z
       .string()
       .regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/)

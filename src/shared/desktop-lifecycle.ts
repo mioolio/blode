@@ -18,6 +18,7 @@ export interface DesktopLifecycleState {
   error?: string;
 }
 export interface DesktopLifecycleApi {
+  desktopQuit(): Promise<void>;
   desktopLifecycleState(): Promise<DesktopLifecycleState>;
   desktopLifecycleConfigure(request: {
     closeToTray: boolean;

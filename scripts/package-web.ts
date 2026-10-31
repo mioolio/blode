@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { writeZip, type ZipEntry } from '../src/core/zip';
 import { restoreMediumIntegrity } from './windows-artifact-integrity.mjs';
+import { signRelease } from './sign-release';
 
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -299,6 +300,7 @@ export async function packageWebRelease(options: { output?: string; skipBuild?: 
     const smoke = await execute(output, ['--version'], { timeout: 60_000, windowsHide: true });
     if (!smoke.stdout.includes(releaseVersion))
       throw new Error('The packaged Web executable did not report its release version.');
+    await signRelease(output, releaseVersion);
     const size = (await fs.stat(output)).size;
     const sha256 = await sha256File(output);
     await fs.writeFile(output + '.sha256', `${sha256}  ${path.basename(output)}\n`, { flag: 'wx' });

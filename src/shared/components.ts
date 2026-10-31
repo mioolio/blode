@@ -47,6 +47,7 @@ export interface ComponentSearchResult {
 }
 
 export interface ComponentInstallRequest {
+  allowUntrusted?: true;
   name: string;
   version: string;
   expectedProjectRoot: string;
@@ -54,6 +55,7 @@ export interface ComponentInstallRequest {
 }
 
 export interface ComponentImportRequest {
+  approval?: import('./package-signing').PackageApproval;
   path: string;
   kind: 'directory' | 'archive';
   expectedProjectRoot: string;

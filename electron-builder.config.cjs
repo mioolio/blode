@@ -34,6 +34,15 @@ const bundledTools = full
       { from: 'tools/libraries', to: 'tools/libraries' },
       { from: 'tools/arduino-data', to: 'tools/arduino-data', filter: arduinoDataFilter },
       ...(fs.existsSync('tools/clangd') ? [{ from: 'tools/clangd', to: 'tools/clangd' }] : []),
+      ...(fs.existsSync('tools/versions/armcc')
+        ? [
+            {
+              from: 'tools/versions/armcc',
+              to: 'tools/versions/armcc',
+              filter: ['**/*', '!**/*.lic', '!**/*.licx', '!**/*.key', '!**/*.pem', '!**/TOOLS.INI'],
+            },
+          ]
+        : []),
     ]
   : [];
 
@@ -52,7 +61,7 @@ module.exports = {
             // dropped the renderer directory from the app archive.
             from: releaseDist,
             to: 'dist',
-            filter: ['**/*', '!**/*.map'],
+            filter: ['**/*', '!**/*.map', '!device-modules/**'],
           },
         ]
       : [
@@ -60,7 +69,6 @@ module.exports = {
           'dist/preload.cjs',
           'dist/mcp-bridge.mjs',
           'dist/renderer/**/*',
-          'dist/device-modules/**/*',
           'dist/archive-tools/**/*',
         ]),
     'config/application.json',
@@ -78,6 +86,7 @@ module.exports = {
     },
   ],
   extraResources: [
+    { from: require('node:path').join(releaseDist || 'dist', 'device-modules'), to: 'device-modules' },
     {
       from: 'extensions/plugins',
       to: 'extensions/plugins',

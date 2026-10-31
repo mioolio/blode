@@ -251,7 +251,15 @@ export function StudioHeader({ studio }: { studio: Studio }) {
           run: () => window.dispatchEvent(new CustomEvent('blode:preferences')),
         },
         separator,
-        { label: 'menu.closeWindow', run: () => window.blode?.windowAction('close') },
+        {
+          label: 'menu.quit',
+          disabled: studio.isWeb,
+          run: () => {
+            if (typeof window.blode?.desktopQuit === 'function')
+              void window.blode.desktopQuit().catch((error) => studio.notify(String(error), true));
+            else window.blode?.windowAction('close');
+          },
+        },
       ],
     },
     {

@@ -25,7 +25,9 @@ SWD 调试与 UART 串口分开；ST-Link 不需要出现在 COM 列表。平台
 
 当前固件映射只允许一个 offset=0、size≤flashSize 的 app 区；应用区按 1 KiB 对齐，可以小于物理 Flash，尾部作为保留区。STM32 擦除粒度随芯片变化，因此禁用 ESP 任意分区编辑，不支持用任意 4 字节偏移声明独立 bootloader/数据区并承诺保留相邻页。界面通过 `layout` 能力从 0x08000000 起调整应用区，`partitions` 能力保持关闭；`BoardDefinition.layout` 只提供 Flash 起始地址，地址段仍来自 ProjectConfig。layout.ts 的 appRegionSize 统一给 BuildResult 和区域检查使用；链接仍以物理 Flash 生成镜像，固件超出应用区或覆盖数据/系统保留区时输出 WARNING，界面和烧录确认弹窗提示，用户可二次确认后继续烧录；超过物理 Flash 或 RAM 越界仍拒绝。数据/系统区可设置名称和颜色，但没有写入路径。RAM 沿用 F1 中容量目标固定的 20 KiB 与 1 KiB 栈，暂不提供任意 RAM 分配。布局页可按 KiB 手动修正被克隆芯片误报的容量，保存时写入 `flashSizeOverride`，重新识别不会覆盖；手动容量不得大于探测值。
 
-设置 be.build.entry 后优先调用 armclang/armlink/fromelf；未安装 Arm Compiler 6 时改用 arm-none-eabi-gcc/objcopy。入口可为文件、目录或点号；没有入口时保留根 firmware.bin 验证。当前源码配置只支持已识别的 0x410 STM32F1 中容量 Cortex-M3 目标，输出位于 .blode/build/。源码构建需要正确的架构、启动、链接和依赖，单个 main.c 不保证生成可烧录程序。
+设置 `be.build.entry` 后可使用 Arm Compiler 5（armcc）、Arm Compiler 6（armclang）或 GNU Arm GCC。入口可为文件、目录或点号；输出位于 `.blode/build/`，目标为 STM32F103C8T6／Cortex-M3。没有源码入口时验证根目录的 `firmware.bin`。
+
+AC5 工具放在 `tools/armcc/`、`tools/versions/armcc/<版本>/`，也可在编译设置中指定自定义目录。使用 `family: "armcc"` 选择，版本号包含 update/build，例如 `5.06-u5-b528`。本后端使用 C99／C++03，保留原工程的 ARMCC 内联汇编；配置为 C11、C17 或 C23 时会提示选择 C99。Debug／Release、原生启动汇编、scatter、依赖文件、ELF 及固件导出均沿用统一构建接口。详见 [AC5 接入说明](../../../docs/ARM-COMPILER-5.md)。
 
 AC6 路径下，项目同时提供可识别的 Arm 汇编 startup 与单一 scatter 时优先采用；否则已知目标使用本目录模板并报告提示。GNU 路径始终使用生成的 F1 启动文件与链接脚本，工程内的 ARM 语法启动、scatter 与 .ld 不会被采用，并给出提示。未知芯片拒绝猜 CPU、RAM 与链接布局。实际 ELF 装载范围、RAM 段与二进制初始向量分别校验。
 

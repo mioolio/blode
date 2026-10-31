@@ -23,7 +23,7 @@ export async function compilerConfig(
   config: ProjectConfig,
   choice: CompilerChoice,
 ): Promise<ProjectConfig> {
-  if (choice.family === 'gnu-arm' || choice.family === 'armclang')
+  if (choice.family === 'gnu-arm' || choice.family === 'armclang' || choice.family === 'armcc')
     throw new Error('error.buildCompilerPlatform');
   if (choice.version && !/^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9._-]+)?$/.test(choice.version))
     throw new Error('error.buildCompilerVersion');

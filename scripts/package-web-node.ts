@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { webReleasePayload } from './package-web';
 import { BundledArchiveWriter } from '../src/core/archive-writer';
+import { signRelease } from './sign-release';
 
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -113,6 +114,7 @@ export async function packageNodeWebRelease(options: { output?: string } = {}) {
     );
     await fs.mkdir(path.dirname(output), { recursive: true });
     await fs.copyFile(archive, output, constants.COPYFILE_EXCL);
+    await signRelease(output, version);
     const hash = createHash('sha256');
     for await (const chunk of createReadStream(output)) hash.update(chunk);
     const sha256 = hash.digest('hex');

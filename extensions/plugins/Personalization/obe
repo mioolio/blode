@@ -1,0 +1,72 @@
+{
+  "format": "blode-obe",
+  "version": 1,
+  "algorithm": "Ed25519",
+  "publisher": "Blode Studio",
+  "keyId": "0d671b913aed3ef36eb5cce7d9fc8fff1de3e024cb9f45a5db028afe59ab59eb",
+  "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAp/q0QKPgr5OKx7NhQ9DGxjs7WXUbcWigQHioms0MmHU=\n-----END PUBLIC KEY-----\n",
+  "signedAt": "2026-10-31T20:33:35.381Z",
+  "subject": {
+    "kind": "extension",
+    "id": "Personalization",
+    "version": "1.1.0"
+  },
+  "files": [
+    {
+      "path": "assets/aurora.svg",
+      "size": 598,
+      "sha256": "d417582e1b33d36d4847dcb81ede0c5255f7d3268f60a5fe701ffc085cb5e65f"
+    },
+    {
+      "path": "docs/README.md",
+      "size": 2454,
+      "sha256": "6f1d721469421de971ef910a14af7ec643ed7c7103b55f8c2aaaf39ee3976517"
+    },
+    {
+      "path": "locales/en.json",
+      "size": 595,
+      "sha256": "e42b208df351f7f31778ecafc4a1b0be48ba0cf0627773cb675fa6f284fcda0e"
+    },
+    {
+      "path": "locales/zh-CN.json",
+      "size": 563,
+      "sha256": "ee1e3639bc99e442e870a5b695b32a33b6c7470f80a3f144b2b7c962cebcad71"
+    },
+    {
+      "path": "manifest.json",
+      "size": 3611,
+      "sha256": "20600c68da29895c66068bda7c3f59db45f72d34cabf79e53abdec3f5873decf"
+    },
+    {
+      "path": "permissions/README.md",
+      "size": 798,
+      "sha256": "bb8a5df4d4987d6d60056fda4b7076b0931c8fd07f768ebd56a995e9dc8d1309"
+    },
+    {
+      "path": "runtime/appearance.mjs",
+      "size": 2867,
+      "sha256": "166ed0a2114d6c804afd8ee378c98d72afdb6ab79434019dc2a7457f38b2abc4"
+    },
+    {
+      "path": "settings/defaults.json",
+      "size": 48,
+      "sha256": "5e703928c905fd267b8fbac55f1c58a380d0c26a8d40fe6f80f397256defb378"
+    },
+    {
+      "path": "styles/appearance.css",
+      "size": 4040,
+      "sha256": "0b323d8ad69438a3f3c7005692ee92eada699aa1bd856caa75df06acb124da85"
+    },
+    {
+      "path": "ui/index.html",
+      "size": 745,
+      "sha256": "2aa435712cd060fbffb16cbe781fbb0c7a087ce5492f9625b4d9d19f752e7e76"
+    },
+    {
+      "path": "ui/preview.html",
+      "size": 360,
+      "sha256": "d4519d7bab61ba4335d486febccb42ea48d9a612881d26ab3852903664eb0b19"
+    }
+  ],
+  "signature": "4qbtVDpVdncSD0u0oIUMpcPR4fiPMxIaoQU+j0B2JvQequm4v1RoeadtpAqju12Opyv1XlxnnRMan6JvXkAKCQ=="
+}

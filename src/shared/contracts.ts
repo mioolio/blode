@@ -77,7 +77,7 @@ export interface ProjectConfig {
     fqbn: string;
     /** Directory containing st-info and st-flash; empty uses the managed tools or PATH. */
     stlinkDirectory?: string;
-    /** Portable Arm Compiler directory; empty discovers tools/armclang or PATH. */
+    /** Portable Arm Compiler 5/6 or GNU directory; empty uses managed tools and PATH. */
     armCompilerDirectory?: string;
     /** Isolated Arduino package store, including side-by-side core versions. */
     packageDirectory?: string;
@@ -222,7 +222,7 @@ export interface ToolchainStatus {
   esptool: boolean;
   stlink?: boolean;
   armCompiler?: boolean;
-  /** Managed GNU Arm GCC used when Arm Compiler 6 is not installed. */
+  /** GNU Arm GCC installation, independently reported alongside Arm Compiler. */
   gnuArm?: boolean;
   versions: Record<string, string>;
 }

@@ -85,6 +85,36 @@ const interrupts = [
   'DMA2_Channel4_5_IRQHandler',
 ];
 
+export function createF1Ac5Startup(): string {
+  const handlers = [...coreVectors, ...interrupts].filter((name) => name !== '0');
+  return `        PRESERVE8
+        THUMB
+        AREA |.isr_vector|, DATA, READONLY
+        EXPORT __Vectors
+__Vectors
+        DCD 0x20005000
+        DCD Reset_Handler
+${[...coreVectors, ...interrupts].map((name) => `        DCD ${name}`).join('\n')}
+        AREA |.text|, CODE, READONLY
+        IMPORT __main
+        EXPORT Reset_Handler
+Reset_Handler PROC
+        BL SystemInit
+        B __main
+        ENDP
+SystemInit PROC
+        EXPORT SystemInit [WEAK]
+        BX LR
+        ENDP
+Default_Handler PROC
+${handlers.map((name) => `        EXPORT ${name} [WEAK]`).join('\n')}
+${handlers.join('\n')}
+        B .
+        ENDP
+        END
+`;
+}
+
 export function createF1Startup(): string {
   const handlers = [...coreVectors, ...interrupts].filter((name) => name !== '0');
   return `/* Generated for STM32F1 medium density (chip ID 0x410), Cortex-M3, 20 KiB RAM. */

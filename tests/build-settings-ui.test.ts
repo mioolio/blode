@@ -96,6 +96,23 @@ test('invalid project descriptors show an error without opening a writable form'
   assert.doesNotMatch(html, /build-device-packages/);
 });
 
+test('AC5 is a distinct compiler option and the project C99 selection is visible', () => {
+  const html = render(
+    studioFor({
+      entry: 'src',
+      cStandard: 'c99',
+      settings: { common: { family: 'armcc', version: '5.06-u5-b528', directory: '/tools/ac5' } },
+    }),
+  );
+  assert.match(html, /<option value="armcc" selected="">Arm Compiler 5/);
+  assert.match(html, /<option value="c99" selected="">C99/);
+  assert.match(html, /value="5\.06-u5-b528"/);
+  assert.match(html, /value="\/tools\/ac5"/);
+  const defaults = { entry: 'src', settings: { common: { family: 'armcc' as const } } };
+  assert.match(render(studioFor(defaults)), /<option value="c99" selected="">C99/);
+  assert.match(render(studioFor({ ...defaults, cStandard: 'c17' })), /<option value="c17" selected="">C17/);
+});
+
 test('third-party compiler selection remains explicit and its override permission is restored from the project', () => {
   const build: ProjectBuildInputs = {
     settings: { common: { family: 'plugin', pluginId: 'USB_ThirdParty' } },

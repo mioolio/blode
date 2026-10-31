@@ -64,6 +64,7 @@ export interface GeneralExtensionsState {
   examples: { id: string; name: string; path: string }[];
 }
 export interface ExtensionReview {
+  verification?: import('./package-signing').PackageVerification;
   ticket: string;
   fingerprint: string;
   manifest: GeneralExtensionManifest;
@@ -74,6 +75,7 @@ export interface GeneralExtensionsApi {
   generalExtensionState(): Promise<GeneralExtensionsState>;
   generalExtensionReview(request: { path: string }): Promise<ExtensionReview>;
   generalExtensionInstall(request: {
+    approval?: import('./package-signing').PackageApproval;
     ticket: string;
     fingerprint: string;
     confirm: true;

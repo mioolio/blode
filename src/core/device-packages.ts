@@ -5,6 +5,11 @@ import { getBoardAdapter } from '../../extensions/registry';
 import { parseRuntimePluginManifest } from './runtime-plugin-schema';
 import { writeZip, type ZipEntry } from './zip';
 import { readDevicePackage } from './device-package-source';
+import { assertPackageApproval, verifyPackageFiles, verifyPackageDirectory } from './package-signing';
+import { packageHealth } from '../shared/package-health';
+import type { PackageHealth } from '../shared/package-health';
+import { privateDeviceFile } from './device-package-source';
+import type { PackageApproval } from '../shared/package-signing';
 import type { DevicePackageReview } from '../shared/device-packages';
 import type { RuntimePluginsState } from '../shared/plugins';
 import type { DevicePackageExport, DevicePackageInfo, DevicePackagesState } from '../shared/device-packages';
@@ -42,6 +47,7 @@ export class DevicePackages {
       builtinRoot: string;
       plugins: () => Promise<RuntimePluginsState>;
       reload?: () => Promise<void>;
+      enforceSignatures?: boolean;
     },
   ) {}
 
@@ -66,10 +72,16 @@ export class DevicePackages {
       support: loaded.manifest.support.chips,
       fileCount: loaded.files.size,
       bytes: loaded.bytes,
+      verification: verifyPackageFiles(loaded.files, {
+        kind: 'device',
+        id: loaded.manifest.id,
+        version: loaded.manifest.version,
+      }),
     };
   }
 
   async install(request: {
+    approval?: PackageApproval;
     ticket: string;
     fingerprint: string;
     confirm: true;
@@ -85,6 +97,15 @@ export class DevicePackages {
     try {
       const loaded = await readDevicePackage(reviewed.source);
       if (loaded.fingerprint !== reviewed.fingerprint) throw new Error('error.extensionChanged');
+      if (this.options.enforceSignatures || request.approval)
+        assertPackageApproval(
+          verifyPackageFiles(loaded.files, {
+            kind: 'device',
+            id: loaded.manifest.id,
+            version: loaded.manifest.version,
+          }),
+          request.approval,
+        );
       if ((await this.state()).packages.some((item) => item.id === loaded.manifest.id))
         throw new Error('error.runtimePluginDuplicate');
       const root = path.join(this.options.dataRoot, 'plugins');
@@ -150,6 +171,42 @@ export class DevicePackages {
     return { packages };
   }
 
+  async verify(ids: string[]): Promise<{ id: string; health: PackageHealth }[]> {
+    if (ids.length > 25 || new Set(ids).size !== ids.length) throw new Error('error.invalidArguments');
+    const packages = (await this.state()).packages;
+    const entries = ids.map((id) => {
+      const entry = packages.find((item) => item.id === id);
+      if (!entry) throw new Error('error.devicePackageUnknown');
+      return entry;
+    });
+    const result: { id: string; health: PackageHealth }[] = [];
+    let index = 0;
+    // Verify only visible rows, with two streaming readers even for a large library.
+    const worker = async () => {
+      for (;;) {
+        const entry = entries[index++];
+        if (!entry) return;
+        try {
+          const verification = await verifyPackageDirectory(
+            entry.directory,
+            {
+              kind: 'device',
+              id: entry.exportId,
+              version: entry.version,
+            },
+            { exclude: (relative) => relative.split('/').some(privateDeviceFile) },
+          );
+          result.push({ id: entry.id, health: packageHealth(verification) });
+        } catch {
+          const signed = !!(await fs.lstat(path.join(entry.directory, 'obe')).catch(() => null));
+          result.push({ id: entry.id, health: signed ? 'danger' : 'abnormal' });
+        }
+      }
+    };
+    await Promise.all([worker(), worker()]);
+    return result;
+  }
+
   async export(request: { id: string; confirm: true }): Promise<DevicePackageExport> {
     if (request.confirm !== true) throw new Error('error.invalidArguments');
     const entry = (await this.state()).packages.find((item) => item.id === request.id);
@@ -157,6 +214,7 @@ export class DevicePackages {
     const stat = await fs.lstat(entry.directory).catch(() => null);
     if (!stat?.isDirectory() || stat.isSymbolicLink()) throw new Error('error.runtimePluginPath');
     const root = await fs.realpath(entry.directory);
+    const hasObe = !!(await fs.lstat(path.join(root, 'obe')).catch(() => null));
     const files = new Map<string, { source: string; size: number; mode: number }>();
     let total = 0;
     const walk = async (directory: string, depth: number) => {
@@ -164,7 +222,7 @@ export class DevicePackages {
       for (const item of (await fs.readdir(directory, { withFileTypes: true })).sort((a, b) =>
         a.name.localeCompare(b.name, 'en'),
       )) {
-        if (excluded(item.name)) continue;
+        if (excluded(item.name) && !(hasObe && item.name === 'package-manifest.json')) continue;
         const source = path.join(directory, item.name);
         if (item.isSymbolicLink()) throw new Error('error.runtimePluginPath');
         if (item.isDirectory()) {
@@ -219,12 +277,13 @@ export class DevicePackages {
           hashes.push({ path: relative, size: bytes.length, sha256: hash(bytes) });
           yield { path: `${entry!.exportId}/${relative}`, data: bytes, mode: item.mode };
         }
-        yield {
-          path: `${entry!.exportId}/package-manifest.json`,
-          data: Buffer.from(
-            JSON.stringify({ id: entry!.exportId, version: entry!.version, files: hashes }, null, 2) + '\n',
-          ),
-        };
+        if (!files.has('obe'))
+          yield {
+            path: `${entry!.exportId}/package-manifest.json`,
+            data: Buffer.from(
+              JSON.stringify({ id: entry!.exportId, version: entry!.version, files: hashes }, null, 2) + '\n',
+            ),
+          };
       }
       const size = await writeZip(file, entries());
       const sha256 = hash(await fs.readFile(file));

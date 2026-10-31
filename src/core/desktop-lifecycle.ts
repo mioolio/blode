@@ -24,7 +24,8 @@ export interface DesktopLifecycleOptions {
   window: Pick<
     BrowserWindow,
     'on' | 'removeListener' | 'isDestroyed' | 'show' | 'hide' | 'focus' | 'webContents'
-  >;
+  > &
+    Partial<Pick<BrowserWindow, 'isMinimized' | 'restore'>>;
   dataRoot: string;
   rendererReady: () => boolean;
   sharedDirty: () => Promise<boolean>;
@@ -36,7 +37,10 @@ export interface DesktopLifecycleOptions {
   rendererCommit?: boolean;
 }
 async function nativeTray(spec: TraySpecification): Promise<LifecycleTray> {
-  const { Tray, Menu, nativeImage } = await import('electron');
+  const electron = await import('electron');
+  const { Tray, Menu, nativeImage } = (
+    electron.Tray ? electron : (electron as any).default
+  ) as typeof electron;
   const tray = new Tray(nativeImage.createFromBuffer(spec.png));
   try {
     tray.setToolTip('Blode Studio');
@@ -94,16 +98,15 @@ export class DesktopLifecycle {
     } catch {
       /* Missing or obsolete preferences keep the default. */
     }
-    if (this.preferences.closeToTray)
-      try {
-        const tray = await this.makeTray();
-        if (this.disposed) tray.destroy();
-        else this.tray = tray;
-      } catch {
-        this.preferences.closeToTray = false;
-        this.preferences.available = false;
-        this.preferences.error = 'error.trayUnavailable';
-      }
+    try {
+      const tray = await this.makeTray();
+      if (this.disposed) tray.destroy();
+      else this.tray = tray;
+    } catch {
+      this.preferences.closeToTray = false;
+      this.preferences.available = false;
+      this.preferences.error = 'error.trayUnavailable';
+    }
     return this.state();
   }
   state(): DesktopLifecycleState {
@@ -131,7 +134,7 @@ export class DesktopLifecycle {
           error: undefined,
         };
         let replacement: LifecycleTray | undefined;
-        if (next.closeToTray && (!this.tray || next.locale !== this.preferences.locale))
+        if (!this.tray || next.locale !== this.preferences.locale)
           replacement = await this.makeTray(next.locale);
         const temporary = this.file + '.' + randomUUID() + '.tmp';
         try {
@@ -153,7 +156,7 @@ export class DesktopLifecycle {
           replacement?.destroy();
           throw new Error('error.operationCancelled');
         }
-        if (replacement || !next.closeToTray) {
+        if (replacement) {
           this.tray?.destroy();
           this.tray = replacement;
         }
@@ -175,6 +178,7 @@ export class DesktopLifecycle {
   }
   private restore() {
     if (!this.options.window.isDestroyed()) {
+      if (this.options.window.isMinimized?.()) this.options.window.restore?.();
       this.options.window.show();
       this.options.window.focus();
     }

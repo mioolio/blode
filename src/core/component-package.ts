@@ -10,6 +10,7 @@ import {
 } from './components';
 import { parseComponentDependencies, componentVersionMatches } from './component-dependencies';
 import { writeZip, type ZipEntry } from './zip';
+import { verifyPackageFiles } from './package-signing';
 import type {
   ComponentExportRequest,
   ComponentPackageResult,
@@ -46,13 +47,14 @@ export function readComponentPackage(
   } catch {
     throw new Error('error.componentManifest');
   }
-  const consumed = new Set([FILE]);
+  const consumed = new Set([FILE, ...(files.has('obe') ? ['obe'] : [])]);
+  const modified = verifyPackageFiles(files, { kind: 'component' }).status === 'tampered';
   const payloads = parsed.components.map((library) => {
     const result = new Map<string, Buffer>();
     for (const [relative, digest] of Object.entries(library.integrity)) {
       const name = library.path + '/' + relative,
         bytes = files.get(name);
-      if (!bytes || sha(bytes) !== digest) throw new Error('error.componentChecksum');
+      if (!bytes || (!modified && sha(bytes) !== digest)) throw new Error('error.componentChecksum');
       result.set(relative, bytes);
       consumed.add(name);
     }
@@ -68,7 +70,12 @@ export function readComponentPackage(
       )
         throw new Error('error.componentManifest');
     return {
-      library,
+      library: modified
+        ? {
+            ...library,
+            integrity: Object.fromEntries([...result].map(([name, bytes]) => [name, sha(bytes)])),
+          }
+        : library,
       files: result,
       directories: parsed.directories
         ?.filter((dir) => dir.startsWith(library.path + '/'))

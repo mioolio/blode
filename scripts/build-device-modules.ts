@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { packageRuntime } from './package-runtime';
+import { signMaintainerDirectory } from './sign-packages';
 
 const repository = fileURLToPath(new URL('..', import.meta.url));
 /** Build standalone modules once, alongside the host, never inside the shipped runtime. */
@@ -20,6 +21,15 @@ export async function buildDeviceModules(output: string) {
         }),
       ),
     );
+    for (const id of ['Esp32_S3_CAM', 'STM32F103C8T6']) {
+      const directory = path.join(stage, id + '_Module');
+      const manifest = JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8'));
+      await signMaintainerDirectory(directory, {
+        kind: 'device',
+        id: manifest.id,
+        version: manifest.version,
+      });
+    }
     // Both targets are fixed children of the caller's output directory.
     if (path.dirname(destination) !== parent || path.dirname(stage) !== parent)
       throw new Error('Unsafe device module output.');

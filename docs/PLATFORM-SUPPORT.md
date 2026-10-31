@@ -15,10 +15,10 @@ The Web browser may run on a different computer from the host. Browser compatibi
 
 ## Embedded platforms
 
-| Platform      | Compilation                                                                                                 | Firmware programming                     | Debugging                                                                                                                                |
-| ------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Esp32_S3_CAM  | ESP32-S3 with managed, versioned or custom Arduino-ESP32 packages; project-defined camera GPIO              | Host serial connection and esptool       | Native USB-JTAG, Xtensa GDB and Espressif OpenOCD; registers, memory, disassembly and hardware breakpoints. Physical acceptance pending. |
-| STM32F103C8T6 | GNU Arm GCC or licensed Arm Compiler 6; C8/C8T6 Keil project imports; 64 KiB Flash and 20 KiB SRAM defaults | ST-Link/SWD and prepared firmware images | Separate ST-Link/GDB workbench with disassembly, registers, stack, memory, breakpoints and instruction control                           |
+| Platform      | Compilation                                                                                          | Firmware programming                     | Debugging                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Esp32_S3_CAM  | ESP32-S3 with managed, versioned or custom Arduino-ESP32 packages; project-defined camera GPIO       | Host serial connection and esptool       | Native USB-JTAG, Xtensa GDB and Espressif OpenOCD; registers, memory, disassembly and hardware breakpoints. Physical acceptance pending. |
+| STM32F103C8T6 | GNU Arm GCC or Arm Compiler 5/6; C8/C8T6 Keil project imports; 64 KiB Flash and 20 KiB SRAM defaults | ST-Link/SWD and prepared firmware images | Separate ST-Link/GDB workbench with disassembly, registers, stack, memory, breakpoints and instruction control                           |
 
 The hardware workbench samples a connected physical target. Plugins can declare additional chip scopes, transports and debug providers. Recommended resource capacities remain separate from explicit user allocations. See [STM32 support](STM32.md) and the [runtime plugin contract](RUNTIME-PLUGINS.md).
 
@@ -26,7 +26,7 @@ The hardware workbench samples a connected physical target. Plugins can declare 
 
 - GNU Arm and Arduino CLI catalogs provide pinned public Windows x64, Linux x64 and Linux ARM64 archive definitions with checksum validation. See [tool versions](TOOL-VERSIONS.md).
 - ESP32-S3 debug tools provide pinned GDB/OpenOCD archives for Windows x64, Linux x64 and Linux ARM64. Windows archive downloads, SHA-256 checks and version execution were verified; Linux execution and real JTAG sessions are unverified. See [hardware debugging](HARDWARE-DEBUGGING.md).
-- Arm Compiler 6 must already be installed by the user under its own license.
+- Arm Compiler 5/6 use an existing local installation. AC5 supports C99 and C++03; see [setup and validation](ARM-COMPILER-5.md).
 - Linux ST-Link can use a distribution package or custom executable directory. An official x64 `.deb` release link is provided; the app does not run privileged package-manager commands or silently change udev rules.
 - Linux serial and debug access requires the appropriate device permissions and runtime libraries for the distribution.
 - Integrated Git management requires Git on the target machine. Existing Git credentials and SSH configuration remain on that machine.

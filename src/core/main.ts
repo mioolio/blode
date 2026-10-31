@@ -675,7 +675,10 @@ async function bootstrap(): Promise<void> {
     cancelShutdown: () => collaboration!.cancelShutdown(),
     exit: shutdownApplication,
   });
-  await desktopLifecycle.initialize();
+  const lifecycleState = await desktopLifecycle.initialize();
+  logBoot(
+    lifecycleState.available ? `tray ready closeToTray=${lifecycleState.closeToTray}` : 'tray unavailable',
+  );
   if (closing) return;
   assistance.routes.collaborationPresence.run = (input) => nativePresence!.presence(input);
   assistance.routes.collaborationLeave.run = (input) => nativePresence!.leave(input);
@@ -683,7 +686,10 @@ async function bootstrap(): Promise<void> {
   const webAssistance = createAssistanceRoutes(ai, collaboration, uiCommands, false);
   const protection = protectSharedWorkspace(core, collaboration);
   hostServices = createHostServices({
-    builtinDevicePackagesRoot: path.join(app.getAppPath(), 'dist', 'device-modules'),
+    directoryOpener: { nativeOpenPath: (directory) => shell.openPath(directory) },
+    builtinDevicePackagesRoot: app.isPackaged
+      ? path.join(process.resourcesPath, 'device-modules')
+      : path.join(app.getAppPath(), 'dist', 'device-modules'),
     builtinArchiveRoot: path.join(app.getAppPath(), 'dist', 'archive-tools'),
     ai,
     extensionExamplesRoot: app.isPackaged
@@ -861,6 +867,7 @@ async function bootstrap(): Promise<void> {
     ...assistance.routes,
     ...hostServices.routes,
     desktopLifecycleState: { args: noArgs, run: () => desktopLifecycle!.state() },
+    desktopQuit: { args: noArgs, run: () => desktopLifecycle!.requestQuit() },
     desktopLifecycleConfigure: {
       args: z.tuple([
         z.object({ closeToTray: z.boolean(), locale: z.enum(['zh-CN', 'en']).optional() }).strict(),
@@ -1224,6 +1231,9 @@ async function shutdownApplication() {
 app.on('before-quit', (event) => {
   if (closing) return;
   event.preventDefault();
-  const quit = desktopLifecycle ? desktopLifecycle.requestQuit() : shutdownApplication();
+  const quit =
+    desktopLifecycle && window && !window.isDestroyed()
+      ? desktopLifecycle.requestQuit()
+      : shutdownApplication();
   void quit.catch((error) => logBoot(`quit cancelled ${String(error)}`));
 });

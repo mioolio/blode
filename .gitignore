@@ -3,6 +3,12 @@ dist/
 release/
 .tools/
 /tools/
+/.signing/
+# Local maintainer quick issuer and its private guide/checks
+/scripts/issue-obe.ts
+/scripts/issue-obe.cmd
+/tests/issue-obe.test.ts
+/docs/ISSUE-OBE.md
 *.log
 *.tsbuildinfo
 **/.blode/build/

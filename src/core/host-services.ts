@@ -14,6 +14,10 @@ import { ToolVersions } from './tool-versions';
 import { ProjectPackages } from './project-package';
 import { DevicePackages } from './device-packages';
 import { BundledArchiveWriter } from './archive-writer';
+import { openHostDirectory, type OpenDirectoryOptions } from './open-directory';
+import { OfflineTools } from './tool-offline';
+import { inspectSmallPackage } from './package-inspection';
+import { packageInspectSchema } from './package-signing-schemas';
 import { HostTerminals } from './terminal-sessions';
 import { ComponentLibraries } from './components';
 import { createDeliveryRoutes } from './delivery-routes';
@@ -39,6 +43,7 @@ import type { RuntimeDebugger } from './runtime-debugger';
 import { isRuntimeViewKind, type RuntimeViewContribution, type RuntimeViewKind } from '../shared/plugins';
 
 interface Options {
+  directoryOpener?: OpenDirectoryOptions;
   builtinDevicePackagesRoot?: string;
   builtinArchiveRoot?: string;
   extensionExamplesRoot?: string;
@@ -73,6 +78,7 @@ const absolute = (value: string) => {
 export function createHostServices(options: Options) {
   const { core, collaboration } = options;
   const generalExtensions = new GeneralExtensions({
+    enforceSignatures: true,
     dataRoot: options.dataRoot,
     examplesRoot: options.extensionExamplesRoot,
     openView: options.openExtensionView,
@@ -135,6 +141,7 @@ export function createHostServices(options: Options) {
     }
   };
   const components = new ComponentLibraries({
+    enforceSignatures: true,
     projectRoot: () => core.currentProjectRoot(),
     config: () => core.currentConfig(),
     build: projectBuild,
@@ -177,6 +184,7 @@ export function createHostServices(options: Options) {
   const toolRunner: typeof runCommand = (command, args, settings = {}) =>
     runCommand(command, args, { ...settings, env: { ...options.toolchainEnv, ...settings.env } });
   const toolOptions = {
+    enforceSignatures: true,
     root: options.toolchainRoot,
     dataRoot: options.dataRoot,
     config: () => core.currentConfig(),
@@ -192,6 +200,7 @@ export function createHostServices(options: Options) {
   };
   const tools = new ToolVersions(toolOptions);
   const devicePackages = new DevicePackages({
+    enforceSignatures: true,
     dataRoot: options.dataRoot,
     builtinRoot: options.builtinDevicePackagesRoot ?? path.resolve('dist/device-modules'),
     plugins: () => Promise.resolve(core.runtimePlugins.packageInventory?.() ?? core.runtimePlugins.state()),
@@ -210,7 +219,26 @@ export function createHostServices(options: Options) {
     ...extensionRoutes.routes,
     ...modelRoutes.routes,
     ...delivery.routes,
+    packageInspect: {
+      args: z.tuple([packageInspectSchema]),
+      run: (request) =>
+        request.kind === 'tool'
+          ? new OfflineTools(toolOptions).inspect(request.path)
+          : inspectSmallPackage(request.path, request.kind),
+    },
+    devicePackageOpenLocation: {
+      args: z.tuple([z.string().min(1).max(80)]),
+      run: async (id) => {
+        const entry = (await devicePackages.state()).packages.find((entry) => entry.id === id);
+        if (!entry) throw new Error('error.devicePackageUnknown');
+        await openHostDirectory(entry.directory, options.directoryOpener);
+      },
+    },
     devicePackagesState: { args: noArgs, run: () => devicePackages.state() },
+    devicePackagesVerify: {
+      args: z.tuple([z.array(z.string().min(1).max(80)).max(25)]),
+      run: (ids) => devicePackages.verify(ids),
+    },
     devicePackageReview: {
       args: z.tuple([hostParameterSchemas['devices.review']]),
       run: (request) => devicePackages.review(request),
@@ -250,8 +278,8 @@ export function createHostServices(options: Options) {
       run: (request) =>
         componentAction((hooks) =>
           request.kind === 'archive'
-            ? components.importArchive(request.path, request.expectedProjectRoot, hooks)
-            : components.importDirectory(request.path, request.expectedProjectRoot, hooks),
+            ? components.importArchive(request.path, request.expectedProjectRoot, hooks, request.approval)
+            : components.importDirectory(request.path, request.expectedProjectRoot, hooks, request.approval),
         ),
     },
     componentsRemove: {
@@ -610,6 +638,9 @@ export function createHostServices(options: Options) {
     return route.run(...(parsed.data as unknown[]));
   };
   const aliases: Record<string, [string, (params: any) => unknown[]]> = {
+    'packages.inspect': ['packageInspect', (p) => [p]],
+    'devices.openLocation': ['devicePackageOpenLocation', (p) => [p.id]],
+    'devices.verify': ['devicePackagesVerify', (p) => [p.ids]],
     ...extensionRoutes.aliases,
     ...modelRoutes.aliases,
     'components.state': ['componentsState', () => []],

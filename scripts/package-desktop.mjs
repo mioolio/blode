@@ -89,6 +89,7 @@ try {
       const result = await restoreMediumIntegrity(destination);
       console.log(`${result.applied ? 'Integrity: Medium' : 'Integrity: unchanged'} — ${name}`);
     }
+    await run('--import', ['tsx', 'scripts/sign-release.ts', destination, releaseVersion]);
     const digest = await sha256(destination);
     await writeFile(destination + '.sha256', `${digest}  ${name}\n`, { flag: 'wx' });
     console.log(`Desktop artifact: ${destination}`);
