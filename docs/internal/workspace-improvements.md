@@ -1,5 +1,7 @@
 # 工作台改进与验收清单
 
+> Historical development record. Version labels, branches, paths and test counts below describe that stage. For current behavior and validation, see [implementation status](../STATUS.md).
+
 本清单记录 2026-10-30 的连续需求。复选项记录实现状态；自动化、实机和界面验收分别记录。0.3.4.2 桌面便携版与 Web 版已完成本地构建，由用户手动发布；后续源码和文档修复维护于 `main`。
 
 ## 当前状态

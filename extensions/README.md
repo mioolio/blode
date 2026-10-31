@@ -20,13 +20,13 @@ types.ts 的 BoardAdapter 定义设备事实、能力、默认配置与校验，
 
 ## 第三方运行时插件
 
-API v2 包放在 `extensions/boards/<id>/` 或宿主应用数据的 `plugins/<id>/`，安装／修改后重启宿主。不需要为第三方包编辑静态 registry。宿主只读清单后注册设备事实，业务代码要先取得用户执行确认。
+API v2 包可通过组件库加载 ZIP／文件夹并即时注册，也可手动放在 `extensions/boards/<id>/` 或宿主应用数据的 `plugins/<id>/` 后重启。不需要为第三方包编辑静态 registry。宿主只读清单后注册设备事实，业务代码要先取得用户执行确认。
 
 [清单类型](../src/shared/plugins.ts) 分别声明支持芯片、能力、默认配置、连接方式、约束、编译所有权、默认工具、调试、布局和界面；[插件 SDK](plugins.ts) 提供工程、进程、事件和生命周期服务。USB 或物理连接的协议与设备选择规则由插件实现，不强制转换成串口。
 
 永久授权文件 `.uel` 由宿主在本机确认后生成，不随包分享。原生代码与宿主拥有相同权限，自定义 HTML 视图则通过隔离 iframe 和受控消息桥集成。
 
-完整的目录、清单示例、编译器替换、调试接口、更新策略和测试要求见[运行时插件开发指南](../docs/RUNTIME-PLUGINS.md)。本次属于[内部开发预览](../docs/internal/runtime-plugins.md)。
+完整的目录、清单示例、编译器替换、调试接口、更新策略和测试要求见[运行时插件开发指南](../docs/RUNTIME-PLUGINS.md)。当前实现与发行包状态见[状态总览](../docs/STATUS.md)；早期开发过程保留在[内部记录](../docs/internal/runtime-plugins.md)。
 
 ## 标准目录与独立分发
 
@@ -38,7 +38,7 @@ API v2 包放在 `extensions/boards/<id>/` 或宿主应用数据的 `plugins/<id
 
 ## 其他扩展
 
-- completions/ 按语言和版本保存 JSON 规则：C/c99、c11、c17、c23 各自独立，C++/arduino 保存 Arduino 数据。片段、符号、成员和悬停通过显式目录注册；工程可在 languages/C/<标准>/ 添加规则。工作区符号由增量索引提供，旧 blode.completions.json 继续兼容。格式见 [语言规则](../docs/LANGUAGE-RULES.md)。
+- `completions/` 按语言和版本保存 JSON 诊断规则：C/c99、c11、c17、c23 各自独立。宿主内置 C／Arduino 静态补全数据已移除；C/C++ 使用 clangd 与工作区索引，模块提供自己的声明，工程可在 `languages/C/<标准>/` 添加条目与规则。工作区符号由增量索引提供，旧 blode.completions.json 继续兼容。格式见 [语言规则](../docs/LANGUAGE-RULES.md)。
 - menus/explorer.ts 声明右键菜单的标题、显示条件和命令 ID，renderer 执行实际动作。编译入口选择只写入 be.build.entry，可指文件或目录，不立即编译。
 - drivers/types.ts 与 drivers/index.ts 提供描述和注册；ST-Link 事实来自 boards/STM32F103C8T6/tools/driver.ts，归档位于应用 tools/STSW-LINK/。
 

@@ -1,5 +1,7 @@
 # Window close and system tray
 
+> Historical development record. Version labels, branches, paths and test counts below describe that stage. For current behavior and validation, see [implementation status](../STATUS.md).
+
 This behavior is part of the current internal development update.
 
 ## Desktop

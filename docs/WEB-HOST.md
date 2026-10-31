@@ -7,7 +7,8 @@ The Web edition runs a Node.js service on the computer that owns the projects an
 | Requirement                               | Purpose                                                                          |
 | ----------------------------------------- | -------------------------------------------------------------------------------- |
 | Windows x64 (packaged EXE)                | The executable already contains the Node host and native device runtimes         |
-| Node.js 24 or newer, with npm (source)    | Only for running the host from a checkout or building a release                  |
+| Node.js 24+ x64 (compact ZIP)             | Required by the ZIP launcher; all application/native dependencies are included   |
+| Node.js 24 or newer, with npm (source)    | Running from a checkout or building a release                                    |
 | A current browser                         | Render the editor and collaboration interface                                    |
 | Git on the host's PATH                    | Use the integrated Git interface; existing host credentials handle remote access |
 | A suitable installed/downloaded toolchain | Compile the selected platform; a physical device is unnecessary for compilation  |
@@ -28,7 +29,7 @@ The Web edition is shipped as one Windows x64 executable, `Blode.Studio-<release
 
 If the executable exits immediately, double-clicking keeps the console open and prints the reason; a missing write permission for the data directory is the usual cause. Pass `--data-root` with a writable folder or check the folder permissions.
 
-The executable is about 96 MiB and starts the same host as `npm start` in a source checkout. The extracted runtime is keyed by the payload hash, so a newer release never mixes with an older cache; a matching `.sha256` file accompanies every build. Compiler toolchains, the ST-Link archive and `tools/` are still installed or selected on the host after the first launch.
+The existing 0.3.5.9 Web EXE is 98.43 MiB and starts the same host as `npm run web:start` in a source checkout. The compact Node.js ZIP is 8.79 MiB; sizes change with each build. Current source includes later updates; see [implementation status](STATUS.md). The extracted runtime is keyed by the payload hash, so a newer release never mixes with an older cache; a matching `.sha256` file accompanies every build. Compiler toolchains, the ST-Link archive and `tools/` are still installed or selected on the host after the first launch.
 
 ## Start from source
 
@@ -44,7 +45,7 @@ npm run web:start
 ## Command options
 
 ```sh
-Blode.Studio-0.3.5.2-web-win-x64.exe --host 127.0.0.1 --port 47821 --project "D:\firmware\my-device" --data-root "D:\blode-data"
+Blode.Studio-0.3.5.9-web-win-x64.exe --host 127.0.0.1 --port 47821 --project "D:\firmware\my-device" --data-root "D:\blode-data"
 ```
 
 The source runner accepts the same options with `npm run web:start --`.
@@ -62,7 +63,7 @@ The source runner accepts the same options with `npm run web:start --`.
 To allow a trusted LAN:
 
 ```sh
-Blode.Studio-0.3.5.2-web-win-x64.exe --host 0.0.0.0 --port 47821
+Blode.Studio-0.3.5.9-web-win-x64.exe --host 0.0.0.0 --port 47821
 ```
 
 Use the LAN address printed in the launch link. All browser API requests require the generated token, including connections from the host itself. Access uses an IP address or localhost; custom Host domains are rejected. The default HTTP service is intended for local or trusted LAN use. Public deployment, TLS termination and a configurable reverse-proxy domain allowlist require additional implementation and validation.
@@ -81,13 +82,13 @@ Compilation runs on the host and works without connecting a device. Flashing and
 
 Device detection initializes once. Use the device **Refresh** action after changing hardware on the standalone host. The browser refresh shortcut reloads the interface and retained state; it does not intentionally trigger repeated hardware discovery.
 
-Tool installation output is streamed to Preferences. Selecting a compiler or Arduino core version updates the host project's tool configuration. See [compiler and tool versions](TOOL-VERSIONS.md).
+Tool installation output is streamed to Preferences. Install/download tools in Preferences, then choose the installed compiler/core in **Build → Build settings**; project selections use the host paths. See [compiler and tool versions](TOOL-VERSIONS.md).
 
 ## Collaboration and automation
 
 Browser peers receive their own identity and color. Presence, open tabs, shared edits and the newest compiler output are delivered through the common service. Browser undo is restricted to the peer's own changes; trusted local automation is a separate channel. Conflicting edits are reported for explicit resolution.
 
-The local authenticated automation pipe is available to external AI integrations. The Web host reuses the same validated workbench actions and confirmation parameters. Window minimize/maximize/close operations are desktop-only. Prediction suggestions are supplied by a connected external AI and remain disabled until enabled in Preferences.
+The local authenticated automation pipe is available to external AI integrations. The Web host reuses the same validated workbench actions and confirmation parameters. Window minimize/maximize/close operations are desktop-only. Predictions can use a configured model service or the external-AI interface. Manual requests are available from the editor; automatic predictions remain disabled until enabled in Preferences. See [AI configuration](AI-COMPLETIONS.md).
 
 ## Build a Web release
 

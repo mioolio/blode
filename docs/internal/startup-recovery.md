@@ -1,5 +1,7 @@
 # Windows 开发启动恢复
 
+> Historical development record. Version labels, branches, paths and test counts below describe that stage. For current behavior and validation, see [implementation status](../STATUS.md).
+
 日期：2026-10-30。分支：`codex/runtime-plugins-internal`。本次更新启动脚本与 Vite 配置，不生成应用发行包。
 
 ## 问题与原因

@@ -1,5 +1,7 @@
 # 工作台交互更新
 
+> Historical development record. Version labels, branches, paths and test counts below describe that stage. For current behavior and validation, see [implementation status](../STATUS.md).
+
 状态：内部开发预览，基于 0.2.3.6。分支为 `codex/runtime-plugins-internal`，继续使用 `0.2.3.6-internal` 显示版本。本次更新源码，不生成新的正式发行包。
 
 ## 升级与启动

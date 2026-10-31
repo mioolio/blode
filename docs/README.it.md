@@ -6,6 +6,12 @@ Blode Studio è un ambiente modulare per lo sviluppo embedded: modifica del codi
 
 [GitHub Releases](https://github.com/mioolio/blode/releases) · [CHANGELOG](../CHANGELOG.md) · [Issues](https://github.com/mioolio/blode/issues)
 
+## Sorgenti e pacchetti attuali
+
+Verificato il 2026-11-01. `main` include 13 lingue dell’interfaccia e le correzioni ST-Link per download e installazione Windows, rilevamento delle directory di versione e stati. I binari 0.3.5.9 esistenti sono stati compilati prima e non includono ancora queste modifiche. Il push dei sorgenti non sostituisce i file delle release.
+
+L’ultimo gruppo ST-Link ha superato 55 test e il controllo dei tipi. Gli strumenti reali sono stati esportati in ZIP, importati in una directory isolata e usati per identificare un STM32F1. Questa verifica non ha scritto firmware né avviato una sessione GDB. Vedere lo [stato di implementazione e verifica](STATUS.md).
+
 ## Funzionalità disponibili
 
 - Completamento C/C++, definizioni, riferimenti, diagnostica e formattazione con clangd, con indice dell’area di lavoro come alternativa; schede di anteprima, viste divise e recupero delle bozze.

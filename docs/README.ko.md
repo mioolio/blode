@@ -6,6 +6,12 @@ Blode Studio는 소스 편집, 펌웨어 빌드와 업로드, 시리얼 통신, 
 
 [GitHub Releases](https://github.com/mioolio/blode/releases) · [CHANGELOG](../CHANGELOG.md) · [Issues](https://github.com/mioolio/blode/issues)
 
+## 현재 소스와 배포 패키지
+
+확인일: 2026-11-01. 현재 `main`에는 13개 UI 언어와 Windows ST-Link 다운로드·설치, 버전 디렉터리 검색 및 상태 표시 수정이 포함됩니다. 기존 0.3.5.9 바이너리는 그 이전 빌드이므로 이 변경 사항을 포함하지 않습니다. 소스 푸시만으로 배포 파일이 교체되지는 않습니다.
+
+최신 ST-Link 관련 테스트 55개와 타입 검사가 통과했습니다. 실제 도구를 ZIP으로 내보내 격리된 버전 디렉터리에 가져온 뒤 STM32F1을 인식했습니다. 이 확인에서는 펌웨어 기록이나 GDB 연결을 하지 않았습니다. [구현 및 검증 상태](STATUS.md)를 참고하세요.
+
 ## 제공 기능
 
 - clangd 기반 C/C++ 자동 완성, 정의와 참조, 진단, 서식 지정. 대체 작업 영역 인덱스, 미리 보기 탭, 분할 편집, 초안 복구를 지원합니다.

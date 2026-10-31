@@ -1,8 +1,8 @@
 # AI 服务、预测与补全清单
 
-C 标准库与声明式语义规则的目录格式见 [语言规则](LANGUAGE-RULES.md)。工程通过 `be.build.cStandard` 选择 C99／C11／C17／C23，工作区符号索引及 `language.index` 接口提供定义位置。C/C++ 补全、悬停、定义、引用和诊断优先由 clangd 回答，未安装时回退到宿主内置语言服务，见 [clangd](CLANGD.md) 与[内置语言服务](LANGUAGE-SERVICE.md)。内置 C/Arduino JSON 补全目录已删除；用户和外部 AI 仍可通过补全清单添加、覆盖和禁用用户条目。
+工程自定义补全条目与声明式语义规则的目录格式见 [语言规则](LANGUAGE-RULES.md)。工程通过 `be.build.cStandard` 选择 C99／C11／C17／C23，工作区符号索引及 `language.index` 接口提供定义位置。C/C++ 补全、悬停、定义、引用和诊断优先由 clangd 回答，未安装时回退到宿主内置语言服务，见 [clangd](CLANGD.md) 与[内置语言服务](LANGUAGE-SERVICE.md)。内置 C/Arduino JSON 补全目录已删除；用户和外部 AI 仍可通过补全清单添加、覆盖和禁用用户条目。
 
-内部开发版中，声明 `manifest.languages` 的模块拥有自己的默认清单。首选项与 AI 状态接口展示当前模块的条目，不改写宿主默认 JSON；用户条目和工作区索引仍保留。模块格式见[模块语言适配](MODULE-LANGUAGES.md)。
+当前源码中，声明 `manifest.languages` 的模块拥有自己的默认清单。首选项与 AI 状态接口展示当前模块的条目，不改写宿主默认 JSON；用户条目和工作区索引仍保留。模块格式见[模块语言适配](MODULE-LANGUAGES.md)。
 
 补全清单是声明式数据。用户可在“首选项 → 补全与 AI 预测”编辑，已认证的外部 AI 也可通过同一接口读写。模型服务、预测来源和语言清单分别配置；已有外部 AI 接口继续保留。
 

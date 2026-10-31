@@ -1,45 +1,43 @@
 # Platform support
 
-Host editions, declared chip coverage and validation status for the built-in runtime packages.
+Reviewed on 2026-11-01. The current source, packaged feature baseline and validation boundaries are summarized in [implementation status](STATUS.md).
 
 ## Host editions
 
-| Host                        | Desktop edition                                                         | Standalone Web host                                                          | Current verification                                                                                       |
-| --------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Windows x64                 | Primary development target; Electron desktop                            | Node.js 24+ service and browser UI                                           | Local development and lightweight automated checks; feature-specific hardware validation is still required |
-| Linux x64                   | Platform paths are prepared; no verified desktop release in this change | Node.js service and architecture-specific GNU/Arduino downloads are prepared | **Not tested on Linux**; installation, desktop packaging, compilation and USB access remain unverified     |
-| Linux ARM64                 | No verified desktop release                                             | Node.js service and matching GNU/Arduino archives are prepared               | **Not tested on Linux**; older ESP32 packages may not publish every required host tool                     |
-| macOS / other architectures | Custom tool paths remain possible; no automatic support claim           | Runtime code is portable in principle; no verified distribution              | Unverified; the built-in automatic installer catalog does not cover these hosts                            |
+| Edition            | Target environment                                                         | Runtime requirements                                                         | Recorded state                                                  |
+| ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Desktop portable   | Windows x64                                                                | Embedded Electron; Git and firmware tools are installed/selected on the host | Primary development platform; local 0.3.5.9 EXE built           |
+| Standalone Web EXE | Windows x64                                                                | Embedded Node host and native dependencies; an external browser              | Local 0.3.5.9 EXE built; recipient does not install Node.js/npm |
+| Compact Web ZIP    | Windows x64                                                                | Node.js 24+ x64; application/native dependencies are included                | Local 0.3.5.9 ZIP built; extract and run `start-web.cmd`        |
+| Web from source    | Node.js 24+ and source dependencies                                        | `npm ci`, host build, browser; platform-specific native dependencies         | Windows development verified; Linux/macOS acceptance pending    |
+| Linux x64/ARM64    | Source host and prepared platform paths/downloads                          | Distribution toolchain, native libraries and USB permissions                 | No real-host end-to-end validation or verified release packages |
+| macOS/other hosts  | Custom tool paths; some language-service downloads have platform manifests | Host-specific native dependencies and tools                                  | No complete host/hardware validation or release package         |
 
-The Web browser may run on a different computer from the host. Browser compatibility and responsive layout do not change the operating-system requirements of the compiler, Git executable or USB hardware attached to the host.
+The browser can run on another computer. Files, compiler processes, Git, serial ports and debugger sessions belong to the computer running the host. The Web editions do not embed Chromium or another browser engine.
 
-## Embedded platforms
+## Device modules
 
-| Platform      | Compilation                                                                                          | Firmware programming                     | Debugging                                                                                                                                |
-| ------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Esp32_S3_CAM  | ESP32-S3 with managed, versioned or custom Arduino-ESP32 packages; project-defined camera GPIO       | Host serial connection and esptool       | Native USB-JTAG, Xtensa GDB and Espressif OpenOCD; registers, memory, disassembly and hardware breakpoints. Physical acceptance pending. |
-| STM32F103C8T6 | GNU Arm GCC or Arm Compiler 5/6; C8/C8T6 Keil project imports; 64 KiB Flash and 20 KiB SRAM defaults | ST-Link/SWD and prepared firmware images | Separate ST-Link/GDB workbench with disassembly, registers, stack, memory, breakpoints and instruction control                           |
+| Module          | Declared scope                                       | Build/programming                            | Debugger and validation                                                                                                                          |
+| --------------- | ---------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Esp32_S3_CAM`  | ESP32-S3; camera GPIO selected by the project        | Arduino CLI + Arduino-ESP32; serial/esptool  | UART GDB on Windows/CH340 reference firmware verified; native USB-JTAG and camera migration pending                                              |
+| `STM32F103C8T6` | STM32F103C8/C8T6; default 64 KiB Flash / 20 KiB SRAM | GNU Arm GCC or Arm Compiler 5/6; ST-Link/SWD | GDB workbench implemented; latest real ST-Link identification and ZIP tool transfer verified; SRAM instruction edits pending hardware acceptance |
 
-The hardware workbench samples a connected physical target. Plugins can declare additional chip scopes, transports and debug providers. Recommended resource capacities remain separate from explicit user allocations. See [STM32 support](STM32.md) and the [runtime plugin contract](RUNTIME-PLUGINS.md).
+These two profiles are the official device modules. `auto` performs detection; it is not a claim of support for every ESP32 or STM32 series. Legacy `esp32-s3` and `stm32` project IDs migrate on read. Third-party modules declare their own chip ranges, transports and capabilities.
 
-## Tool and driver requirements
+## Tools and drivers
 
-- GNU Arm and Arduino CLI catalogs provide pinned public Windows x64, Linux x64 and Linux ARM64 archive definitions with checksum validation. See [tool versions](TOOL-VERSIONS.md).
-- ESP32-S3 debug tools provide pinned GDB/OpenOCD archives for Windows x64, Linux x64 and Linux ARM64. Windows archive downloads, SHA-256 checks and version execution were verified; Linux execution and real JTAG sessions are unverified. See [hardware debugging](HARDWARE-DEBUGGING.md).
-- Arm Compiler 5/6 use an existing local installation. AC5 supports C99 and C++03; see [setup and validation](ARM-COMPILER-5.md).
-- Linux ST-Link can use a distribution package or custom executable directory. An official x64 `.deb` release link is provided; the app does not run privileged package-manager commands or silently change udev rules.
-- Linux serial and debug access requires the appropriate device permissions and runtime libraries for the distribution.
-- Integrated Git management requires Git on the target machine. Existing Git credentials and SSH configuration remain on that machine.
-- The Web release requires Node.js 24+ and installs serialport for the recipient's platform. It does not contain a browser engine or compiler binaries.
+- GNU Arm and Arduino CLI have pinned Windows x64/Linux x64/Linux ARM64 archive definitions; ESP32 core installation depends on the assets available for the chosen host/core combination.
+- Windows x64 ST-Link 1.9.0 supports download, online installation and offline ZIP installation. Tools are discovered in managed/version directories, configured package/bin paths and PATH. Driver state is checked independently.
+- Linux ST-Link uses a system installation or custom path; the catalog includes an x64 release link. No privileged Linux package-manager or udev installation is implemented.
+- ESP32 GDB/OpenOCD manifests cover Windows x64/Linux x64/Linux ARM64. Actual Windows archive checks and UART GDB sessions are recorded; Linux execution and native USB-JTAG acceptance remain pending.
+- AC5/AC6 use existing licensed installations; no automatic vendor compiler download catalog is provided. AC5 supports C99/C++03. Application signing and OBE do not replace compiler licensing.
+- clangd is a separate language service; its archive manifests do not imply firmware toolchain or hardware support on that host.
+- Git and remote credentials are supplied by the host. Browser clients use that same Git environment.
 
-## Release readiness
+## Validation boundaries
 
-Lightweight tests cover service boundaries, collaboration logic, project packaging, tool metadata verification and host startup with fake hardware runtimes. The following remain acceptance tasks rather than completed claims:
+Real Windows results include ESP32-S3 firmware build/flash/heartbeat, UART GDB reference sessions, GNU/AC5/AC6 reference compilation and the latest STM32 ST-Link recognition after tool export/import. Detailed records identify the tool versions, firmware and operations actually performed.
 
-1. Linux x64 and ARM64 installation and real compiler builds.
-2. Linux serial/ST-Link permissions, reconnect behavior and physical flashing/debugging.
-3. Desktop packaging and launch checks on Linux.
-4. Real multi-browser collaboration under latency and long editing sessions.
-5. Toolchain download/install validation on each supported host and architecture.
+Pending work includes Linux/macOS end-to-end testing, ESP32 native USB-JTAG, STM32 SRAM patch execution, second-machine complex project migration and sustained high-latency collaboration. The latest ST-Link group passed 55 related tests; it is not a new full-suite or all-platform certification.
 
-See [hardware validation](HARDWARE-VALIDATION.md) and [roadmap](ROADMAP.md) for follow-up work.
+See [hardware records](HARDWARE-VALIDATION.md), [debugging](HARDWARE-DEBUGGING.md), [tool versions](TOOL-VERSIONS.md), [Web deployment](WEB-HOST.md) and [roadmap](ROADMAP.md).

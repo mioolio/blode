@@ -1,53 +1,48 @@
 # Windows 调试器驱动
 
-Blode Studio 内置 STMicroelectronics 的 STSW-LINK009 驱动包，用于 ST-Link/V2 及更新型号的调试与烧录器。驱动属于操作系统能力，不属于某块板卡；安装入口在“文件 → 首选项 → 驱动”，不需要先打开工程。
+ST-Link 驱动在 **文件 → 首选项 → 调试器驱动** 中管理，无需先打开工程。当前软件已实现 STM32 的 ST-Link 识别、烧录和 GDB 调试工作区；工具安装见[ST-Link 工具](TOOL-VERSIONS.md#st-link-discovery-and-status)。
 
-> 当前应用还没有 STM32 烧录适配器。本页只说明驱动检测与安装；STM32/OpenOCD 的烧录流程需要另做适配。
+## 驱动与工具
+
+| 项目               | 用途                                                | 管理位置                            |
+| ------------------ | --------------------------------------------------- | ----------------------------------- |
+| STSW-LINK009 驱动  | Windows 识别 ST-Link USB 接口、驱动版本及 PnP 状态  | 首选项 → 调试器驱动                 |
+| ST-Link 1.9.0 工具 | `st-info` 识别、`st-flash` 烧录、`st-util` 调试服务 | 编译与工具链；工具链与导出          |
+| GNU Arm GDB        | STM32 调试会话                                      | 独立调试窗口 → 工具；或指定已有 GDB |
+
+“驱动已就绪”与命令行工具安装状态分别显示。2026-11-01 的 ST-Link 源码修复已接入 Windows 下载／安装及版本目录发现；实际验证见[硬件记录](HARDWARE-VALIDATION.md)。
 
 ## 驱动包位置
 
-| 场景     | 路径                                           |
-| -------- | ---------------------------------------------- |
-| 开发模式 | `tools/STSW-LINK/stsw-link009.zip`             |
-| 便携版   | `resources/drivers/STSW-LINK/stsw-link009.zip` |
-| 覆盖     | `BLODE_DRIVER_ROOT` 指向包含该 zip 的目录      |
+| 环境       | 路径                                           |
+| ---------- | ---------------------------------------------- |
+| 开发模式   | `tools/STSW-LINK/stsw-link009.zip`             |
+| 桌面发行包 | `resources/drivers/STSW-LINK/stsw-link009.zip` |
+| 显式覆盖   | `BLODE_DRIVER_ROOT` 指定包含该 ZIP 的目录      |
 
-`tools/` 不提交到源码仓库。打包时 `package.json` 的 `extraResources` 会把该目录复制到 `resources/drivers/STSW-LINK`；如果目录不存在，打包会给出警告，应用仍可运行，但“调试器驱动”会显示驱动包不可用。
+`tools/` 不进入 Git。桌面打包由 `electron-builder.config.cjs` 的 `extraResources` 携带驱动归档，构建环境提供该文件。缺少归档时，驱动页面显示安装包不可用；已安装驱动的检测独立进行。
 
-## 使用流程
+## 安装
 
-1. 打开“文件 → 首选项 → 驱动”，查看 ST-Link 的状态。
-2. 点击“安装 ST-Link 驱动”或“重新安装驱动”。
-3. Windows 弹出 UAC 提示时选择“是”。安装过程使用系统自带的 `pnputil.exe`，为驱动包中的三个签名 INF 逐个执行 `/add-driver ... /install`，随后 `/scan-devices`。
-4. 安装完成后重新插拔 ST-Link，再点“刷新”确认状态变为“已就绪”。
+1. 打开调试器驱动页，查看 ST-Link 的版本、连接数和状态。
+2. 点击安装或重新安装驱动，在 UAC 窗口确认。
+3. 宿主解压归档，并调用 Windows `pnputil.exe` 逐个安装三个签名 INF，随后扫描设备。
+4. 根据设备状态重新插拔探针，点击刷新。
 
-驱动包解压到 `%APPDATA%/Blode Studio/drivers/stlink`（或 `BLODE_DATA_ROOT` 指向的目录），不修改驱动包中的 INF/CAT 文件。
+归档解压到宿主数据目录的 `drivers/stlink/`。驱动 INF／CAT 保持厂商原始内容。UAC 取消返回取消结果，安装输出与错误可在任务区域查看。
 
-## 状态含义
+## 状态与刷新
 
-| 状态                   | 含义                                                   |
-| ---------------------- | ------------------------------------------------------ |
-| 已就绪                 | 至少一个 ST-Link 设备已连接，且没有 PnP 问题代码       |
-| 已安装，未连接设备     | 驱动包已进入 Windows 驱动库，当前没有设备              |
-| 设备已连接，驱动未就绪 | 匹配到 ST-Link USB ID，但设备存在问题代码（常见为 28） |
-| 未安装                 | 驱动库和设备都未匹配                                   |
-| 当前系统无需安装       | 非 Windows 平台                                        |
+| 状态                   | 含义                                      |
+| ---------------------- | ----------------------------------------- |
+| 已就绪                 | 匹配的 ST-Link 设备存在，PnP 没有问题代码 |
+| 已安装，未连接设备     | 驱动库已有包，当前未发现对应设备          |
+| 设备已连接，驱动未就绪 | USB ID 匹配，设备仍有 PnP 问题代码        |
+| 未安装                 | 当前驱动库与设备均未匹配                  |
+| 当前系统无需安装       | 非 Windows 宿主                           |
 
-检测方式：
+驱动版本从 DriverStore 中匹配的 INF 读取；设备检测使用当前 PnP USB ID 与问题代码。初次检测后缓存，显式刷新、安装和系统设备变更使状态失效，不使用每五秒重复探测。
 
-- 驱动库：`%SystemRoot%\System32\DriverStore\FileRepository\stlink_{dbg,bridge,vcp}.inf_*`；版本从 INF 的 `DriverVer` 读取。
-- 设备：`Get-PnpDevice -PresentOnly`，按驱动包覆盖的 `VID_0483&PID_*` 匹配；`Problem = 0` 视为可用。
-- 结果缓存 5 秒；界面上的“刷新”会强制重新检测。
+驱动定义位于 `extensions/boards/STM32F103C8T6/tools/driver.ts`，在 `extensions/drivers/index.ts` 注册；`src/core/drivers.ts` 负责通用检测和安装。Linux 的 USB 权限及 udev 配置另行处理，尚未实机验收。
 
-## 边界与安全
-
-- 仅 Windows。当前 Electron 版本要求 Windows 10 及以上，`pnputil` 可用。
-- 驱动包由 ST 签名；应用只解压并调用系统安装器，不替换、不修改 INF/CAT。
-- 安装需要管理员权限。应用通过一次显式的 `Start-Process -Verb RunAs` 提权；UAC 被取消会返回“驱动安装已取消”，不会静默重试。
-- 解压目录固定为应用数据目录下的 `drivers/<包名>`，安装前只清理这个固定目录，不接受外部传入的路径。
-- 驱动 ID、INF 名称和 USB ID 放在 `extensions/drivers/stlink.ts`；核心只负责解压、检测和提权。新增其他调试器时，新建 `extensions/drivers/<probe>.ts` 并在 `extensions/drivers/index.ts` 显式注册。
-- ST 驱动包的再分发受 ST 许可约束；二进制 zip 不提交到仓库，由打包环境提供。
-
-## 手动安装
-
-如果应用内安装不可用，可以解压 `stsw-link009.zip`，以管理员身份运行 `stlink_winusb_install.bat`，或按厂商说明运行 `dpinst_amd64.exe`。安装完成后同样建议重新插拔设备。
+驱动归档与工具链各自遵循上游许可。Windows 应用签名、OBE 包签名与厂商驱动签名的职责见[签名说明](PACKAGE-SIGNING.md)。

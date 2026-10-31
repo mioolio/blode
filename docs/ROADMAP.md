@@ -1,62 +1,58 @@
 # Product roadmap
 
-This roadmap describes the current implementation and planned validation. It is not a promise of delivery dates. A capability can be implemented while still requiring platform or hardware acceptance testing.
+Reviewed on 2026-11-01 against the current `main` implementation. [Implementation status](STATUS.md) separates source features, existing binaries and validation evidence. Historical internal notes describe their original stage; they are not the current release matrix.
 
-## Implemented capabilities
+## Implemented
 
-The internal preview, developed on `codex/runtime-plugins-internal` and now merged into `main`, adds versioned runtime declarations, package approval, compiler ownership and overrides, custom device/debug views, and modern selectors. Its automated results and pending user acceptance are recorded in the [internal update](internal/runtime-plugins.md). The preview is based on 0.2.3.6; existing release packages are unchanged, and this source merge does not publish a new stable release.
+| Area            | Available behavior                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Editing         | clangd with workspace-index fallback, navigation and external headers, preview tabs, drafts, image/audio/video previews                           |
+| Builds          | Offline compilation, named subprojects, one current-entry form, per-language tool selections, Debug/Release and size optimization                 |
+| Targets         | ESP32-S3 Arduino/esptool and STM32F103C8/C8T6 GNU Arm/AC5/AC6 with ST-Link                                                                        |
+| Debugger        | Separate desktop/window or browser tab; registers, disassembly, stack, memory, stepping, batch breakpoints; STM32 SRAM instruction-edit interface |
+| Delivery        | Portable projects with external dependencies; component/device/tool ZIP export and offline installation; fresh export manifests and hashes        |
+| ST-Link tools   | Windows install/download, managed/versioned/custom/PATH discovery, paired version checks and debugger server lookup                               |
+| Collaboration   | Shared file/tool tabs, all-client close transactions, own-edit browser undo, conflict reporting, attention/presence and recent-log replay         |
+| Host tools      | Project-scoped Git management, native multi-session terminals, VS Code disk synchronization                                                       |
+| Extensions      | Ten-directory device modules, standalone JavaScript packages, general extensions, windows/panels and OBE review                                   |
+| Desktop         | Default close-to-tray, restore and explicit exit with unsaved-change handling                                                                     |
+| Language and AI | 13 interface languages and README editions, model-provider or external-AI completion, scoped questions and edits                                  |
+| Distribution    | Three Windows x64 builds: desktop EXE, self-contained Web EXE and compact Web ZIP requiring Node.js 24+ x64                                       |
 
-The [workbench interaction update](internal/workbench-interaction.md) adds a persistent PTY terminal, declared plugin windows and bottom-panel views, attention-based collaboration presence, save-on-exit transactions and an optional system tray. Live tray, browser-window and Linux acceptance remain on the validation backlog.
+Existing 0.3.5.9 binaries predate the multilingual and latest ST-Link source changes. A source push does not rebuild or replace release attachments.
 
-| Area            | Available behavior                                                                                                                                                                                       |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspaces      | Welcome screen, recent project history, project open/close, configurable build entry and portable project ZIP export                                                                                     |
-| Editors         | clangd-based C/C++ completion, hover, definitions, references and diagnostics with offline host-index fallback; incremental source index; versioned JSON C rules; preview/pinned tabs and AI predictions |
-| Hardware        | `Esp32_S3_CAM` and `STM32F103C8T6` discovery, offline compilation, prepared firmware programming, selectable export formats and serial communication                                                     |
-| Debugging       | STM32/ST-Link and ESP32-S3 USB-JTAG workbench; architecture-aware registers, memory, disassembly and batch breakpoints; STM32 SRAM instruction edits                                                     |
-| Modules         | Ten responsibility directories, independent language catalogs, managed runtime compilers, standalone JavaScript packages and ZIP export for binary hosts                                                 |
-| Teamwork        | Shared browser editing, presence colors, shared open tabs, edit conflict reporting and per-user browser undo                                                                                             |
-| Version control | Independent `.blode/git` history with disable/removal controls; explicitly enabled sharing of an existing repository                                                                                     |
-| Tools           | Wide Preferences layout, installation output, pinned compiler/CLI/core version catalog and custom tool paths                                                                                             |
-| Editions        | Electron desktop and a standalone Node.js Web host that excludes Electron/Chromium from its release ZIP                                                                                                  |
-| Automation      | Validated AI/workbench interfaces with explicit confirmation parameters for sensitive actions                                                                                                            |
+## Recorded validation
 
-Details and limitations are documented in the relevant guides. The entries above describe implemented code paths; they do not imply that every combination of device, operating system and project format has passed acceptance testing.
+| Scope             | Evidence                                                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| ST-Link           | 55 related tests, type checking and standalone module build; real ZIP export/import followed by STM32F1 discovery in an isolated tool root |
+| ESP32-S3 UART GDB | Windows/CH340 counter firmware: registers, memory, breakpoints, stepping, pause/continue and disconnect/reconnect                          |
+| Compilers         | Windows reference GNU Arm, AC5 and AC6 builds; compiler-specific details remain in the platform guides                                     |
+| Portable project  | Real GNU build, external dependency migration, original dependency removal and binary comparison after rebuilding                          |
+| Collaboration     | Two-client service/UI scenarios, tab lifecycle, own-user undo, conflict and reconnect coverage; longer cross-machine use remains pending   |
+| Distributions     | Local 0.3.5.9 artifacts, hashes/signatures and documented Windows startup checks; no new packages in this documentation update             |
 
-## Completed lightweight validation
+Test counts refer to their recorded groups, not a current full-suite run. [Hardware records](HARDWARE-VALIDATION.md), [debugger validation](HARDWARE-DEBUGGING.md#验证状态), [AI acceptance](AI-INTEGRATION-VALIDATION.md) and [collaboration](COLLABORATION.md) retain the specific environments and limits.
 
-| Scope            | Evidence in this change                                                                                                                                                                                | Limits                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Git              | Temporary repositories exercise literal-path staging, commits, branches, diffs and rename boundaries; local bare remotes exercise push and fast-forward pull                                           | No mutation or push of the user's current repository; hosted-provider authentication and team merge scenarios still need acceptance testing |
-| Project ZIP      | Fixture projects verify standard ZIP records/CRC, external includes and Keil dependency collection, rewritten archive paths, unresolved dependency reporting and unsafe-path rejection                 | A second computer has not yet compiled a shared complex firmware project                                                                    |
-| Node Web host    | Temporary-port HTTP tests verify loopback token requirements, empty home state, host folder selection, project open, version catalog, project ZIP download and terminal output in the target directory | Platform runtimes are replaced by fixtures; no physical probe/flash, sustained browser session or Linux host test                           |
-| Web distribution | The Node bundle passes an Electron-import check and CLI help runs under Node; internal packaging includes SerialPort and node-pty runtime dependencies                                                 | A fresh recipient-machine dependency install and hardware session remain unverified                                                         |
-| Tool versions    | Mocked downloads verify version selection and isolation; Windows ESP32 debug GDB/OpenOCD archives were downloaded, SHA-256 checked, extracted and executed with version flags                          | Firmware compilation with these tools, Linux execution and physical debug sessions remain unverified                                        |
+## Current acceptance work
 
-The corresponding tests are `tests/git.test.ts`, `tests/project-package.test.ts`, `tests/web-host.test.ts` and `tests/tool-versions.test.ts`. These are service-level results from the Windows development environment, not a claim of cross-machine or physical hardware validation.
+| Priority | Work                                                            | Acceptance evidence                                                                              |
+| -------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| High     | ESP32-S3 native USB-JTAG and camera firmware UART GDB migration | A real target session and matching ELF, with board/firmware/tool versions recorded               |
+| High     | STM32 SRAM instruction edits and run-time patches               | Byte readback, execution behavior and stop/resume outcomes on a dedicated test firmware          |
+| High     | Desktop/Web concurrent debug ownership                          | Reconnect, cancellation and hardware-lock scenarios across real clients                          |
+| High     | Complex project/component/tool transfer to a second computer    | Clean receiver install and successful firmware rebuild without source-machine paths              |
+| High     | Long-running, high-latency collaboration                        | Stable reading anchors, own-user undo, close/cancel/reopen and eventual state convergence        |
+| Medium   | Language terminology and input methods                          | Native-language review and manual editor/menu/IME checks                                         |
+| Medium   | AI predictions and large-project responsiveness                 | Provider-specific error handling, latency and suggestion-quality records                         |
+| Medium   | Tool installation per architecture                              | Actual publisher archives, version execution, successful builds and hardware access on that host |
 
-## Near-term validation
+## Planned platform and architecture work
 
-| Priority | Work                                                                                        | Completion evidence                                                                               |
-| -------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| High     | Validate Windows desktop startup and recovery after unexpected termination                  | Repeated launch/close/crash-recovery checks with no orphaned profile locks or blank window        |
-| High     | Exercise two or more browser peers editing and undoing overlapping work                     | Recorded scenarios proving conflict reporting, peer-scoped undo and stable reading position       |
-| High     | Validate complex imported STM32 projects and portable external dependencies                 | Build shared ZIPs on a clean second workspace using documented tool versions                      |
-| High     | Validate firmware export, prepared image programming and GDB sessions on actual hardware    | Target-specific logs and results in the hardware validation guide                                 |
-| Medium   | Verify side-by-side tool installation using actual publisher archives                       | Checksums, selected compiler versions and successful builds on each host                          |
-| Medium   | Extend the passing disposable Git checks to real team usage and hosted-provider credentials | Reviewed merge/conflict and authentication scenarios against an explicitly authorized test remote |
+- Linux x64/ARM64 installation, native dependencies, USB permissions, compilers and desktop packaging.
+- macOS end-to-end host and hardware verification.
+- Additional device families through independently scoped modules and hardware records.
+- Native-extension process isolation, extension upgrades and larger background indexes.
+- Richer conflict review, project/team permissions and more debugger backends.
 
-## Planned platform work
-
-- Perform Linux x64 and ARM64 host installation, build and USB permission testing.
-- Establish Linux desktop packaging and startup checks before claiming a verified Linux release.
-- Extend browser/device layout testing to smaller screens and multiple input methods.
-- Review additional embedded platforms only after their adapters, compiler paths and hardware tests can remain isolated from the core services.
-
-## Future considerations
-
-Runtime follow-up work includes acceptance on physical USB/SWD devices, Linux hosts, custom-view browser interactions, and clean-machine package transfers. Process isolation for native extension failures, a package installation/update workflow and background indexing of large tool packages are planned architecture topics.
-
-Potential future work includes richer merge-conflict review, broader compiler-version coverage, project-specific team permissions, additional debugger targets, and more resilient session recovery. These items are exploratory and have no committed schedule.
-
-See [platform support](PLATFORM-SUPPORT.md), [Web host deployment](WEB-HOST.md), [tool versions](TOOL-VERSIONS.md), and [hardware validation](HARDWARE-VALIDATION.md).
+Dates and additional device support are not yet scheduled. See [platform support](PLATFORM-SUPPORT.md), [module development](RUNTIME-PLUGINS.md) and [release workflow](RELEASING.md).

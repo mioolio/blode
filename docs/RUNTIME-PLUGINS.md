@@ -18,7 +18,7 @@
 
 本文的 `languages`、`compiler.mode: runtime` 和独立模块打包器属于 2026-10-30 的内部开发更新。使用这些字段需要包含本次更新的宿主；旧版 `0.2.3.6` 正式二进制采用严格清单校验，不包含新契约。更新宿主后，安装模块无需重新编译主程序。内部便携验证及模块分发结果见[工作台验收记录](internal/workspace-improvements.md)。
 
-API v2 仍在内部预览期，包作者应在 README 记录验证过的宿主版本或提交、操作系统、架构及工具版本。不要只凭 `apiVersion: 2` 推断所有历史预览构建都能读取新字段。
+API v2 在当前宿主中可用，新增字段仍以具体构建的契约为准。包作者应在 README 记录验证过的宿主版本或提交、操作系统、架构及工具版本；当前基线见[实现状态](STATUS.md)。不要只凭 `apiVersion: 2` 推断所有历史预览构建都能读取新字段。
 
 ## 包目录与命名
 
@@ -213,7 +213,7 @@ USB 或物理设备用 `DetectionCandidate.deviceId` 和 `config.runtime.deviceI
 
 ### 项目组件构建输入
 
-**运行 → 组件库**管理工程源码依赖。Arduino 库写入 `libraries/<name>/`，原生组件写入 `components/<name>/`，工程根目录的 `blode.components.json` 保存元数据与文件摘要。宿主在调用 `build(config, build)` 前派生可选的 `build.components`：
+**生成 → 组件库**管理工程源码依赖。Arduino 库写入 `libraries/<name>/`，原生组件写入 `components/<name>/`，工程根目录的 `blode.components.json` 保存元数据与文件摘要。宿主在调用 `build(config, build)` 前派生可选的 `build.components`：
 
 | 字段                 | 含义                                                                  |
 | -------------------- | --------------------------------------------------------------------- |

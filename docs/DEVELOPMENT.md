@@ -1,6 +1,6 @@
 # 开发约定
 
-最新开发源码位于 `main`，包含从 `codex/runtime-plugins-internal` 合入的内部预览更新。0.2.3.6 发行包仍对应此前构建；本次源码合并不生成新发行包。克隆与启动命令见 [README](../README.md#快速开始)。
+最新源码位于 `main`。现有 0.3.5.9 的三个本机构建早于多语言和最新 ST-Link 修复；源码与文档更新不自动重建发行包。当前实现和验证见[状态总览](STATUS.md)。克隆与启动命令见 [README](../README.md#快速开始)。
 
 ## 本地循环与运行数据
 
@@ -36,7 +36,7 @@ Web 宿主不导入 Electron，与桌面版共用工程、协作、Git、工具�
 
 例如 `npm run web:start -- --host 0.0.0.0 --port 47821 --project "D:\\firmware\\my-device" --data-root ".tools/web-data"`。启动后打开终端一次性输出的私密链接；本机回环 API 同样需要令牌。Web 的默认数据目录独立于桌面开发版，可使用 `--data-root` 覆盖；不把该目录、令牌或用户工程写入发行包。`package:web -- --skip-build --output "release/review.exe"` 可重新打包刚刚构建的 `dist/`，已有 EXE 不会被覆盖。
 
-Web EXE 首次启动按载荷哈希把 `dist/` 与原生依赖解压到宿主数据目录的 `runtime/bundle-<hash>/`，之后直接复用；目标是 Windows x64，构建机需要 Node.js 24 与已安装的 `npm ci` 依赖。桌面与 Web 打包都在系统临时目录完成，只把最终产物与 `.sha256` 复制到 `release/<版本>/`；桌面构建校验 `app.asar` 含 `dist/renderer/index.html`，Windows 产物恢复 Medium 完整性标签。打包不下载大型编译工具，也不内置 Electron、Chromium、编译器或本机凭据。详细部署说明见 [WEB-HOST.md](WEB-HOST.md)。
+Web EXE 首次启动按载荷哈希把 `dist/` 与原生依赖解压到宿主数据目录的 `runtime/bundle-<hash>/`，之后直接复用；目标是 Windows x64，构建机需要 Node.js 24 与已安装的 `npm ci` 依赖。桌面与 Web 打包都在系统临时目录完成，只把最终产物与 `.sha256` 复制到 `release/<版本>/`；桌面构建校验 `app.asar` 含 `dist/renderer/index.html`，Windows 产物恢复 Medium 完整性标签。默认三种发行包不下载或携带大型编译工具及本机凭据。Web 两种发行物不包含 Electron／Chromium；桌面版包含 Electron。详细部署说明见 [WEB-HOST.md](WEB-HOST.md)。
 
 | 环境变量             | 用途                                           |
 | -------------------- | ---------------------------------------------- |
@@ -71,17 +71,17 @@ Windows 工作区文件可能继承 Low 完整性标签，使可执行文件以�
 
 普通 `Ctrl+R` 继续使用缓存刷新，强制刷新仍可用 `Ctrl+Shift+R`。Monaco 与其语言 worker 按需加载；主进程保留工程资源索引和工具状态，合并并行读取，文件／配置变化时失效。构建新鲜度及保存前磁盘冲突检查仍读取真实输入，不依赖界面索引的防抖缓存。打包网页对静态资源提供 ETag，带内容哈希的资源启用长期缓存；HTML 每次重新验证。
 
-主进程中的 Zod 使用 `import * as z from 'zod'`，让打包器按实际调用裁剪导出，避免引入未使用的语言包和 JSON Schema 转换功能。不要为缩小单个文件而把 Zod 整体外置；发布包应继续包含所需校验逻辑。
+主进程使用 `import * as z from 'zod'`。当前 `scripts/build.mjs` 将 Zod 作为外部生产依赖，桌面打包时由原生运行时准备步骤收集所需依赖；独立 Web 构建使用自己的依赖策略。评估体积时同时检查宿主文件和运行依赖。
 
-`npm run dev` 压缩空白和语法、保留标识符及函数名，并生成引用本地源码的 `.map`，不重复嵌入源码内容。`npm run build` 或直接运行 `node scripts/build.mjs` 默认生成完整压缩的主进程、preload 和 MCP 桥，保留函数／类名用于诊断；发布模式不生成这三个文件的源码映射，并清理上次开发构建遗留的对应 `.map`。需要单独构建可调试产物时，可先设置 `BLODE_BUILD_MODE=development`；显式设置为 `production` 可强制发布模式。这些设置不改变 Vite 的前端打包配置。
+`npm run dev` 压缩空白、语法和标识符，保留函数／类名，并生成引用本地源码的 `.map`，不重复嵌入源码内容。`npm run build` 或直接运行 `node scripts/build.mjs` 默认生成完整压缩的主进程、preload 和 MCP 桥，保留函数／类名用于诊断；发布模式不生成这三个文件的源码映射，并清理上次开发构建遗留的对应 `.map`。需要单独构建可调试产物时，可先设置 `BLODE_BUILD_MODE=development`；显式设置为 `production` 可强制发布模式。这些设置不改变 Vite 的前端打包配置。
 
 ## 平台边界
 
-当前只有 auto、Esp32_S3_CAM、stm32。auto 是中性检测配置，容量为 0、分区为空；不显示某厂商编译目标、分区或虚构资源。候选连接和已识别芯片分开，多候选需明确选择。
+当前内置 `auto`、`Esp32_S3_CAM` 和 `STM32F103C8T6`；旧 `esp32-s3`／`stm32` 工程标识读取时迁移。auto 是中性检测配置，容量为 0、分区为空；不显示某厂商编译目标、分区或虚构资源。候选连接和已识别芯片分开，多候选需明确选择。
 
 厂商的默认配置、识别、工具链、构建、烧录、布局和驱动事实放在 extensions/boards/<platform>/。核心保留通用锁、工程路径、配置、输入/产物哈希、构建缓存、串口及进程宿主，不增加厂商分支。平台 runtime 只依赖本目录、公共类型和 extensions/runtime.ts 宿主 SDK，不导入 core 或另一平台。
 
-具体平台需在 extensions/registry.ts 与 extensions/runtime-registry.ts 双显式注册。manifest 的 runtimeApiVersion 必须与目标宿主 SDK 相容；复制文件夹不会自动执行代码。当前是随应用构建的可信模块，不提供任意 JS 的热安装或隔离运行。
+内置平台在 `extensions/registry.ts` 与 `extensions/runtime-registry.ts` 显式注册。第三方包由 `RuntimePlugins` 读取清单，支持组件库目录／ZIP 加载和动态注册；不要求编辑内置注册表。`runtimeApiVersion` 与宿主 SDK 保持兼容，原生业务代码经信任审查后执行。HTML 视图使用隔离页面桥；原生插件的进程隔离仍在计划中。
 
 ## 工程与入口
 
@@ -91,7 +91,7 @@ Windows 工作区文件可能继承 Low 完整性标签，使可执行文件以�
 
 S3 建议根目录主 .ino 与 src/<module>/ 下的 C/C++ 组织。Arduino 的子目录构建规则由其工具链决定；平台 runtime 将授权源码复制到 .blode/staging 并生成分区 CSV。STM32 不套用 Arduino 或 ESP 的 staging/布局规则。
 
-STM32 的 build.entry 可为文件、目录或点号；有入口才请求 Arm Compiler 6 源码构建，无入口保留 firmware.bin 验证。项目 Arm 启动与 scatter 优先；内置启动/链接模板仅用于已知 0x410 STM32F1 中容量目标，未知芯片拒绝猜 CPU 与内存。GNU .ld 不能直接交给 armlink，完整限制见 [STM32](STM32.md)。
+STM32 的 build.entry 可为文件、目录或点号；有入口时按设置选择 GNU Arm GCC 或 Arm Compiler 5／6 源码构建，无入口保留 firmware.bin 验证。项目 Arm 启动与 scatter 优先；内置启动/链接模板仅用于已知 0x410 STM32F1 中容量目标，未知芯片拒绝猜 CPU 与内存。GNU .ld 不能直接交给 armlink，完整限制见 [STM32](STM32.md)。
 
 本机 Arm Compiler 6.22 已从 E 盘迁入 tools/armclang，原 license_terms 保留，源码仓库不跟踪工具二进制。平台目录可单独分享，但不因此获得编译器重分发或本机 Community 授权的转授。
 
@@ -111,7 +111,7 @@ Monaco 本地打包。补全分三层：clangd（`src/core/clangd/`）提供 C/C
 
 npm run typecheck 检查跨模块契约，npm test 覆盖协议与边界，npm run build 完成类型与生产构建。平台目录还需做复制后隔离 bundle 检查；这只验证不依赖 core/其他平台，不能当作真实板卡测试。
 
-本轮轻量验证可分别执行：
+常用服务级检查可分别执行；最新 ST-Link 专项命令见[验证状态](STATUS.md)：
 
 ```sh
 npm run typecheck
@@ -139,7 +139,7 @@ npx tsx scripts/verify-hardware.ts --flash
 
 脚本尊重工程板卡、容量、布局与工具路径，不自动建例程、不默认 COM3、不覆盖成 16 MiB，也不自动打开心跳串口。默认执行识别与构建/验证，--install 才安装，--flash 才烧录。日志写入仓库 .tools/hardware-run.log。不要将该脚本作为无硬件副作用的单元测试运行。
 
-历史硬件数据见 [HARDWARE-VALIDATION.md](HARDWARE-VALIDATION.md)，结果必须分别说明识别、构建、烧录和运行验证。
+实机与历史硬件数据见 [HARDWARE-VALIDATION.md](HARDWARE-VALIDATION.md)，结果必须分别说明识别、构建、烧录和运行验证。
 
 ## 国际化与自动化
 

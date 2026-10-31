@@ -1,5 +1,7 @@
 # 标准模块与独立分发更新
 
+> Historical development record. Version labels, branches, paths and test counts below describe that stage. For current behavior and validation, see [implementation status](../STATUS.md).
+
 日期：2026-10-30。通道：`codex/runtime-plugins-internal`。基线：`0.2.3.6-internal`。
 
 本次更新源码及开发契约，不发布新的正式版，也不生成桌面/Web 应用构建产物。模块打包测试仅在临时目录生成测试文件，结束后清理。

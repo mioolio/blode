@@ -1,5 +1,7 @@
 # UI copy and control review
 
+> Historical development record. Version labels, branches, paths and test counts below describe that stage. For current behavior and validation, see [implementation status](../STATUS.md).
+
 This internal update reviews the renderer's descriptions, empty states and help text without changing the overall workspace structure.
 
 ## Changes

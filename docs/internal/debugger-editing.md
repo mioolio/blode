@@ -1,5 +1,7 @@
 # 硬件调试：指令编辑与批量断点
 
+> Historical development record. Version labels, branches, paths and test counts below describe that stage. For current behavior and validation, see [implementation status](../STATUS.md).
+
 状态：2026-10-30 内部开发更新，基于 `0.2.3.6-internal`。本次不生成正式发行包。
 
 ## 工作区

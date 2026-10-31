@@ -6,16 +6,16 @@ STM32 使用独立的 ST-Link / SWD 调试连接。COM 串口用于串口监视�
 
 1. 连接 ST-Link 的 SWDIO、SWCLK、GND，确认目标供电与电压匹配。
 2. 使用自动检测选择明确候选，或选择 `STM32F103C8T6` 运行时及探针序列号。
-3. “文件 → 首选项 → 驱动”负责 Windows 驱动；“工具链”负责 ST-Link 命令行工具与 Arm Compiler 路径，二者分别检测。
+3. “文件 → 首选项 → 调试器驱动”管理 Windows 驱动；“编译与工具链”下载／安装 ST-Link，“工具链与导出”检查本机工具并导出 ZIP。
 4. 识别芯片并核对实际 ID、Flash 和 SRAM。多台调试器不默认选第一台，无法确认芯片或容量时保留诊断输出并拒绝继续。
 
-发现串口、安装好驱动、识别到探针、成功连接目标是不同结果。仅发现 USB 接口不能证明当前固件适用于该 MCU。
+最新 Windows 验证已完成 ST-Link 1.9.0 工具 ZIP 导出、版本目录导入和 STM32F1 芯片识别。结果与调试会话的验收范围见[硬件记录](HARDWARE-VALIDATION.md)。
 
 ## 两种构建输入
 
 右键工程中的文件或目录选择编译入口，只写入 `be.build.entry`，不会立即编译。随后保存工程并执行构建：
 
-- 有 entry：按编译设置使用 GNU Arm GCC 或 Arm Compiler 6 编译、链接并输出二进制。entry 可为文件、目录或 `.`。
+- 有 entry：按编译设置使用 GNU Arm GCC 或 Arm Compiler 5／6 编译、链接并输出二进制。entry 可为文件、目录或 `.`。
 - 无 entry：保留根目录 `firmware.bin` 的现有二进制验证，不运行源码编译。
 
 字段片段示例，不是完整工程描述符：
@@ -32,7 +32,7 @@ STM32 使用独立的 ST-Link / SWD 调试连接。COM 串口用于串口监视�
 }
 ```
 
-工具链其他必需字段仍由正常工程配置保存；不要用以上片段覆盖整个 be。armCompilerDirectory 可指完整 Arm Compiler 目录或其 bin 目录；留空使用平台工具根目录中的 armclang 安装。stlinkDirectory 可指已有 st-info/st-flash 目录，留空使用托管工具或 PATH。
+此配置片段由工程正常保存流程合并。`armCompilerDirectory` 接受完整编译器目录或 `bin/`；显式家族和版本在“生成 → 编译设置”选择。`stlinkDirectory` 接受包根目录或 `bin/`，留空查找托管目录、`versions/stlink/<版本>/` 和 PATH，设备识别与调试服务使用同一规则。
 
 ## 源码、启动与链接限制
 
@@ -64,11 +64,13 @@ ST-Link 报告的是芯片自述容量，克隆或改写过的芯片可能误报
 
 ## 工具目录与许可
 
+Arm Compiler 5 已接入，支持 C99／C++03、Keil ARMASM、按版本选择及离线 ZIP 迁移；见 [AC5 说明](ARM-COMPILER-5.md)。
+
 本机原 E 盘的 Arm Compiler 6.22 完整目录已迁入应用 `tools/armclang/`，保留 bin、include、lib、sw 与原始 license_terms，旧目录不再用于配置。项目不跟踪这些工具二进制。当前本机工具版本标识为 Keil MDK Community 非商业使用环境，使用和重新分发须遵循随工具保留的原许可。
 
 平台源码目录可以复制并注册到匹配宿主，但不包含编译器；分享平台代码不等于取得编译器重分发许可或转授本机工具授权。
 
-ST-Link 托管工具使用固定官方发行及 SHA-256 校验，开发位置为 `tools/stlink/`；Windows 签名驱动归档位于 `tools/STSW-LINK/`。详见 [工具链说明](TOOLCHAINS.md) 与 [平台包说明](../extensions/boards/STM32F103C8T6/README.md)。
+ST-Link 托管工具使用固定官方发行及 SHA-256 校验，开发位置为 `tools/stlink/`，离线导入也可位于 `tools/versions/stlink/<版本>/`；Windows 签名驱动归档位于 `tools/STSW-LINK/`。详见 [工具链说明](TOOLCHAINS.md) 与 [平台包说明](../extensions/boards/STM32F103C8T6/README.md)。
 
 ## 自动化
 

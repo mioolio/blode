@@ -6,6 +6,12 @@ Blode Studio 是模組化嵌入式開發工作台，整合程式碼編輯、韌�
 
 [GitHub Releases](https://github.com/mioolio/blode/releases) · [CHANGELOG](../CHANGELOG.md) · [Issues](https://github.com/mioolio/blode/issues)
 
+## 目前原始碼與發行包
+
+核對日期：2026-11-01。目前 `main` 已包含 13 種介面語言，以及 ST-Link Windows 下載／安裝、版本目錄探索和狀態修正。既有 0.3.5.9 二進位檔建置較早，尚未包含這些更新；推送原始碼不會替換發行附件。
+
+最新 ST-Link 測試組通過 55 項相關測試及型別檢查。真實工具匯出 ZIP 後匯入隔離版本目錄，成功識別 STM32F1；此次未寫入韌體或連接 GDB 工作階段。詳見[實作與驗證狀態](STATUS.md)。
+
 ## 已完成的功能
 
 - 透過 clangd 提供 C/C++ 補全、定義、參考、診斷與格式化，並以工作區索引作為後備；支援預覽分頁、分割編輯與草稿還原。

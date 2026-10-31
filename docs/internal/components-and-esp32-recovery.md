@@ -1,5 +1,7 @@
 # 组件库与 ESP32 编译、连接修复
 
+> Historical development record. Version labels, branches, paths and test counts below describe that stage. For current behavior and validation, see [implementation status](../STATUS.md).
+
 日期：2026-10-30。分支：`codex/runtime-plugins-internal`。本次更新随源码提供，未构建应用或发布新的桌面、Web 发行包。
 
 ## 变更
