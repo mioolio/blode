@@ -1560,5 +1560,8 @@
   "ai.chat.findReference": "Cerca file del progetto…",
   "ai.chat.noReference": "Nessun file corrispondente",
   "ai.chat.mode": "Azione",
-  "ai.chat.removeReference": "Rimuovi riferimento"
+  "ai.chat.removeReference": "Rimuovi riferimento",
+  "boards.stmCustomDescription": "STM custom configuration",
+  "boards.espCustomDescription": "ESP custom configuration",
+  "custom.invalidBuildArguments": "Build arguments must be a JSON array of strings."
 }

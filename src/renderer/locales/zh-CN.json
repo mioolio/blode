@@ -1560,5 +1560,8 @@
   "ai.chat.findReference": "搜索工程文件…",
   "ai.chat.noReference": "没有匹配的文件",
   "ai.chat.mode": "操作",
-  "ai.chat.removeReference": "移除引用"
+  "ai.chat.removeReference": "移除引用",
+  "boards.stmCustomDescription": "STM 自定义配置",
+  "boards.espCustomDescription": "ESP 自定义配置",
+  "custom.invalidBuildArguments": "构建参数须为 JSON 字符串数组。"
 }

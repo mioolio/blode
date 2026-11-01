@@ -25,6 +25,7 @@ const common = {
   legalComments: 'eof',
   logLevel: 'info',
   plugins: [nodeLanguageAssetsPlugin()],
+  define: { __BLODE_PROTECTED__: process.env.BLODE_PROTECTED === '1' ? 'true' : 'false' },
 };
 await build({
   ...common,

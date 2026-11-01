@@ -1560,5 +1560,8 @@
   "ai.chat.findReference": "프로젝트 파일 검색…",
   "ai.chat.noReference": "일치하는 파일 없음",
   "ai.chat.mode": "작업",
-  "ai.chat.removeReference": "참조 제거"
+  "ai.chat.removeReference": "참조 제거",
+  "boards.stmCustomDescription": "STM custom configuration",
+  "boards.espCustomDescription": "ESP custom configuration",
+  "custom.invalidBuildArguments": "Build arguments must be a JSON array of strings."
 }

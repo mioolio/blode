@@ -23,7 +23,7 @@ test('canonical runtime profiles have exact names and legacy descriptors retain 
   }
   assert.deepEqual(
     listBoards().map((board) => board.id),
-    ['auto', 'Esp32_S3_CAM', 'STM32F103C8T6'],
+    ['auto', 'Esp32_S3_CAM', 'STM32F103C8T6', 'STM_custom', 'ESP_custom'],
   );
   for (const value of ['constructor', '__proto__', 'toString']) assert.equal(canonicalBoardId(value), value);
 });

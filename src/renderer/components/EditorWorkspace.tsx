@@ -621,7 +621,9 @@ export function EditorWorkspace({ studio }: { studio: Studio }) {
                   ) : (
                     <ResourceLayout
                       config={config}
-                      baseAddress={board?.layout?.baseAddress ?? 0}
+                      baseAddress={Number(
+                        config.runtime?.values?.flashAddress ?? board?.layout?.baseAddress ?? 0,
+                      )}
                       firmwareUsed={lastBuild?.flashUsed ?? null}
                       firmwareStale={!!state.buildStale || stale}
                       flashSizes={board?.flashSizes}

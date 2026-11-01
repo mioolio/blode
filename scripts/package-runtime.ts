@@ -14,6 +14,14 @@ const factories: Record<
   string,
   { factory: string; tools: NonNullable<RuntimePluginManifest['compiler']['managedTools']> }
 > = {
+  STM_custom: { factory: 'createRuntime', tools: [{ id: 'stlink', name: 'ST-Link' }] },
+  ESP_custom: {
+    factory: 'createRuntime',
+    tools: [
+      { id: 'esptool', name: 'esptool' },
+      { id: 'arduino-cli', name: 'Arduino CLI' },
+    ],
+  },
   Esp32_S3_CAM: {
     factory: 'createEsp32S3Runtime',
     tools: [
@@ -193,7 +201,7 @@ export async function packageRuntime(options: PackageRuntimeOptions) {
     }
     const result = await build({
       stdin: {
-        contents: wrapper(sourceFile, factory, raw.id, builtin?.factory !== factory),
+        contents: wrapper(sourceFile, factory, raw.id, !builtin || builtin.factory === 'createRuntime'),
         resolveDir: source,
         sourcefile: 'runtime-package-entry.ts',
         loader: 'ts',

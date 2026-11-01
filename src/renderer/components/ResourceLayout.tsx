@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Partition, ProjectConfig } from '../../shared/contracts';
 import { useI18n } from '../i18n';
 import { bytes, hexAddress } from '../utils';
+import { LayoutValueInput } from './LayoutValueInput';
 
 interface Props {
   config: ProjectConfig;
@@ -80,7 +81,7 @@ export function ResourceLayout({
   const { t } = useI18n();
   const capacity = Math.max(config.flashSize, 1);
   const partitions = [...config.partitions].sort((left, right) => left.offset - right.offset);
-  const app = partitions.find((partition) => partition.type === 'app' && partition.offset === 0);
+  const app = partitions.find((partition) => partition.type === 'app');
   const appSize = app?.size ?? config.flashSize;
   const [customMode, setCustomMode] = useState(() => !(flashSizes ?? []).includes(config.flashSize));
   const [customKiB, setCustomKiB] = useState(String(Math.round(config.flashSize / 1024)));
@@ -90,14 +91,16 @@ export function ResourceLayout({
   const addRoot = useRef<HTMLDivElement>(null);
   const region = partitions.find((partition) => partition.id === selected) ?? app;
   const free = nextFreeRegion(partitions, config.flashSize);
+  const canSplitApp = !!app && app.size >= 2048 && (firmwareUsed === null || firmwareUsed <= app.size - 1024);
   const nextRegionOffset = region
     ? partitions
         .filter((partition) => partition.offset > region.offset)
         .reduce((next, partition) => Math.min(next, partition.offset), config.flashSize)
     : config.flashSize;
-  const appLimit = partitions
-    .filter((partition) => partition.type !== 'app' && partition.offset > 0)
-    .reduce((next, partition) => Math.min(next, partition.offset), config.flashSize);
+  const appLimit =
+    partitions
+      .filter((partition) => partition.type !== 'app' && partition.offset > (app?.offset ?? 0))
+      .reduce((next, partition) => Math.min(next, partition.offset), config.flashSize) - (app?.offset ?? 0);
   const maxRegionKiB = region ? Math.max(1, Math.floor((nextRegionOffset - region.offset) / 1024)) : 1;
   const gaps = freeRegions(partitions, capacity);
   const used = typeof firmwareUsed === 'number' ? Math.max(firmwareUsed, 0) : null;
@@ -112,9 +115,16 @@ export function ResourceLayout({
   const overlappedRegions =
     used === null
       ? []
-      : partitions.filter((partition) => partition.type !== 'app' && used > partition.offset);
+      : partitions.filter(
+          (partition) =>
+            partition.type !== 'app' &&
+            partition.offset >= (app?.offset ?? 0) &&
+            (app?.offset ?? 0) + used > partition.offset,
+        );
   const sizeOptions = flashSizes?.length ? flashSizes : [config.flashSize];
-  const maxKiB = Math.max(1, Math.round(Math.max(...sizeOptions) / 1024));
+  const maxKiB = customFlashSize
+    ? Math.floor(0xffffffff / 1024)
+    : Math.max(1, Math.round(Math.max(...sizeOptions) / 1024));
   const absolute = (offset: number) => hexAddress(baseAddress + offset);
 
   useEffect(() => {
@@ -150,31 +160,40 @@ export function ResourceLayout({
   const updatePartitions = (next: Partition[]) =>
     onChangePartitions([...next].sort((left, right) => left.offset - right.offset));
   const updateRegion = (values: Partial<Partition>) => {
-    if (!region) return;
+    if (!region || busy) return;
     updatePartitions(
       partitions.map((partition) => (partition.id === region.id ? { ...partition, ...values } : partition)),
     );
   };
   const addRegion = (type: 'data' | 'system') => {
-    if (!free) return;
+    if (busy || partitions.length >= 32) return;
+    let space = free;
+    let next = partitions;
+    if (!space && canSplitApp && app) {
+      const available = Math.floor((app.size - Math.max(firmwareUsed ?? 0, 1024)) / 1024) * 1024;
+      const size = Math.min(64 * 1024, available, Math.max(1024, Math.floor(app.size / 4 / 1024) * 1024));
+      space = { offset: app.offset + app.size - size, size };
+      next = partitions.map((item) => (item.id === app.id ? { ...item, size: item.size - size } : item));
+    }
+    if (!space) return;
     let suffix = 1;
     while (partitions.some((partition) => partition.name === `${type}${suffix}`)) suffix++;
-    const id = `${type}_${Date.now().toString(36)}`;
+    const id = `${type}_${crypto.randomUUID().slice(0, 8)}`;
     updatePartitions([
-      ...partitions,
+      ...next,
       {
         id,
         name: `${type}${suffix}`,
         type,
-        offset: free.offset,
-        size: free.size,
+        offset: space.offset,
+        size: space.size,
         color: regionColors[type],
       },
     ]);
     select(id);
   };
   const removeRegion = () => {
-    if (!region || region.type === 'app') return;
+    if (!region || region.type === 'app' || busy) return;
     updatePartitions(partitions.filter((partition) => partition.id !== region.id));
     select(app?.id ?? '');
   };
@@ -371,8 +390,8 @@ export function ResourceLayout({
               <button
                 type="button"
                 className="secondary region-add-trigger"
-                disabled={!free || !!busy}
-                title={t(free ? 'layout.addRegion' : 'layout.noSpace')}
+                disabled={(!free && !canSplitApp) || partitions.length >= 32 || !!busy}
+                title={t(free || canSplitApp ? 'layout.addRegion' : 'layout.noSpace')}
                 aria-haspopup="menu"
                 aria-expanded={addOpen}
                 onClick={() => setAddOpen((current) => !current)}
@@ -461,21 +480,43 @@ export function ResourceLayout({
                 </label>
                 <label>
                   {t('layout.sizeKiB')}
-                  <input
-                    type="number"
+                  <LayoutValueInput
                     min={1}
                     max={maxRegionKiB}
-                    step={1}
                     value={Math.max(1, Math.round(region.size / 1024))}
                     disabled={busy}
-                    onChange={(event) => {
-                      const kib = Number(event.target.value);
-                      if (!Number.isInteger(kib) || kib < 1 || kib > maxRegionKiB) return;
+                    onCommit={(kib) => {
                       if (region.type === 'app') onAllocate(kib * 1024);
                       else updateRegion({ size: kib * 1024 });
                     }}
                   />
                 </label>
+                {region.type !== 'app' && (
+                  <>
+                    <label>
+                      {t('layout.type')}
+                      <ModernSelect
+                        value={region.type}
+                        disabled={busy}
+                        onChange={(event) => updateRegion({ type: event.target.value as 'data' | 'system' })}
+                      >
+                        <option value="data">{t('layout.data')}</option>
+                        <option value="system">{t('layout.system')}</option>
+                      </ModernSelect>
+                    </label>
+                    <label>
+                      {t('layout.address')}
+                      <LayoutValueInput
+                        value={region.offset}
+                        hex
+                        alignment={1024}
+                        max={config.flashSize - region.size}
+                        disabled={busy}
+                        onCommit={(offset) => updateRegion({ offset })}
+                      />
+                    </label>
+                  </>
+                )}
                 <label className="color-field">
                   {t('layout.color')}
                   <input

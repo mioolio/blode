@@ -1,0 +1,18 @@
+{
+  "mode": "declared",
+  "default": "cpp",
+  "entries": [
+    {
+      "id": "c",
+      "editorLanguage": "cpp",
+      "extensions": [".c"],
+      "catalogs": []
+    },
+    {
+      "id": "cpp",
+      "editorLanguage": "cpp",
+      "extensions": [".cpp", ".h", ".hpp", ".ino", ".cc", ".cxx"],
+      "catalogs": []
+    }
+  ]
+}

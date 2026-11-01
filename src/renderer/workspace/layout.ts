@@ -13,11 +13,15 @@ export function resizeFixedLayout(
   const next: ProjectConfig = {
     ...config,
     flashSize,
-    partitions: config.partitions.map((partition) => {
-      if (partition.type !== 'app' || partition.offset !== 0) return partition;
-      const size = partition.size === config.flashSize ? flashSize : Math.min(partition.size, flashSize);
-      return { ...partition, size };
-    }),
+    partitions: config.partitions
+      .filter((partition) => partition.offset < flashSize)
+      .map((partition) => {
+        const size =
+          partition.offset + partition.size === config.flashSize
+            ? flashSize - partition.offset
+            : Math.min(partition.size, flashSize - partition.offset);
+        return { ...partition, size };
+      }),
   };
   if (manualOverride) next.flashSizeOverride = true;
   else delete next.flashSizeOverride;
@@ -29,7 +33,7 @@ export function resizeAppRegion(config: ProjectConfig, appSize: number): Project
   return {
     ...config,
     partitions: config.partitions.map((partition) =>
-      partition.type === 'app' && partition.offset === 0 ? { ...partition, size: appSize } : partition,
+      partition.type === 'app' ? { ...partition, size: appSize } : partition,
     ),
   };
 }

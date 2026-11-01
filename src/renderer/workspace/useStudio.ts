@@ -153,7 +153,7 @@ export function useStudio() {
   const [stale, setStale] = useState(false);
   const [widths, setWidths] = useState({ left: 224, right: 284, bottom: 207 });
   const [devicePanelVisible, setDevicePanelVisible] = usePanelVisibility('blode.devicePanel');
-  const [consolePanelVisible, setConsolePanelVisible] = usePanelVisibility('blode.consolePanel');
+  const [consolePanelVisible, setConsolePanelVisible] = usePanelVisibility('blode.consolePanel', true);
   const [runtimeExpanded, setRuntimeExpanded] = useState(false);
   const logEnd = useRef<HTMLDivElement>(null);
   const restoredFolder = useRef('');

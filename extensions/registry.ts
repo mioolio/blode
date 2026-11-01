@@ -1,6 +1,8 @@
 import { autoAdapter } from './boards/auto/adapter.js';
 import { esp32S3Adapter } from './boards/Esp32_S3_CAM/device/adapter.js';
 import { stm32Adapter } from './boards/STM32F103C8T6/device/adapter.js';
+import { customAdapter as stmCustomAdapter } from './boards/STM_custom/device/adapter.js';
+import { customAdapter as espCustomAdapter } from './boards/ESP_custom/device/adapter.js';
 import type { BoardAdapter } from './types.js';
 import { canonicalBoardId } from '../src/shared/runtime-identity.js';
 export { canonicalBoardId };
@@ -8,7 +10,10 @@ export { canonicalBoardId };
 // Explicit registration keeps untrusted workspace manifests from executing in the main process.
 // Every chip model lives under extensions/boards/<id>; an unregistered id is rejected.
 const adapters = new Map<string, BoardAdapter>(
-  [autoAdapter, esp32S3Adapter, stm32Adapter].map((adapter) => [adapter.definition.id, adapter]),
+  [autoAdapter, esp32S3Adapter, stm32Adapter, stmCustomAdapter, espCustomAdapter].map((adapter) => [
+    adapter.definition.id,
+    adapter,
+  ]),
 );
 
 export function getBoardAdapter(id: string): BoardAdapter {

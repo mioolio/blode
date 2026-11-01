@@ -5,6 +5,7 @@ import { getBoardAdapter } from '../../../extensions/registry';
 import type { AppState, FirmwareFormat, PreparedFirmware, ProjectConfig } from '../../shared/contracts';
 import { useI18n } from '../i18n';
 import './firmware-tools.css';
+import { RuntimeDeviceFields } from './RuntimeDeviceFields';
 
 /** Firmware tools are native operations and remain available on the welcome screen. */
 export function FirmwareTools() {
@@ -56,7 +57,9 @@ export function FirmwareTools() {
                 }
               : structuredClone(next.config);
           setConfig(target);
-          setAddress(target.boardId === 'STM32F103C8T6' ? '0x08000000' : '0x0');
+          setAddress(
+            '0x' + (getBoardAdapter(target.boardId).definition.layout?.baseAddress ?? 0).toString(16),
+          );
         })
         .catch((error) => {
           setNotice(explain(error));
@@ -70,7 +73,7 @@ export function FirmwareTools() {
 
   if (!mode) return null;
   const standalone = mode === 'flash';
-  const stlink = config?.boardId === 'STM32F103C8T6';
+  const stlink = config?.programmer?.transport === 'stlink';
   const flashBoards = (state?.boards ?? []).filter((board) => {
     if (!board.capabilities.includes('flash')) return false;
     try {
@@ -141,7 +144,8 @@ export function FirmwareTools() {
       };
     setConfig(next);
     setConfirmed(false);
-    if (!image || image.format === 'bin') setAddress(id === 'STM32F103C8T6' ? '0x08000000' : '0x0');
+    if (!image || image.format === 'bin')
+      setAddress('0x' + (getBoardAdapter(id).definition.layout?.baseAddress ?? 0).toString(16));
   };
 
   return (
@@ -210,6 +214,47 @@ export function FirmwareTools() {
                 ))}
               </ModernSelect>
             </label>
+            {config && ['STM_custom', 'ESP_custom'].includes(config.boardId) && (
+              <>
+                <RuntimeDeviceFields
+                  plugin={{
+                    ...getBoardAdapter(config.boardId).definition.runtimePlugin!,
+                    ui: {
+                      fields: getBoardAdapter(config.boardId).definition.runtimePlugin!.ui.fields.filter(
+                        (field) => ['chip', 'flashAddress'].includes(field.id),
+                      ),
+                    },
+                  }}
+                  config={config}
+                  disabled={busy}
+                  onChange={(next) => {
+                    setConfig(next);
+                    setConfirmed(false);
+                  }}
+                />
+                <label>
+                  {t('device.flash')} ({t('layout.bytes')})
+                  <input
+                    type="number"
+                    min={4}
+                    max={4294967295}
+                    value={config.flashSize}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const size = Number(event.target.value);
+                      if (Number.isSafeInteger(size) && size >= 4) {
+                        setConfig({
+                          ...config,
+                          flashSize: size,
+                          partitions: [{ id: 'firmware', name: 'firmware', type: 'app', offset: 0, size }],
+                        });
+                        setConfirmed(false);
+                      }
+                    }}
+                  />
+                </label>
+              </>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
               <button
                 className="secondary"
@@ -223,8 +268,8 @@ export function FirmwareTools() {
                       setAddress(
                         selected.address === null
                           ? stlink
-                            ? '0x08000000'
-                            : '0x0'
+                            ? String(config?.runtime?.values?.flashAddress ?? '0x08000000')
+                            : String(config?.runtime?.values?.flashAddress ?? '0x0')
                           : `0x${selected.address.toString(16)}`,
                       );
                     }

@@ -1,0 +1,13 @@
+{
+  "mode": "runtime",
+  "managedTools": [
+    {
+      "id": "arduino-cli",
+      "name": "Arduino CLI"
+    },
+    {
+      "id": "esptool",
+      "name": "esptool"
+    }
+  ]
+}

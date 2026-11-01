@@ -1,0 +1,6 @@
+{
+  "chips": ["ESP (user configured)"],
+  "families": ["Espressif"],
+  "status": "experimental",
+  "notes": "Uses the installed esptool and Arduino core. Chip and FQBN are user configured."
+}

@@ -1,0 +1,5 @@
+{
+  "flashBaseAddress": 0,
+  "recommendedFlashSizes": [1048576, 2097152, 4194304, 8388608, 16777216],
+  "ramSize": 327680
+}

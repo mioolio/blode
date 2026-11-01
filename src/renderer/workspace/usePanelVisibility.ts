@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 
 /** Panel visibility belongs to the workbench, independent of the open project. */
-export function usePanelVisibility(key: string) {
+export function usePanelVisibility(key: string, startHidden = false) {
   const [visible, setVisible] = useState(() => {
+    if (startHidden) return false;
     try {
       return localStorage.getItem(key) !== 'hidden';
     } catch {

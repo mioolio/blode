@@ -1560,5 +1560,8 @@
   "ai.chat.findReference": "搜尋工程檔案…",
   "ai.chat.noReference": "沒有符合的檔案",
   "ai.chat.mode": "操作",
-  "ai.chat.removeReference": "移除引用"
+  "ai.chat.removeReference": "移除引用",
+  "boards.stmCustomDescription": "STM custom configuration",
+  "boards.espCustomDescription": "ESP custom configuration",
+  "custom.invalidBuildArguments": "Build arguments must be a JSON array of strings."
 }

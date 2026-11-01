@@ -1,0 +1,9 @@
+{
+  "mode": "runtime",
+  "managedTools": [
+    {
+      "id": "stlink",
+      "name": "ST-Link"
+    }
+  ]
+}

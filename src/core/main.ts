@@ -65,6 +65,9 @@ import { RELEASE_VERSION } from '../shared/version';
 import { renderRuntimeView, RUNTIME_VIEW_CSP } from '../shared/runtime-view';
 import { workspaceAssetRequestSchema } from './workspace-assets';
 import { nativeWindowMaterial } from './window-material';
+import { verifyDistribution } from './distribution-integrity';
+
+declare const __BLODE_PROTECTED__: boolean;
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'blode-runtime-ui', privileges: { standard: true, secure: true } },
@@ -1195,7 +1198,18 @@ async function bootstrap(): Promise<void> {
 if (ownLock)
   app
     .whenReady()
-    .then(bootstrap)
+    .then(async () => {
+      if (typeof __BLODE_PROTECTED__ !== 'undefined' && __BLODE_PROTECTED__ && app.isPackaged) {
+        try {
+          await verifyDistribution(path.dirname(app.getPath('exe')));
+        } catch (error) {
+          dialog.showErrorBox('Blode Studio', error instanceof Error ? error.message : String(error));
+          app.exit(1);
+          return;
+        }
+      }
+      return bootstrap();
+    })
     .catch((error) => {
       if (closing) {
         logBoot(`bootstrap cancelled during shutdown: ${String(error)}`);

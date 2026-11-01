@@ -380,7 +380,9 @@ export class RuntimePlugins {
           if (registeredBoard) {
             if (
               json.id === 'auto' ||
-              ['Esp32_S3_CAM', 'STM32F103C8T6', 'esp32-s3', 'stm32'].includes(json.id)
+              ['Esp32_S3_CAM', 'STM32F103C8T6', 'STM_custom', 'ESP_custom', 'esp32-s3', 'stm32'].includes(
+                json.id,
+              )
             )
               continue;
             fail('error.runtimePluginDuplicate');

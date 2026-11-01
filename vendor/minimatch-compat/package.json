@@ -1,0 +1,10 @@
+{
+  "name": "minimatch",
+  "version": "11.0.3",
+  "description": "Legacy callable CommonJS facade for the patched minimatch engine",
+  "main": "index.cjs",
+  "license": "ISC",
+  "dependencies": {
+    "minimatch-engine": "npm:minimatch@11.0.3"
+  }
+}

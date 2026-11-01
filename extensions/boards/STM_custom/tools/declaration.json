@@ -1,0 +1,8 @@
+{
+  "managed": [
+    {
+      "id": "stlink",
+      "name": "ST-Link"
+    }
+  ]
+}

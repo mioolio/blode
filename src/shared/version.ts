@@ -1,6 +1,4 @@
-import manifest from '../../package.json';
-
-const metadata: { version: string; releaseVersion?: string; developmentChannel?: string } = manifest;
+import { version, releaseVersion } from '../../package.json';
 
 /** Public four-part release identifier; npm retains its SemVer package version. */
-export const RELEASE_VERSION = `${metadata.releaseVersion ?? metadata.version}${metadata.developmentChannel ? '-internal' : ''}`;
+export const RELEASE_VERSION = releaseVersion ?? version;

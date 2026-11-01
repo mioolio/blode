@@ -14,7 +14,7 @@ import type { DevicePackageReview } from '../shared/device-packages';
 import type { RuntimePluginsState } from '../shared/plugins';
 import type { DevicePackageExport, DevicePackageInfo, DevicePackagesState } from '../shared/device-packages';
 
-const builtins = ['Esp32_S3_CAM', 'STM32F103C8T6'] as const;
+const builtins = ['Esp32_S3_CAM', 'STM32F103C8T6', 'STM_custom', 'ESP_custom'] as const;
 const inside = (root: string, file: string) => {
   const relative = path.relative(root, file);
   return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);

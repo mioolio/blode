@@ -40,7 +40,11 @@ export function RuntimeSelector({ studio }: { studio: Studio }) {
         }}
       >
         {state?.boards
-          .filter((item) => ['auto', 'Esp32_S3_CAM', 'STM32F103C8T6', config?.boardId].includes(item.id))
+          .filter((item) =>
+            ['auto', 'Esp32_S3_CAM', 'STM32F103C8T6', 'STM_custom', 'ESP_custom', config?.boardId].includes(
+              item.id,
+            ),
+          )
           .map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}

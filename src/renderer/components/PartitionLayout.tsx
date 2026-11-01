@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import type { Partition, ProjectConfig } from '../../shared/contracts';
 import { useI18n } from '../i18n';
 import { bytes, hex } from '../utils';
+import { LayoutValueInput } from './LayoutValueInput';
 
 const sectorSize = 0x1000;
 const MiB = 1024 * 1024;
@@ -89,7 +90,9 @@ export function PartitionLayout({
   // so a full layout can still accept a new partition without manual shrinking.
   const tail = sorted.at(-1);
   const tailCandidate = tail && tail.type === 'data' && tail.offset >= appOffset ? tail : undefined;
-  const canAdd = Boolean(freeRegion || (tailCandidate && tailCandidate.size >= sectorSize * 2));
+  const canAdd =
+    config.partitions.length < 32 &&
+    Boolean(freeRegion || (tailCandidate && tailCandidate.size >= sectorSize * 2));
 
   const boundaries = sorted.flatMap((left, index) => {
     const right = sorted[index + 1];
@@ -99,6 +102,11 @@ export function PartitionLayout({
     if (left.offset + left.size !== right.offset) return [];
     return [{ index, right }];
   });
+
+  useEffect(() => {
+    if (config.partitions.some((item) => item.id === selected)) return;
+    select(config.partitions.find((item) => item.type === 'app')?.id ?? config.partitions[0]?.id ?? '');
+  }, [config.partitions, selected]);
 
   useEffect(() => {
     if (!focusName) return;
@@ -151,7 +159,7 @@ export function PartitionLayout({
   };
 
   const add = () => {
-    if (busy) return;
+    if (busy || config.partitions.length >= 32) return;
     let region = freeRegion ? { ...freeRegion } : null;
     let shrinkId: string | undefined;
     if (!region && tailCandidate) {
@@ -163,7 +171,7 @@ export function PartitionLayout({
       }
     }
     if (!region) return;
-    const id = `data_${Date.now().toString(36)}`;
+    const id = `data_${crypto.randomUUID().slice(0, 8)}`;
     let suffix = 1;
     while (config.partitions.some((item) => item.name === `storage${suffix}`)) suffix++;
     const partitions = config.partitions.map((item) =>
@@ -222,7 +230,6 @@ export function PartitionLayout({
     const minDelta = -(left.size - sectorSize);
     const maxDelta = fillsEnd ? last.size - sectorSize : config.flashSize - lastEnd;
     delta = Math.max(minDelta, Math.min(maxDelta, delta));
-    if (delta === 0) return;
 
     const partitions = state.partitions.map((item) => {
       if (item.id === left.id) return { ...item, size: item.size + delta };
@@ -238,6 +245,8 @@ export function PartitionLayout({
   };
 
   const endResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.type === 'pointercancel' && drag.current)
+      onChange({ ...config, partitions: drag.current.partitions });
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
     drag.current = null;
@@ -444,23 +453,22 @@ export function PartitionLayout({
                     </label>
                     <label>
                       {t('layout.address')} <small>{t('layout.hex')}</small>
-                      <input
-                        key={`${partition.id}-${partition.offset}`}
-                        defaultValue={hex(partition.offset)}
-                        onBlur={(event) => {
-                          const value = Number(event.target.value);
-                          if (Number.isFinite(value)) update({ offset: value });
-                        }}
+                      <LayoutValueInput
+                        value={partition.offset}
+                        hex
+                        alignment={partition.type === 'app' ? 0x10000 : sectorSize}
+                        max={config.flashSize - partition.size}
+                        onCommit={(offset) => update({ offset })}
                       />
                     </label>
                     <label>
                       {t('layout.size')} <small>{t('layout.bytes')}</small>
-                      <input
-                        type="number"
-                        step={sectorSize}
+                      <LayoutValueInput
+                        alignment={sectorSize}
                         min={sectorSize}
+                        max={config.flashSize - partition.offset}
                         value={partition.size}
-                        onChange={(event) => update({ size: Number(event.target.value) })}
+                        onCommit={(size) => update({ size })}
                       />
                     </label>
                     <button

@@ -1,0 +1,6 @@
+{
+  "chips": ["STM32 (user configured)"],
+  "families": ["STM32"],
+  "status": "experimental",
+  "notes": "Uses the installed ST-Link tools. Build command and memory map are user configured."
+}

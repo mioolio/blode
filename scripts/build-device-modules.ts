@@ -14,14 +14,14 @@ export async function buildDeviceModules(output: string) {
   const destination = path.join(parent, 'device-modules');
   try {
     await Promise.all(
-      ['Esp32_S3_CAM', 'STM32F103C8T6'].map((id) =>
+      ['Esp32_S3_CAM', 'STM32F103C8T6', 'STM_custom', 'ESP_custom'].map((id) =>
         packageRuntime({
           source: path.join(repository, 'extensions', 'boards', id),
           output: stage,
         }),
       ),
     );
-    for (const id of ['Esp32_S3_CAM', 'STM32F103C8T6']) {
+    for (const id of ['Esp32_S3_CAM', 'STM32F103C8T6', 'STM_custom', 'ESP_custom']) {
       const directory = path.join(stage, id + '_Module');
       const manifest = JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8'));
       await signMaintainerDirectory(directory, {

@@ -1,0 +1,43 @@
+{
+  "fields": [
+    {
+      "id": "chip",
+      "label": "目标型号",
+      "type": "text",
+      "default": "STM32"
+    },
+    {
+      "id": "flashAddress",
+      "label": "Flash 基址",
+      "type": "text",
+      "default": "0x08000000"
+    },
+    {
+      "id": "ramSize",
+      "label": "RAM 容量（字节）",
+      "type": "number",
+      "min": 0,
+      "max": 4294967295,
+      "default": 20480
+    },
+    {
+      "id": "buildExecutable",
+      "label": "自定义构建程序",
+      "type": "text",
+      "default": ""
+    },
+    {
+      "id": "buildArguments",
+      "label": "构建参数（JSON 数组）",
+      "type": "text",
+      "default": "[]"
+    },
+    {
+      "id": "firmware",
+      "label": "构建产物路径",
+      "type": "text",
+      "default": "firmware.bin"
+    }
+  ],
+  "hiddenCapabilities": []
+}
