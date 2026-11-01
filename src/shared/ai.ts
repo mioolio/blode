@@ -31,6 +31,9 @@ export interface AiPredictionContext {
   column: number;
   prefix: string;
   suffix: string;
+  language?: string;
+  documentHead?: string;
+  recentEdits?: { before: string; after: string }[];
   /** A deliberate, single completion action; automatic callers omit this. */
   manual?: boolean;
 }

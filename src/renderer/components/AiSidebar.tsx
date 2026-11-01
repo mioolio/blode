@@ -1,11 +1,11 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { Check, Copy, FileCode2, LoaderCircle, Plus, Send, ShieldAlert, Square, X } from 'lucide-react';
-import type { AiChatSession, AiEditScope } from '../../shared/model-service';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Copy, FileCode2, LoaderCircle, Plus, ShieldAlert, X } from 'lucide-react';
+import type { AiChatSession, AiEditScope, AiSourceContext } from '../../shared/model-service';
 import type { Studio } from '../workspace/useStudio';
 import { currentAiContext, type AiEditorContext } from '../workspace/aiContext';
 import { flushCollaboration } from '../workspace/collaborationFlush';
 import type { ApplyLocalAiEdit } from '../editor/aiActions';
-import { ModernSelect } from './ModernSelect';
+import { AiComposer } from './AiComposer';
 import './ai-sidebar.css';
 
 const messageOf = (error: unknown) =>
@@ -44,6 +44,8 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
   const [scope, setScope] = useState<AiEditScope>('project');
   const [intent, setIntent] = useState<'ask' | 'edit'>('ask');
   const [context, setContext] = useState<AiEditorContext>();
+  const [references, setReferences] = useState<AiSourceContext[]>([]);
+  const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [session, setSession] = useState<AiChatSession>();
   const [starting, setStarting] = useState(false);
@@ -65,6 +67,13 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
   scopeRef.current = scope;
   latest.current = studio;
   const running = starting || session?.status === 'running';
+  const referenceFiles = useMemo(
+    () =>
+      (studio.state?.files ?? [])
+        .filter((file) => !/^(?:binary|image|audio|video)$/.test(file.language))
+        .map((file) => ({ path: file.path, content: studio.drafts[file.path] ?? file.content })),
+    [studio.state?.files, studio.drafts],
+  );
   const fallbackContext = (): AiEditorContext => {
     const owner = latest.current;
     return {
@@ -97,6 +106,8 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
     setStarting(false);
     setComputerAllowed(false);
     setCopied(undefined);
+    setReferences([]);
+    processedEdits.current.clear();
   };
   useEffect(() => {
     onVisibility(open);
@@ -119,9 +130,10 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
     if (!open) return;
     void window.blode
       .modelServiceState()
-      .then((state) =>
-        setConfigured(state.hasKey || (state.provider === 'custom' && state.baseUrl.startsWith('http://'))),
-      )
+      .then((state) => {
+        setModel(state.model);
+        setConfigured(state.hasKey || (state.provider === 'custom' && state.baseUrl.startsWith('http://')));
+      })
       .catch(() => setConfigured(false));
   }, [open]);
   useEffect(() => {
@@ -238,11 +250,12 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
       if (event.message === 'status.modelServiceChanged')
         void window.blode
           .modelServiceState()
-          .then((state) =>
+          .then((state) => {
+            setModel(state.model);
             setConfigured(
               state.hasKey || (state.provider === 'custom' && state.baseUrl.startsWith('http://')),
-            ),
-          )
+            );
+          })
           .catch(() => setConfigured(false));
     });
     return () => {
@@ -259,7 +272,7 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
   }, [studio.state?.projectRoot]);
   const submit = async () => {
     if (!prompt.trim() || running || !configured || (scope === 'computer' && !computerAllowed)) return;
-    const value = currentAiContext(fallbackContext());
+    const value = context ?? currentAiContext(fallbackContext());
     if (value?.readonly && intent === 'edit' && (scope === 'selection' || scope === 'file')) {
       setError('error.aiScope');
       return;
@@ -279,6 +292,7 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
     const epoch = ++generation.current,
       text = prompt.trim(),
       previous = sessionRef.current;
+    const actor = currentAiContext(value)?.actor;
     setStarting(true);
     setError('');
     setContext(value);
@@ -293,7 +307,8 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
         intent,
         prompt: text,
         ...(value?.source ? { source: value.source } : {}),
-        ...(value?.actor ? { actor: value.actor } : {}),
+        ...(references.length ? { references } : {}),
+        ...(actor ? { actor } : {}),
         ...(intent === 'edit' || scope === 'computer' ? { confirm: true } : {}),
         ...(!latest.current.syncDrafts && intent === 'edit' && scope !== 'computer'
           ? { localOnly: true }
@@ -339,43 +354,6 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
           <X size={15} />
         </button>
       </header>
-      <div className="ai-scope-row">
-        <ModernSelect
-          value={scope}
-          aria-label={t('ai.chat.scope')}
-          onChange={(event) => {
-            clear();
-            setScope(event.target.value as AiEditScope);
-            setContext(currentAiContext(fallbackContext()));
-          }}
-        >
-          {(['selection', 'file', 'project', 'computer'] as const).map((scope) => (
-            <option key={scope} value={scope}>
-              {t(`ai.chat.${scope}`)}
-            </option>
-          ))}
-        </ModernSelect>
-        <ModernSelect
-          value={intent}
-          aria-label={t('ai.chat.ask')}
-          disabled={running || (!!context?.readonly && (scope === 'selection' || scope === 'file'))}
-          onChange={(event) => setIntent(event.target.value as 'ask' | 'edit')}
-        >
-          <option value="ask">{t('ai.chat.ask')}</option>
-          <option value="edit">{t('ai.chat.edit')}</option>
-        </ModernSelect>
-      </div>
-      {context?.source && (
-        <div className="ai-context-chip" title={context.source.path}>
-          <FileCode2 size={12} />
-          <span>
-            {context.source.path.split(/[\\/]/).at(-1)}
-            {scope === 'selection' && context.source.selection
-              ? ` · ${context.source.selection.end - context.source.selection.start}`
-              : ''}
-          </span>
-        </div>
-      )}
       {scope === 'computer' && !computerAllowed && (
         <div className="ai-computer-grant">
           <ShieldAlert size={18} />
@@ -402,6 +380,27 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
             </details>
           ) : (
             <article className={`ai-message ai-message-${message.role}`} key={index}>
+              {message.references?.length ? (
+                <div className="ai-message-references">
+                  {message.references.map((reference) => (
+                    <button
+                      key={reference.path}
+                      type="button"
+                      title={reference.path}
+                      disabled={!studio.state?.files.some((file) => file.path === reference.path)}
+                      onClick={() => studio.openFile(reference.path)}
+                    >
+                      <FileCode2 size={11} />
+                      <span>
+                        {reference.path.split(/[\\/]/).at(-1)}
+                        {reference.startLine
+                          ? `:L${reference.startLine}${reference.endLine !== reference.startLine ? `–L${reference.endLine}` : ''}`
+                          : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <AiText
                 text={
                   message.role === 'assistant' && message.content.startsWith('status.aiFileUpdated: ')
@@ -446,49 +445,43 @@ export function AiSidebar({ studio, onVisibility }: { studio: Studio; onVisibili
           {t(error || session!.error!)}
         </div>
       )}
-      {!configured && (
-        <button
-          className="ai-configure-button"
-          onClick={() =>
-            window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section: 'ai' } }))
-          }
-        >
-          {t('ai.chat.configure')}
-        </button>
-      )}
-      <form
-        className="ai-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
+      <AiComposer
+        t={t}
+        inputRef={textarea}
+        prompt={prompt}
+        onPrompt={setPrompt}
+        context={context}
+        references={references}
+        onReferences={setReferences}
+        files={referenceFiles}
+        onDetachSource={() => {
+          clear();
+          setContext({ projectRoot: context?.projectRoot ?? '', actor: context?.actor });
+          setScope('project');
+          setReferences(references);
         }}
-      >
-        <textarea
-          ref={textarea}
-          value={prompt}
-          placeholder={t('ai.chat.prompt')}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void submit();
-            }
-          }}
-        />
-        <button
-          className="primary"
-          type={running ? 'button' : 'submit'}
-          disabled={
-            starting ||
-            (!running && (!configured || !prompt.trim() || (scope === 'computer' && !computerAllowed)))
-          }
-          onClick={running ? () => void stop() : undefined}
-          aria-label={t(running ? 'ai.chat.stop' : 'ai.chat.send')}
-          title={t(running ? 'ai.chat.stop' : 'ai.chat.send')}
-        >
-          {running ? <Square size={14} /> : <Send size={15} />}
-        </button>
-      </form>
+        scope={scope}
+        intent={intent}
+        onScope={(value) => {
+          clear();
+          setScope(value);
+          const next = currentAiContext(fallbackContext());
+          setReferences(references.filter((file) => file.path !== next?.source?.path));
+          setContext(next);
+          if (next?.readonly && (value === 'selection' || value === 'file')) setIntent('ask');
+        }}
+        onIntent={setIntent}
+        model={configured ? model : ''}
+        configured={configured}
+        running={running}
+        starting={starting}
+        computerAllowed={computerAllowed}
+        onSubmit={() => void submit()}
+        onStop={() => void stop()}
+        onConfigure={() =>
+          window.dispatchEvent(new CustomEvent('blode:preferences', { detail: { section: 'ai' } }))
+        }
+      />
     </aside>
   );
 }

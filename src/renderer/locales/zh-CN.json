@@ -1555,5 +1555,10 @@
   "editor.menu.Add Cursor Below": "在下方添加光标",
   "editor.menu.Find": "查找",
   "editor.menu.Replace": "替换",
-  "editor.menu.Find in Selection": "在选区中查找"
+  "editor.menu.Find in Selection": "在选区中查找",
+  "ai.chat.addReference": "引用文件",
+  "ai.chat.findReference": "搜索工程文件…",
+  "ai.chat.noReference": "没有匹配的文件",
+  "ai.chat.mode": "操作",
+  "ai.chat.removeReference": "移除引用"
 }

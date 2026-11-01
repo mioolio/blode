@@ -1,4 +1,4 @@
-export type ModelProviderId = 'deepseek' | 'qwen' | 'siliconflow' | 'custom';
+export type ModelProviderId = 'deepseek' | 'agnes' | 'qwen' | 'siliconflow' | 'custom';
 export interface ModelProviderPreset {
   id: ModelProviderId;
   name: string;
@@ -39,6 +39,8 @@ export interface AiChatRequest {
   intent: 'ask' | 'edit';
   prompt: string;
   source?: AiSourceContext;
+  /** Read-only context; references never widen the authorized edit scope. */
+  references?: AiSourceContext[];
   sessionId?: string;
   sessionToken?: string;
   confirm?: true;
@@ -49,6 +51,7 @@ export interface AiChatMessage {
   role: 'user' | 'assistant' | 'tool';
   content: string;
   time: string;
+  references?: { path: string; startLine?: number; endLine?: number }[];
 }
 export interface AiChatSession {
   id: string;

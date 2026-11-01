@@ -10,6 +10,13 @@ export const modelProviderPresets: ModelProviderPreset[] = [
     documentation: 'https://api-docs.deepseek.com/',
   },
   {
+    id: 'agnes',
+    name: 'Agnes AI',
+    baseUrl: 'https://apihub.agnes-ai.com/v1',
+    model: 'agnes-2.5-flash',
+    documentation: 'https://www.agnes-ai.com/zh-Hans/docs/agnes-25-flash',
+  },
+  {
     id: 'qwen',
     name: '通义千问 Qwen',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -204,6 +211,7 @@ export class ModelProviderClient {
     options: {
       signal?: AbortSignal;
       maxTokens?: number;
+      temperature?: number;
       tools?: ProviderTool[];
       json?: boolean;
       onText?: (text: string) => void;
@@ -215,7 +223,9 @@ export class ModelProviderClient {
       messages,
       stream: !!options.onText,
       max_tokens: options.maxTokens ?? 4096,
+      ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(config.provider === 'deepseek' ? { thinking: { type: 'disabled' } } : {}),
+      ...(config.provider === 'agnes' ? { chat_template_kwargs: { enable_thinking: false } } : {}),
       ...(options.json ? { response_format: { type: 'json_object' } } : {}),
       ...(options.tools?.length ? { tools: options.tools, tool_choice: 'auto' } : {}),
     };

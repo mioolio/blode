@@ -31,6 +31,7 @@ function fixture(t: TestContext, enabled = true, delay = 750) {
     version = 1,
     readonly = false,
     focused = true,
+    remote = false,
     cursor = { lineNumber: 1, column: 1 };
   let read: (id: string) => Promise<AiPredictionSuggestion | null> = async () => null;
   const event = (name: string) => (callback: (...args: any[]) => void) => {
@@ -109,6 +110,7 @@ function fixture(t: TestContext, enabled = true, delay = 750) {
     projectRoot: () => '/project',
     path: () => 'main.c',
     onStatus: (value) => feedback.push(value),
+    isRemoteChange: () => remote,
   });
   t.after(() => {
     controller.dispose();
@@ -120,6 +122,9 @@ function fixture(t: TestContext, enabled = true, delay = 750) {
     cancelled,
     feedback,
     emit,
+    setRemote(value: boolean) {
+      remote = value;
+    },
     setRead: (next: typeof read) => {
       read = next;
     },
@@ -227,4 +232,45 @@ test('completion errors, empty response and timeout are visible and stale replie
   await pending;
   assert.equal(f.feedback.at(-1)?.kind, 'idle');
   assert.ok(f.cancelled.includes(old.id));
+});
+
+test('matching continued typing reuses a ready completion; divergence requests fresh intent context', async (t) => {
+  const f = fixture(t);
+  await flush();
+  f.type('int ma');
+  f.setRead(async (requestId) => ({ requestId, text: 'in(void)', createdAt: new Date().toISOString() }));
+  await f.actions.get('blode.ai.complete').run();
+  const id = f.requests[0].id;
+  f.type('in');
+  t.mock.timers.tick(900);
+  await flush();
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.cancelled.includes(id), false);
+  f.type('X');
+  t.mock.timers.tick(750);
+  await flush();
+  assert.equal(f.requests.length, 2);
+  assert.equal(f.cancelled.includes(id), true);
+  assert.ok(f.requests[1].recentEdits?.length);
+  assert.equal(f.requests[1].documentHead, 'int mainX');
+});
+
+test('remote changes discard a prediction and never start requests or become local edit intent', async (t) => {
+  const f = fixture(t);
+  await flush();
+  f.type('int ma');
+  f.setRead(async (requestId) => ({ requestId, text: 'in(void)', createdAt: new Date().toISOString() }));
+  await f.actions.get('blode.ai.complete').run();
+  f.setRemote(true);
+  f.type('in');
+  t.mock.timers.tick(1000);
+  await flush();
+  assert.equal(f.requests.length, 1);
+  assert.ok(f.cancelled.includes(f.requests[0].id));
+  f.setRemote(false);
+  f.type('X');
+  t.mock.timers.tick(750);
+  await flush();
+  assert.equal(f.requests.length, 2);
+  assert.equal(f.requests[1].recentEdits?.length, 1);
 });

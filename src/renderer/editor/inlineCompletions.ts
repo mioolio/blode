@@ -1,6 +1,7 @@
 import type * as Monaco from 'monaco-editor';
 import type { AiPredictionRequest, AiPredictionSuggestion } from '../../shared/ai';
 import { setCompletionCatalog } from './completionProvider';
+import { advancePrediction } from './predictionContinuation';
 
 export interface PredictionFeedback {
   kind: 'idle' | 'requesting' | 'ready' | 'empty' | 'error';
@@ -29,6 +30,7 @@ export function attachInlineCompletions(
   scope: {
     projectRoot: () => string;
     path: () => string;
+    isRemoteChange?: () => boolean;
     acceptLabel?: string;
     completeLabel?: string;
     onStatus?: (feedback: PredictionFeedback) => void;
@@ -47,6 +49,10 @@ export function attachInlineCompletions(
   let manualGeneration: number | undefined;
   let request: AiPredictionRequest | null = null;
   let suggestion: AiPredictionSuggestion | null = null;
+  let requestText = '',
+    requestOffset = 0;
+  let lastText = editor.getModel()?.getValue() ?? '';
+  let recentEdits: { before: string; after: string }[] = [];
   let shown = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let expiry: ReturnType<typeof setTimeout> | undefined;
@@ -99,7 +105,7 @@ export function attachInlineCompletions(
   };
   const readSuggestion = async () => {
     const active = request;
-    if (!active || (!enabled && !active.manual)) return;
+    if (!active || suggestion || (!enabled && !active.manual)) return;
     try {
       const next = await window.blode.aiPredictionRead({ requestId: active.id });
       if (disposed || request?.id !== active.id || !matches() || !next) return;
@@ -108,7 +114,7 @@ export function attachInlineCompletions(
         status({ kind: 'empty', message: 'ai.completions.empty' });
         return;
       }
-      suggestion = next;
+      suggestion = { ...next, text: next.text.replace(/\r\n/g, '\n') };
       status({ kind: 'ready', message: 'ai.completions.ready' });
       fire();
       editor.trigger('blode-ai', 'editor.action.inlineSuggest.trigger', null);
@@ -150,6 +156,9 @@ export function attachInlineCompletions(
         editorId,
         prefix: text.slice(Math.max(0, offset - 12000), offset),
         suffix: text.slice(offset, offset + 12000),
+        documentHead: text.slice(0, Math.min(4000, offset)),
+        language: model.getLanguageId?.(),
+        recentEdits: [...recentEdits],
         ...(manual ? { manual: true } : {}),
       });
       if (disposed || version !== generation || (!enabled && !manual)) {
@@ -161,6 +170,8 @@ export function attachInlineCompletions(
         return;
       }
       request = next;
+      requestText = text;
+      requestOffset = offset;
       if (!matches()) {
         invalidate();
         return;
@@ -198,6 +209,41 @@ export function attachInlineCompletions(
       timer = undefined;
       void start(false);
     }, delayMs);
+  };
+  const contentChanged = (event?: Monaco.editor.IModelContentChangedEvent) => {
+    const model = editor.getModel();
+    const text = model?.getValue() ?? '';
+    const before = lastText;
+    lastText = text;
+    if (scope.isRemoteChange?.()) {
+      recentEdits = [];
+      invalidate();
+      return;
+    }
+    const edits =
+      event?.changes?.map((change) => ({
+        before: before.slice(change.rangeOffset, change.rangeOffset + change.rangeLength).slice(0, 1000),
+        after: change.text.slice(0, 1000),
+      })) ?? (before === text ? [] : [{ before: before.slice(-1000), after: text.slice(-1000) }]);
+    recentEdits = [...recentEdits, ...edits].slice(-3);
+    if (request && suggestion && !composing && model) {
+      const advanced = advancePrediction(requestText, requestOffset, suggestion.text, text);
+      if (advanced?.text) {
+        requestText = text;
+        requestOffset = advanced.offset;
+        request = {
+          ...request,
+          modelVersion: model.getVersionId(),
+          line: advanced.line,
+          column: advanced.column,
+        };
+        suggestion = { ...suggestion, text: advanced.text };
+        fire();
+        editor.trigger('blode-ai', 'editor.action.inlineSuggest.trigger', null);
+        return;
+      }
+    }
+    schedule();
   };
   const loadSettings = async () => {
     try {
@@ -268,12 +314,19 @@ export function attachInlineCompletions(
   );
   const subscriptions = [
     provider,
-    editor.onDidChangeModelContent(schedule),
+    editor.onDidChangeModelContent(contentChanged),
     editor.onDidChangeCursorPosition(() => {
-      if (timer) schedule();
+      if (suggestion && matches()) {
+        fire();
+        editor.trigger('blode-ai', 'editor.action.inlineSuggest.trigger', null);
+      } else if (timer) schedule();
       else invalidate();
     }),
-    editor.onDidChangeModel(schedule),
+    editor.onDidChangeModel(() => {
+      recentEdits = [];
+      lastText = editor.getModel()?.getValue() ?? '';
+      schedule();
+    }),
     editor.onDidFocusEditorText(schedule),
     editor.onDidBlurEditorText(invalidate),
     editor.onDidCompositionStart(() => {

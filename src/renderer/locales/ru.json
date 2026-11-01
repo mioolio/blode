@@ -1555,5 +1555,10 @@
   "editor.menu.Add Cursor Below": "Добавить курсор ниже",
   "editor.menu.Find": "Найти",
   "editor.menu.Replace": "Заменить",
-  "editor.menu.Find in Selection": "Найти в выборе"
+  "editor.menu.Find in Selection": "Найти в выборе",
+  "ai.chat.addReference": "Добавить ссылку",
+  "ai.chat.findReference": "Поиск файлов проекта…",
+  "ai.chat.noReference": "Файлы не найдены",
+  "ai.chat.mode": "Действие",
+  "ai.chat.removeReference": "Удалить ссылку"
 }

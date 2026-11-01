@@ -1555,5 +1555,10 @@
   "editor.menu.Add Cursor Below": "नीचे कर्सर जोड़ें",
   "editor.menu.Find": "खोजें",
   "editor.menu.Replace": "बदलें",
-  "editor.menu.Find in Selection": "चयन में खोजें"
+  "editor.menu.Find in Selection": "चयन में खोजें",
+  "ai.chat.addReference": "संदर्भ जोड़ें",
+  "ai.chat.findReference": "प्रोजेक्ट फ़ाइलें खोजें…",
+  "ai.chat.noReference": "कोई फ़ाइल नहीं मिली",
+  "ai.chat.mode": "कार्रवाई",
+  "ai.chat.removeReference": "संदर्भ हटाएँ"
 }

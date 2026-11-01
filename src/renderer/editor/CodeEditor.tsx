@@ -254,6 +254,9 @@ export function CodeEditor({
       completeLabel: t('ai.completions.complete'),
       projectRoot: () => latest.current.projectRoot,
       path: () => latest.current.path,
+      isRemoteChange: () =>
+        !!instance.getModel() &&
+        (remoteModels.has(instance.getModel()!) || externalModelIsRefreshing(instance.getModel()!)),
       onStatus: setPredictionFeedback,
     });
   };

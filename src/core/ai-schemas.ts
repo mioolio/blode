@@ -54,6 +54,12 @@ export const aiParameterSchemas = {
       column: z.number().int().positive(),
       prefix: z.string().max(12000),
       suffix: z.string().max(12000),
+      language: z.string().max(80).optional(),
+      documentHead: z.string().max(4000).optional(),
+      recentEdits: z
+        .array(z.object({ before: z.string().max(1000), after: z.string().max(1000) }).strict())
+        .max(3)
+        .optional(),
       manual: z.boolean().optional(),
     })
     .strict(),

@@ -1555,5 +1555,10 @@
   "editor.menu.Add Cursor Below": "아래에 커서 추가",
   "editor.menu.Find": "찾기",
   "editor.menu.Replace": "바꾸기",
-  "editor.menu.Find in Selection": "선택 항목에서 찾기"
+  "editor.menu.Find in Selection": "선택 항목에서 찾기",
+  "ai.chat.addReference": "파일 참조 추가",
+  "ai.chat.findReference": "프로젝트 파일 검색…",
+  "ai.chat.noReference": "일치하는 파일 없음",
+  "ai.chat.mode": "작업",
+  "ai.chat.removeReference": "참조 제거"
 }

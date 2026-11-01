@@ -6,12 +6,34 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { ModelService } from '../src/core/model-service';
 import { ModelCredentials } from '../src/core/model-service/credentials';
-import { ModelProviderClient } from '../src/core/model-service/provider';
+import { ModelProviderClient, modelProviderPresets } from '../src/core/model-service/provider';
 import { CollaborationService } from '../src/core/collaboration';
 import type { AiChatSession } from '../src/shared/model-service';
 import { AiAssistance } from '../src/core/ai-assistance';
 
 const fakeKey = 'test-only-model-credential';
+test('Agnes preset uses the documented endpoint and sends low-latency completion settings', async () => {
+  const preset = modelProviderPresets.find((item) => item.id === 'agnes')!;
+  assert.equal(preset.baseUrl, 'https://apihub.agnes-ai.com/v1');
+  assert.equal(preset.model, 'agnes-2.5-flash');
+  let sent: any;
+  const client = new ModelProviderClient({
+    fetcher: async (url, options) => {
+      assert.equal(url, `${preset.baseUrl}/chat/completions`);
+      sent = JSON.parse(String(options?.body));
+      return response('a + b');
+    },
+  });
+  const result = await client.complete(
+    { ...preset, provider: preset.id, apiKey: fakeKey },
+    [{ role: 'user', content: 'continue' }],
+    { temperature: 0.2, maxTokens: 512 },
+  );
+  assert.equal(result.content, 'a + b');
+  assert.deepEqual(sent.chat_template_kwargs, { enable_thinking: false });
+  assert.equal(sent.temperature, 0.2);
+  assert.equal(sent.thinking, undefined);
+});
 const response = (content: string) =>
   new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }), {
     headers: { 'content-type': 'application/json' },
@@ -167,6 +189,29 @@ test('configured provider predictions use the existing ghost-text interface with
   assert.equal(suggestion?.text, 'const answer = 42;\n');
   assert.deepEqual((await ai.aiPredictionPoll()).requests, []);
   await ai.aiPredictionCancel({ editorId: 'model-test' });
+});
+
+test('selection edits include read-only references and record visible citations without widening edit scope', async (t) => {
+  const f = await fixture(t);
+  const session = await f.service.start({
+    projectRoot: f.root,
+    scope: 'selection',
+    intent: 'edit',
+    prompt: 'fix selected code',
+    source: { path: 'main.c', content: 'before SELECT after\n', selection: { start: 7, end: 13 } },
+    references: [{ path: 'device.h', content: 'void init(void);' }],
+    confirm: true,
+  });
+  const result = await settled(f.service, session);
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(result.messages[0].references, [
+    { path: 'main.c', startLine: 1, endLine: 1 },
+    { path: 'device.h' },
+  ]);
+  assert.match(f.calls.at(-1)!.body.messages[1].content, /Read-only reference files/);
+  assert.match(f.calls.at(-1)!.body.messages[1].content, /void init/);
+  assert.equal((await f.collaboration.open(f.root, 'main.c')).content, 'before CHANGED after\n');
+  assert.deepEqual(result.changedFiles, ['main.c']);
 });
 
 test('project mode rejects invented host commands while explicit full control can execute its own command tool', async (t) => {

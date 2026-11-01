@@ -1555,5 +1555,10 @@
   "editor.menu.Add Cursor Below": "أضف المؤشر أدناه",
   "editor.menu.Find": "البحث عن",
   "editor.menu.Replace": "استبدال",
-  "editor.menu.Find in Selection": "البحث في التحديد"
+  "editor.menu.Find in Selection": "البحث في التحديد",
+  "ai.chat.addReference": "إضافة مرجع",
+  "ai.chat.findReference": "البحث في ملفات المشروع…",
+  "ai.chat.noReference": "لا توجد ملفات مطابقة",
+  "ai.chat.mode": "الإجراء",
+  "ai.chat.removeReference": "إزالة المرجع"
 }

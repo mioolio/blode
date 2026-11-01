@@ -1555,5 +1555,10 @@
   "editor.menu.Add Cursor Below": "Add Cursor Below",
   "editor.menu.Find": "Find",
   "editor.menu.Replace": "Replace",
-  "editor.menu.Find in Selection": "Find in Selection"
+  "editor.menu.Find in Selection": "Find in Selection",
+  "ai.chat.addReference": "Add reference",
+  "ai.chat.findReference": "Search project files…",
+  "ai.chat.noReference": "No matching files",
+  "ai.chat.mode": "Action",
+  "ai.chat.removeReference": "Remove reference"
 }

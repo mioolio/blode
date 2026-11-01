@@ -1,6 +1,6 @@
 import * as z from 'zod';
 
-const provider = z.enum(['deepseek', 'qwen', 'siliconflow', 'custom']);
+const provider = z.enum(['deepseek', 'agnes', 'qwen', 'siliconflow', 'custom']);
 const session = z
   .object({ sessionId: z.string().uuid(), sessionToken: z.string().regex(/^[a-f0-9]{64}$/) })
   .strict();
@@ -37,6 +37,25 @@ export const modelServiceParameterSchemas = {
         })
         .strict()
         .optional(),
+      references: z
+        .array(
+          z
+            .object({
+              path: z
+                .string()
+                .min(1)
+                .max(1024)
+                .refine(
+                  (value) =>
+                    !/[\\:\0]/.test(value) &&
+                    value.split('/').every((part) => part && part !== '.' && part !== '..'),
+                ),
+              content: z.string().max(12000),
+            })
+            .strict(),
+        )
+        .max(8)
+        .optional(),
       sessionId: z.string().uuid().optional(),
       sessionToken: z
         .string()
@@ -51,6 +70,12 @@ export const modelServiceParameterSchemas = {
     })
     .strict()
     .superRefine((value, context) => {
+      if (
+        value.references &&
+        (new Set(value.references.map((item) => item.path)).size !== value.references.length ||
+          value.references.reduce((size, item) => size + item.content.length, 0) > 64000)
+      )
+        context.addIssue({ code: 'custom', message: 'reference budget exceeded' });
       if ((value.intent === 'edit' || value.scope === 'computer') && value.confirm !== true)
         context.addIssue({ code: 'custom', message: 'confirmation required' });
       if (value.scope !== 'computer' && !value.projectRoot)

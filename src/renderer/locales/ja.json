@@ -1555,5 +1555,10 @@
   "editor.menu.Add Cursor Below": "カーソルを下に追加",
   "editor.menu.Find": "探す",
   "editor.menu.Replace": "交換する",
-  "editor.menu.Find in Selection": "選択範囲内で検索"
+  "editor.menu.Find in Selection": "選択範囲内で検索",
+  "ai.chat.addReference": "ファイルを参照",
+  "ai.chat.findReference": "プロジェクト内を検索…",
+  "ai.chat.noReference": "該当するファイルなし",
+  "ai.chat.mode": "操作",
+  "ai.chat.removeReference": "参照を削除"
 }
