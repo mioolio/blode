@@ -77,25 +77,27 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
       : tab === 'warnings'
         ? editorProblems.filter((problem) => problem.severity === 'warning')
         : [];
-  const errorCount =
-    errors.length + editorProblems.filter((problem) => problem.severity === 'error').length;
+  const errorCount = errors.length + editorProblems.filter((problem) => problem.severity === 'error').length;
   const warningCount =
     warnings.length + editorProblems.filter((problem) => problem.severity === 'warning').length;
   const openProblem = (problem: EditorProblem) => {
     if (!state?.projectRoot) return;
-    window.dispatchEvent(
-      new CustomEvent('blode:navigate-source', {
-        detail: {
-          root: state.projectRoot,
-          target: {
-            path: problem.path,
-            line: problem.line,
-            column: problem.column,
-            endLine: problem.endLine,
-            endColumn: problem.endColumn,
+    studio.openFile(problem.path);
+    requestAnimationFrame(() =>
+      window.dispatchEvent(
+        new CustomEvent('blode:navigate-source', {
+          detail: {
+            root: state.projectRoot,
+            target: {
+              path: problem.path,
+              line: problem.line,
+              column: problem.column,
+              endLine: problem.endLine,
+              endColumn: problem.endColumn,
+            },
           },
-        },
-      }),
+        }),
+      ),
     );
   };
   const logRef = useRef<HTMLDivElement>(null);
@@ -458,11 +460,11 @@ export function ConsolePanel({ studio }: { studio: Studio }) {
           <div className="log-content">
             {editorIssues.map((problem) => (
               <div
-                className={`log-line ${problem.severity}`}
+                className={`log-line diagnostic ${problem.severity}`}
                 key={`editor:${problem.path}:${problem.line}:${problem.column}:${problem.message}`}
               >
-                <time>
-                  {problem.path}:{problem.line}
+                <time title={`${problem.path}:${problem.line}:${problem.column}`}>
+                  {problem.path}:{problem.line}:{problem.column}
                 </time>
                 <span className="log-marker">{problem.severity === 'error' ? '×' : '!'}</span>
                 <pre>

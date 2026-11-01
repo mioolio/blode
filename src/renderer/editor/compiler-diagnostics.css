@@ -1,0 +1,12 @@
+.monaco-editor .compiler-warning-line {
+  background: color-mix(in srgb, var(--amber) 11%, transparent);
+}
+.monaco-editor .compiler-error-line {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+.monaco-editor .compiler-warning-gutter {
+  border-inline-start: 2px solid var(--amber);
+}
+.monaco-editor .compiler-error-gutter {
+  border-inline-start: 2px solid var(--red);
+}

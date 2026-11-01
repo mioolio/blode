@@ -84,3 +84,20 @@ test('recent log storage is bounded and progress-only AI events are live-only', 
   const next = logs.publish({ kind: 'log', level: 'info', message: 'next', time: new Date().toISOString() });
   assert.equal(next.sequence, 552);
 });
+
+test('compiler diagnostics survive verbose output and reconnects until the next build', () => {
+  const logs = new RecentLogs();
+  logs.publish({ ...event(1, 'status.buildStarted'), kind: 'status' });
+  logs.publish({
+    ...event(2, 'main.c:1: warning: unused'),
+    level: 'warning',
+    diagnostic: { projectRoot: '/workspace', severity: 'warning', message: 'unused' },
+  });
+  for (let i = 3; i < 650; i++) logs.publish(event(i, `verbose ${i}`));
+  assert.equal(logs.snapshot().filter((item) => item.diagnostic).length, 1);
+  assert.equal(logs.snapshot()[0].message, 'status.buildStarted');
+  assert.equal(logs.snapshot().length, 501);
+  assert.equal(mergeRecentLogs([], logs.snapshot()).filter((item) => item.diagnostic).length, 1);
+  logs.publish(event(650, 'status.buildStarted'));
+  assert.equal(logs.snapshot().filter((item) => item.diagnostic).length, 0);
+});

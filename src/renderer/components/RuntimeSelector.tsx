@@ -47,12 +47,6 @@ export function RuntimeSelector({ studio }: { studio: Studio }) {
             </option>
           ))}
       </ModernSelect>
-      <button
-        className="text-button"
-        onClick={() => window.dispatchEvent(new CustomEvent('blode:component-libraries'))}
-      >
-        {t('components.title')}
-      </button>
       {!!state?.runtimePlugins?.errors.length && (
         <details className="runtime-load-errors">
           <summary>

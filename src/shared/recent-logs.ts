@@ -14,7 +14,7 @@ export function mergeRecentLogs(current: LogEvent[], incoming: LogEvent[]): LogE
     .sort(newer)
     .at(-1);
   const seen = new Set<number>();
-  return all
+  const ordered = all
     .filter((event) => {
       if (build && event.kind !== 'serial' && newer(event, build) < 0) return false;
       if (event.sequence === undefined) return true;
@@ -22,6 +22,12 @@ export function mergeRecentLogs(current: LogEvent[], incoming: LogEvent[]): LogE
       seen.add(event.sequence);
       return true;
     })
-    .sort(newer)
-    .slice(-500);
+    .sort(newer);
+  const diagnostics = ordered.filter((event) => event.diagnostic).slice(-1000);
+  const ordinary = ordered
+    .filter((event) => !event.diagnostic && event.message !== 'status.buildStarted')
+    .slice(build ? -499 : -500);
+  // Keep the latest build boundary and diagnostics even when verbose tools emit
+  // more than one screenful of ordinary output. Reconnects use the same limits.
+  return [...ordinary, ...diagnostics, ...(build ? [build] : [])].sort(newer);
 }

@@ -24,6 +24,7 @@ import { RuntimePlugins } from './runtime-plugins';
 import { captureBuildDebugSymbols } from './build-debug-symbols';
 import { analyzeCSourceRules, validateProjectLanguageRules } from '../../extensions/completions/rules';
 import { analyzeModuleLanguageRules, withModuleLanguageOverrides } from '../shared/module-languages';
+import type { CompilerContext } from './compiler-diagnostics';
 
 const withoutConnection = (config: ProjectConfig) => ({
   ...config,
@@ -95,6 +96,7 @@ export class BuildTargets {
     private readonly baseHost: RuntimeHost,
     private readonly plugins: RuntimePlugins,
     private readonly createRuntimes: CreatePlatformRuntimes,
+    private readonly compileContext?: (context: CompilerContext) => void,
   ) {}
 
   private async context(
@@ -380,6 +382,13 @@ export class BuildTargets {
     }
     const files = await readProjectFiles(context.sourceRoot),
       before = await this.fingerprint(context, files);
+    this.compileContext?.({
+      projectRoot: workspace,
+      sourceRoot: context.sourceRoot,
+      files,
+      build: context.inputs,
+      namespace: context.namespace,
+    });
     context.host.emit('status.buildStarted', 'info', 'status');
     const declared = await context.plugins.languages(
       context.config.boardId,

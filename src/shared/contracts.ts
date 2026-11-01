@@ -314,6 +314,7 @@ export interface AppState {
   web: { endpoint: string; tokenFile: string; allowExternal: boolean };
 }
 export interface LogEvent {
+  diagnostic?: import('./compiler-diagnostics').CompilerDiagnostic;
   terminalId?: string;
   sequence?: number;
   kind: 'log' | 'serial' | 'status' | 'terminal';

@@ -23,6 +23,7 @@ import { ClangdClient } from './clangd/client';
 import { registerClangdDiagnostics } from './clangd/diagnostics';
 import { registerClangdEditorFeatures } from './clangd/providers';
 import { attachEditorProblems } from './editorProblems';
+import { attachCompilerDiagnostics } from './compilerDiagnostics';
 import { refreshExternalModel } from './externalModelUpdates';
 import type {
   CompletionEntry,
@@ -819,6 +820,7 @@ export function registerCompletions(monaco: MonacoApi): void {
   disposables.push(monaco.editor.onDidCreateModel(() => scheduleRuleDiagnostics()));
   registerClangdDiagnostics(monaco, clangd, projectPathForUri, disposables);
   attachEditorProblems(monaco, projectPathForUri, disposables);
+  attachCompilerDiagnostics(monaco, { root: () => projectRoot, path: projectPathForUri }, disposables);
   registerClangdEditorFeatures(
     monaco,
     clangd,

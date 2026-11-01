@@ -54,6 +54,7 @@ import { analyzeCSourceRules, validateProjectLanguageRules } from '../../extensi
 import { RuntimePlugins } from './runtime-plugins';
 import { BuildTargets, type BuildEvidenceRecord } from './build-targets';
 import { captureBuildDebugSymbols } from './build-debug-symbols';
+import { CompilerOutput } from './compiler-diagnostics';
 import type { RuntimeViewContribution } from '../shared/plugins';
 import {
   analyzeModuleLanguageRules,
@@ -153,6 +154,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
   let builtFingerprint = '';
   let artifactHashes: Record<string, string> = {};
   let busy = false;
+  let compilerOutput: CompilerOutput | undefined;
   const lifecycle = new AbortController();
   const installation = new InstallationTracker(options.onEvent);
   const resourceCache = new SnapshotCache<Pick<AppState, 'files' | 'inventory'>>();
@@ -170,7 +172,16 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       ].includes(message)
     )
       resourceCache.invalidate();
-    options.onEvent(installation.capture({ kind, level, message, time: new Date().toISOString() }));
+    const diagnostic = kind === 'log' ? compilerOutput?.parse(message) : undefined;
+    options.onEvent(
+      installation.capture({
+        kind,
+        level: diagnostic?.severity ?? level,
+        message,
+        time: new Date().toISOString(),
+        ...(diagnostic ? { diagnostic } : {}),
+      }),
+    );
   };
   const workspaceResources = () => {
     const root = requireWorkspace();
@@ -296,6 +307,7 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
       throw error;
     } finally {
       busy = false;
+      compilerOutput = undefined;
     }
   };
   const requirePort = async (requested = config.port): Promise<string> => {
@@ -343,6 +355,9 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
     host,
     runtimePlugins,
     options.createRuntimes ?? createPlatformRuntimes,
+    (context) => {
+      compilerOutput = new CompilerOutput(context);
+    },
   );
   const runtimes = [...builtinRuntimes, ...runtimePlugins.attach(host, builtinRuntimes)];
   const runtimeById = new Map(runtimes.map((runtime) => [runtime.id, runtime]));
@@ -929,6 +944,12 @@ export async function createCore(options: CoreOptions): Promise<CoreService> {
         adapter.validateConfig(config);
         const languageFiles = await readProjectFiles(projectRoot);
         const before = await currentFingerprint(languageFiles);
+        compilerOutput = new CompilerOutput({
+          projectRoot,
+          sourceRoot: projectRoot,
+          files: languageFiles,
+          build: projectBuild,
+        });
         emit('status.buildStarted', 'info', 'status');
         const declaredLanguage = await runtimePlugins.languages(
           config.boardId,

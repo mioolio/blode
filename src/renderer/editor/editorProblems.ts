@@ -23,6 +23,7 @@ export function attachEditorProblems(
       const markers = monaco.editor.getModelMarkers?.({ resource: model.uri }) ?? [];
       for (const marker of markers) {
         if (issues.length >= MAX_PROBLEMS) break;
+        if (marker.owner === 'blode-compiler') continue;
         if (marker.severity !== 8 && marker.severity !== 4) continue;
         issues.push({
           path,

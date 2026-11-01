@@ -29,6 +29,15 @@ test('Monaco markers feed the Problems surface counts', async () => {
           endColumn: 18,
         },
         {
+          owner: 'blode-compiler',
+          severity: 4,
+          message: 'build warning already counted by the compiler store',
+          startLineNumber: 4,
+          startColumn: 1,
+          endLineNumber: 4,
+          endColumn: 2,
+        },
+        {
           severity: 2,
           message: 'information marker',
           source: 'clang',

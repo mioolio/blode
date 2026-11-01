@@ -25,6 +25,7 @@ import { publishSharedSurface, requestSharedTabClose } from './sharedTabs';
 import type { LanguageExternalSource } from '../../shared/language';
 import { registerExternalSource } from '../editor/completionProvider';
 import { externalSourceUpdate } from './externalSourceUpdates';
+import { setCompilerProblems } from './editorProblems';
 
 type View = 'code' | 'layout' | 'ai';
 type ConsoleTab = WorkspaceConsoleTabId;
@@ -127,6 +128,9 @@ export function useStudio() {
     viewRef.current = view;
   }, [view]);
   const [logs, setLogs] = useState<LogEvent[]>([]);
+  useEffect(() => {
+    setCompilerProblems(state?.projectRoot ?? '', logs);
+  }, [state?.projectRoot, logs]);
   const [installation, setInstallation] = useState<InstallationState>();
   const [busy, setBusy] = useState('');
   const [toast, setToast] = useState<{ message: string; error?: boolean; warning?: boolean } | null>(null);
@@ -162,8 +166,18 @@ export function useStudio() {
   const lines = content.split('\n');
   const comments = lines.filter((line) => /^\s*(\/\/|\/\*|\*|\*\/)/.test(line)).length;
   const longLines = lines.filter((line) => line.length > 100).length;
-  const errors = logs.filter((log) => log.level === 'error');
-  const warnings = logs.filter((log) => log.level === 'warning');
+  const errors = logs.filter(
+    (log) =>
+      log.level === 'error' &&
+      !log.diagnostic?.location &&
+      (!log.diagnostic || log.diagnostic.projectRoot === state?.projectRoot),
+  );
+  const warnings = logs.filter(
+    (log) =>
+      log.level === 'warning' &&
+      !log.diagnostic?.location &&
+      (!log.diagnostic || log.diagnostic.projectRoot === state?.projectRoot),
+  );
   const selectedBoard = state?.boards.find((item) => item.id === config?.boardId);
   const hiddenCapabilities = new Set([
     ...(selectedBoard?.runtimePlugin?.ui.hiddenCapabilities ?? []),

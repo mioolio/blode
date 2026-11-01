@@ -132,6 +132,12 @@
 .log-line.warning pre {
   color: var(--amber);
 }
+.log-line.diagnostic time {
+  max-width: min(240px, 35%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .log-line.success pre {
   color: var(--green);
 }
