@@ -1,4 +1,4 @@
-param([ValidateRange(1,65535)][int]$Port = 47821)
+param([ValidateRange(1,65535)][int]$Port = 5173)
 $ErrorActionPreference = 'Stop'
 $connection = Get-NetTCPConnection -State Listen -LocalPort $Port | Select-Object -First 1
 if (-not $connection) { throw "No service is listening on TCP $Port." }
@@ -18,8 +18,8 @@ if ($rule) {
     $rule | Set-NetFirewallRule -Enabled True -Direction Inbound -Action Allow -Profile Any
     $rule | Get-NetFirewallApplicationFilter | Set-NetFirewallApplicationFilter -Program $program
     $rule | Get-NetFirewallPortFilter | Set-NetFirewallPortFilter -Protocol TCP -LocalPort $Port
-    $rule | Get-NetFirewallAddressFilter | Set-NetFirewallAddressFilter -RemoteAddress LocalSubnet
+    $rule | Get-NetFirewallAddressFilter | Set-NetFirewallAddressFilter -RemoteAddress Any
 } else {
-    New-NetFirewallRule -Name $ruleName -DisplayName "Blode Studio LAN (TCP $Port)" -Enabled True -Direction Inbound -Action Allow -Profile Any -Program $program -Protocol TCP -LocalPort $Port -RemoteAddress LocalSubnet | Out-Null
+    New-NetFirewallRule -Name $ruleName -DisplayName "Blode Studio (TCP $Port)" -Enabled True -Direction Inbound -Action Allow -Profile Any -Program $program -Protocol TCP -LocalPort $Port -RemoteAddress Any | Out-Null
 }
-Write-Output "Blode Studio LAN access enabled on TCP $Port for LocalSubnet."
+Write-Output "Blode Studio access enabled on TCP $Port for all remote addresses."

@@ -70,9 +70,9 @@ Use the LAN address printed in the launch link. All browser API requests require
 
 Press **Ctrl+C** to stop the service and release its HTTP connections, automation socket, terminal processes and hardware debugger session. Each host data directory owns a separate automation endpoint. Run multiple instances with separate data directories and ports.
 
-When the desktop development session enables `web.allowExternal`, browser clients use the service port and the built renderer at the same origin. The desktop editor continues to use Vite. Rebuild the renderer after UI changes with `npm run build`.
+Desktop development (`npm run dev`) exposes the renderer and all browser APIs on port **5173**, listening on every interface. Browser requests use their page origin, including RPC, events, downloads and extension views. The desktop backend uses a random loopback-only port; **47821 is not opened by desktop development**, regardless of `web.allowExternal`. Its private endpoint is exchanged through ignored development metadata and removed when the owned session exits. No renderer production build or browser token is needed for this development entry.
 
-On Windows, run `scripts/enable-lan-access.ps1` in an administrator PowerShell to allow the service through the firewall. It detects the listening program and grants TCP access to `LocalSubnet` across network profiles. The default port is `47821`; use `-Port` to select another listening port. The rule applies to the current subnet without listing individual client IP addresses.
+On Windows, run `scripts/enable-lan-access.ps1` in an administrator PowerShell to allow the service through the firewall. It detects the listening program and grants inbound TCP access from all remote addresses across network profiles. The default port is **5173**; use `-Port` to select another listening port (including 47821 for an explicitly launched standalone host).
 
 ## Host files and hardware
 

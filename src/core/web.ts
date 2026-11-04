@@ -43,6 +43,8 @@ export interface WebServerOptions {
   ) => { path: string; name: string } | undefined | Promise<{ path: string; name: string } | undefined>;
   /** Headless browser mode also authenticates requests coming from loopback. */
   requireToken?: boolean;
+  /** Only the loopback desktop development backend accepts its owned proxy's public origin. */
+  developmentProxy?: boolean;
   debugger?: {
     invoke(method: string, args: unknown[]): Promise<unknown>;
     symbols(bytes: Buffer, name: string): Promise<string>;
@@ -323,6 +325,27 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
       response.writeHead(400);
       response.end('invalid request authority');
       return;
+    }
+    let browserOrigin = url.origin;
+    if (
+      options.developmentProxy &&
+      !options.isPackaged &&
+      !options.allowExternal &&
+      isLoopback(request.socket.remoteAddress) &&
+      request.headers['x-blode-development-origin']
+    ) {
+      try {
+        const forwarded = request.headers['x-blode-development-origin'];
+        if (typeof forwarded !== 'string') throw new Error('Invalid public origin');
+        const origin = new URL(forwarded);
+        if (origin.protocol !== 'http:' || origin.origin !== forwarded)
+          throw new Error('Invalid public origin');
+        browserOrigin = origin.origin;
+      } catch {
+        response.writeHead(400);
+        response.end('invalid development origin');
+        return;
+      }
     }
     cors(request, response);
 
@@ -617,7 +640,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
               ? await options.hostServices.invoke('generalExtensionOpenView', [input])
               : {
                   destination: 'browser',
-                  url: `${url.origin}/#/extension-view/${encodeURIComponent(input.id)}/${encodeURIComponent(input.view)}`,
+                  url: `${browserOrigin}/#/extension-view/${encodeURIComponent(input.id)}/${encodeURIComponent(input.view)}`,
                 };
         } else if (body.method === 'runtimePluginOpenView') {
           if (
@@ -636,7 +659,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
               ? { destination: 'panel' }
               : {
                   destination: 'browser',
-                  url: `${url.origin}/#/runtime-view/${encodeURIComponent(pluginId)}/${encodeURIComponent(viewId)}`,
+                  url: `${browserOrigin}/#/runtime-view/${encodeURIComponent(pluginId)}/${encodeURIComponent(viewId)}`,
                 };
         } else if (body.method === 'generalExtensionViewUrl') {
           if (!options.hostServices) throw new Error('rpc.methodNotFound');
@@ -649,7 +672,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
           if (extensionViews.size >= 64) throw new Error('rpc.limitExceeded');
           const ticket = randomBytes(24).toString('hex');
           extensionViews.set(ticket, { ...view, expiresAt: Date.now() + 15_000 });
-          result = `${url.origin}/extension-ui/${ticket}`;
+          result = `${browserOrigin}/extension-ui/${ticket}`;
         } else if (body.method === 'runtimePluginViewDocument') {
           if (!options.hostServices) throw new Error('rpc.methodNotFound');
           if (
@@ -670,7 +693,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
             if (runtimeViews.size >= 64) throw new Error('rpc.limitExceeded');
             const ticket = randomBytes(24).toString('hex');
             runtimeViews.set(ticket, { id: pluginId, kind, expiresAt: Date.now() + 15_000 });
-            result = `${url.origin}/runtime-ui/${ticket}`;
+            result = `${browserOrigin}/runtime-ui/${ticket}`;
           }
         } else if (
           /^(?:aiAssistance|aiPrediction|collaboration|uiPublishState|uiCommandReply)/.test(body.method)

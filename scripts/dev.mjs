@@ -26,6 +26,8 @@ const logDirectory = diagnoseOnly
   ? path.join(repository, '.tools', 'startup-diagnostics', `${Date.now()}-${process.pid}`)
   : path.join(repository, '.tools');
 mkdirSync(logDirectory, { recursive: true });
+const apiEndpointFile = path.join(logDirectory, 'dev-web-endpoint.json');
+process.env.BLODE_DEV_API_ENDPOINT_FILE = apiEndpointFile;
 const devUserData = path.resolve(
   (!diagnoseOnly && process.env.BLODE_DEV_USER_DATA) || path.join(logDirectory, 'dev-user-data'),
 );
@@ -92,6 +94,7 @@ const cleanup = () =>
     if (electron?.pid && electron.exitCode === null) await stopProcessTree(electron.pid);
     if (!diagnoseOnly) await recoverStaleElectron(electronExecutable, devUserData);
     await vite?.close();
+    rmSync(apiEndpointFile, { force: true });
     if (mutex.listening) await new Promise((resolve) => mutex.close(resolve));
   })());
 const quit = async (code = 0) => {
@@ -116,6 +119,7 @@ process.once('unhandledRejection', (error) => {
 
 let launchAttempt = 0;
 const launch = async (args, softwareRendering = false, onReady) => {
+  rmSync(apiEndpointFile, { force: true });
   const attempt = ++launchAttempt;
   report(`Electron attempt ${attempt}: starting${args.length ? ` (${args.join(' ')})` : ''}`);
   rmSync(startupLog, { force: true });
@@ -163,6 +167,7 @@ const launch = async (args, softwareRendering = false, onReady) => {
       electron.once('error', reject);
       electron.once('exit', (code) => resolve(code));
     });
+    rmSync(apiEndpointFile, { force: true });
     // Cleanup can cross the startup deadline after a perfectly normal close.
     // Stop startup observation at exit, before the process inventory await.
     clearInterval(startupWatch);
@@ -195,6 +200,7 @@ try {
     throw error;
   });
   ownsSession = true;
+  rmSync(apiEndpointFile, { force: true });
   try {
     writeFileSync(launcherLog, '', 'utf8');
   } catch {}

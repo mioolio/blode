@@ -849,8 +849,20 @@ async function bootstrap(): Promise<void> {
         appRoot: app.getAppPath(),
         isPackaged: app.isPackaged,
         rendererUrl: developmentUrl,
-        allowExternal: applicationConfig.web.allowExternal,
+        // The development launcher owns the only public listener (5173).
+        port: developmentUrl ? 0 : undefined,
+        developmentProxy: Boolean(developmentUrl),
+        allowExternal: developmentUrl ? false : applicationConfig.web.allowExternal,
       });
+      if (developmentUrl && process.env.BLODE_DEV_API_ENDPOINT_FILE) {
+        const endpointFile = process.env.BLODE_DEV_API_ENDPOINT_FILE;
+        await fs.writeFile(
+          endpointFile + '.tmp',
+          JSON.stringify({ endpoint: web.endpoint, pid: process.pid }),
+          { mode: 0o600 },
+        );
+        await fs.rename(endpointFile + '.tmp', endpointFile);
+      }
       if (closing) {
         await web.close();
         return;
